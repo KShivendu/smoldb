@@ -3,7 +3,7 @@ pub mod consensus;
 
 use actix_web::{App, HttpServer};
 use args::parse_args;
-use consensus::{init_consensus, run_consensus_loop};
+use consensus::{init_consensus, run_consensus};
 use tokio::task;
 
 #[actix_web::get("/")]
@@ -21,7 +21,7 @@ async fn main() -> std::io::Result<()> {
         let mut node = init_consensus(&args)
             .await
             .expect("Failed to initialize consensus");
-        run_consensus_loop(&mut node).await;
+        run_consensus(&mut node).await;
     });
 
     // Start Actix Web server on the same Tokio runtime
