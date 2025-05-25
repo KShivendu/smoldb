@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+actix-web = "4.11.0"
+clap = { version = "4.5.38", features = ["derive"] }
+raft = "0.7.0"
+slog = "2.7.0"
+slog-stdlog = "4.1.1"
+tokio = { version = "1.45.1", features = ["full"] }
