@@ -16,6 +16,8 @@ use tokio::time::Instant;
 
 const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
 
+type PeerId = u64;
+
 pub async fn init_consensus(
     _args: &Args,
 ) -> Result<
@@ -40,9 +42,16 @@ pub async fn init_consensus(
     Ok((raft, logger, sender_receiver))
 }
 
+#[derive(Debug)]
+pub enum ConsensusOperation {
+    AddPeer { peer_id: PeerId, uri: String },
+    UpdateData(u64),
+}
+
 pub enum Msg {
     Propose {
         id: u8,
+        operation: ConsensusOperation,
         callback: Box<dyn Fn() + Send>,
     },
     Raft(Message),
@@ -63,6 +72,7 @@ pub fn send_propose(sender: mpsc::Sender<Msg>) {
             // let (s1, r1) = mpsc::channel::<u8>();
             let res = temp_sender.send(Msg::Propose {
                 id: counter,
+                operation: ConsensusOperation::UpdateData(counter as u64),
                 callback: Box::new(move || {
                     // s1.send(0).unwrap();
                     println!("Propose callback executed");
@@ -96,8 +106,16 @@ pub async fn run_consensus_receiver_loop(
     loop {
         // Wait for a message or timeout (whichever happens first) to proceed with Raft tick
         match receiver.recv_timeout(timeout) {
-            Ok(Msg::Propose { id, callback }) => {
-                println!("Received proposal with ID: {}", id);
+            Ok(Msg::Propose {
+                id,
+                callback,
+                operation,
+            }) => {
+                // ToDo: Handle different consensus operations
+                println!(
+                    "Received proposal with ID: {} and operation {operation:?}",
+                    id
+                );
                 cbs.insert(id, callback);
                 // ToDo: Data needs to be converted to CBOR format
 

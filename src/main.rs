@@ -18,18 +18,27 @@ async fn get_cluster() -> &'static str {
 
 #[actix_web::get("/cluster/peer/add")]
 async fn add_peer(consensus: web::Data<ConsensusAppData>) -> &'static str {
-    consensus
-        .sender
-        .send(Msg::Propose {
-            id: 100, // Example ID, should be replaced with actual logic
-            callback: Box::new(|| println!("Callback executed for adding peer")),
-        })
-        .expect("Failed to send message to consensus");
+    consensus.submit_consensus_op(consensus::ConsensusOperation::AddPeer {
+        peer_id: 123, // Example peer ID, should be replaced with actual logic
+        uri: "http://example.com".to_string(), // Example URI, should be replaced with actual logic
+    });
     "Added peer"
 }
 
 struct ConsensusAppData {
     sender: Sender<Msg>,
+}
+
+impl ConsensusAppData {
+    pub fn submit_consensus_op(&self, operation: consensus::ConsensusOperation) {
+        self.sender
+            .send(Msg::Propose {
+                id: 100, // Example ID, should be replaced with actual logic
+                operation,
+                callback: Box::new(|| println!("Callback executed for adding peer")),
+            })
+            .expect("Failed to send message to consensus");
+    }
 }
 
 #[tokio::main]
@@ -47,8 +56,6 @@ async fn main() -> std::io::Result<()> {
 
     // If you don't clone sender, you get Disconnected error if function is finished (however, it's not cause now we have infinite loop)
     send_propose(sender.clone());
-
-    println!("Moving FURTHER");
 
     tokio::spawn(async move {
         println!("Running consensus receiver loop");
