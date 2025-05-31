@@ -1,6 +1,6 @@
 # smoldb
 
-A small database implemented from scratch. It is heavily inspired by [Qdrant](https://github.com/qdrant/qdrant)'s design.
+A smol database implemented from scratch. It is heavily inspired by [Qdrant](https://github.com/qdrant/qdrant)'s design.
 
 
 ### Usage:

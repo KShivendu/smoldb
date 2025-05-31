@@ -7,7 +7,7 @@ pub struct Args {
     #[clap(short, long)]
     pub boostrap: Option<String>,
     /// Url of the node
-    #[clap(short, long)]
+    #[clap(short, long, default_value = "127.0.0.1:9900")]
     pub url: String,
 }
 
