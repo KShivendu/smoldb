@@ -4,11 +4,11 @@ use raft::{
     prelude::{Entry, EntryType, Message},
     storage::MemStorage,
 };
-use slog::{Drain, Logger, o};
+use slog::{Drain, o};
 use std::{
     collections::HashMap,
     error::Error,
-    sync::mpsc::{self, RecvTimeoutError, channel},
+    sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, channel},
     thread,
     time::Duration,
 };
@@ -18,7 +18,14 @@ const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
 
 pub async fn init_consensus(
     _args: &Args,
-) -> Result<(RawNode<MemStorage>, slog::Logger), Box<dyn Error>> {
+) -> Result<
+    (
+        RawNode<MemStorage>,
+        slog::Logger,
+        (Sender<Msg>, Receiver<Msg>),
+    ),
+    Box<dyn Error>,
+> {
     let storage = MemStorage::new_with_conf_state((vec![1], vec![]));
     let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!());
 
@@ -28,37 +35,46 @@ pub async fn init_consensus(
     };
     let raft = RawNode::new(&config, storage, &logger)?;
 
-    Ok((raft, logger))
+    let sender_receiver = channel::<Msg>();
+
+    Ok((raft, logger, sender_receiver))
 }
 
-enum Msg {
+pub enum Msg {
     Propose {
         id: u8,
         callback: Box<dyn Fn() + Send>,
     },
-    #[expect(dead_code)]
     Raft(Message),
 }
 
 /// Spawn a thread to **continuously** send a proposal to mpsc::Sender (eventually to Raft).
-fn send_propose(logger: Logger, sender: mpsc::Sender<Msg>) {
+pub fn send_propose(sender: mpsc::Sender<Msg>) {
     thread::spawn(move || {
         let mut counter = 0;
+
         loop {
             thread::sleep(Duration::from_secs(3));
             println!("proposed a request");
             counter += 1;
 
+            let temp_sender = sender.clone();
+
             // let (s1, r1) = mpsc::channel::<u8>();
-            sender
-                .send(Msg::Propose {
-                    id: counter,
-                    callback: Box::new(move || {
-                        // s1.send(0).unwrap();
-                        println!("Propose callback executed");
-                    }),
-                })
-                .unwrap();
+            let res = temp_sender.send(Msg::Propose {
+                id: counter,
+                callback: Box::new(move || {
+                    // s1.send(0).unwrap();
+                    println!("Propose callback executed");
+                }),
+            });
+            match res {
+                Ok(_) => println!("Proposal sent successfully"),
+                Err(e) => {
+                    println!("Failed to send proposal: {}", e);
+                    // break; // Exit the loop if sending fails
+                }
+            }
             // let n = r1.recv().unwrap();
             // assert_eq!(n, 0);
 
@@ -67,19 +83,11 @@ fn send_propose(logger: Logger, sender: mpsc::Sender<Msg>) {
     });
 }
 
-pub async fn run_consensus(logger: Logger, raft_node: &mut RawNode<MemStorage>) {
-    let (sender, receiver) = channel();
-
-    // If you don't clone sender, you get Disconnected error
-    send_propose(logger.clone(), sender.clone());
-
-    run_consensus_receiver_loop(raft_node, receiver).await
-}
-
-async fn run_consensus_receiver_loop(
+pub async fn run_consensus_receiver_loop(
     raft_node: &mut RawNode<MemStorage>,
     receiver: mpsc::Receiver<Msg>,
 ) {
+    println!("Starting Raft consensus receiver loop...");
     let mut t = Instant::now();
     let mut timeout = RAFT_TICK_INTERVAL;
 
