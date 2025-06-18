@@ -1,6 +1,10 @@
 use crate::consensus::{ConsensusOperation, Msg};
-use actix_web::web;
-use std::sync::mpsc::Sender;
+use actix_web::{HttpResponse, Responder, web};
+use serde::Serialize;
+use serde_json::Value;
+use std::{collections::HashMap, sync::mpsc::Sender};
+
+type PeerId = u64;
 
 pub struct ConsensusAppData {
     sender: Sender<Msg>,
@@ -22,9 +26,26 @@ impl ConsensusAppData {
     }
 }
 
+#[derive(Serialize)]
+struct ClusterResponse {
+    peer_id: PeerId,
+    peers: HashMap<PeerId, String>,
+    raft_info: Value,
+}
+
 #[actix_web::get("/cluster")]
-async fn get_cluster() -> &'static str {
-    "Cluster information"
+async fn get_cluster() -> impl Responder {
+    HttpResponse::Ok().json(ClusterResponse {
+        peer_id: 1,
+        peers: HashMap::from([(1, "http://n0.cluster:9901".to_string())]),
+        raft_info: serde_json::json!({
+            "term": 1,
+            "commit_index": 1,
+            "last_applied": 1,
+            "role": "leader",
+            "leader": 1
+        }),
+    })
 }
 
 #[actix_web::get("/cluster/peer/add")]
