@@ -1,14 +1,24 @@
 pub mod args;
 pub mod consensus;
 
-use actix_web::{App, HttpServer, web};
+use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use args::parse_args;
 use consensus::{Msg, init_consensus, run_consensus_receiver_loop, send_propose};
+use serde::Serialize;
 use std::sync::{Arc, mpsc::Sender};
 
+#[derive(Serialize)]
+struct RootApiResponse {
+    title: String,
+    version: String,
+}
+
 #[actix_web::get("/")]
-async fn index() -> &'static str {
-    "Hello, world!"
+async fn index() -> impl Responder {
+    HttpResponse::Ok().json(RootApiResponse {
+        title: "Smol DB".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string()
+    })
 }
 
 #[actix_web::get("/cluster")]

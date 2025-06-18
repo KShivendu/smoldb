@@ -1513,6 +1513,8 @@ dependencies = [
  "actix-web",
  "clap",
  "raft",
+ "serde",
+ "serde_json",
  "slog",
  "slog-stdlog",
  "tokio",
