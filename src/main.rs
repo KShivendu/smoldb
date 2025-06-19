@@ -1,8 +1,12 @@
 pub mod api;
 pub mod args;
 pub mod consensus;
+pub mod storage;
 
-use crate::api::cluster::{ConsensusAppData, add_peer, get_cluster};
+use crate::api::{
+    cluster::{ConsensusAppData, add_peer, get_cluster},
+    collection::{get_collection, get_collections},
+};
 use actix_web::{App, HttpServer, web};
 use api::service::index;
 use args::parse_args;
@@ -40,6 +44,8 @@ async fn main() -> std::io::Result<()> {
             .service(index)
             .service(get_cluster)
             .service(add_peer)
+            .service(get_collections)
+            .service(get_collection)
             .app_data(consensus_app_data.clone())
     })
     .bind(args.url)?
