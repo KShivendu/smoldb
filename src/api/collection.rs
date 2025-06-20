@@ -1,7 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
-use actix_web::{Responder, web};
-use serde::Serialize;
+use actix_web::{
+    Responder,
+    web::{self, Json},
+};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::RwLock;
 
@@ -90,11 +93,33 @@ async fn get_collection(
     }))
 }
 
+#[derive(Deserialize)]
+struct CreateCollection {
+    params: String,
+}
+
 #[actix_web::put("/collections/{collection_name}")]
-async fn create_collection(collection_name: web::Path<String>) -> impl Responder {
-    let collection = format!(
-        "Collection '{}' created successfully",
-        collection_name.into_inner()
+async fn create_collection(
+    collection_name: web::Path<String>,
+    operation: Json<CreateCollection>,
+    dispatcher: web::Data<Dispatcher>,
+) -> impl Responder {
+    let collection_name = collection_name.into_inner();
+
+    // ToDo: Push this to consensus instead of directly committing locally?
+    let mut collections = dispatcher.toc.collections.write().await;
+    collections.insert(
+        collection_name.clone(),
+        Collection {
+            id: collection_name.clone(),
+            collection_config: CollectionConfig {
+                params: operation.params.clone(),
+            },
+        },
     );
-    actix_web::HttpResponse::Created().body(collection)
+
+    actix_web::HttpResponse::Created().body(format!(
+        "Collection '{}' created successfully",
+        collection_name
+    ))
 }

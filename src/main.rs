@@ -4,8 +4,8 @@ pub mod consensus;
 pub mod storage;
 
 use crate::api::{
-    cluster::{ConsensusAppData, add_peer, get_cluster},
-    collection::{Dispatcher, get_collection, get_collections},
+    cluster::{add_peer, get_cluster, ConsensusAppData},
+    collection::{create_collection, get_collection, get_collections, Dispatcher},
 };
 use actix_web::{App, HttpServer, web};
 use api::service::index;
@@ -48,6 +48,7 @@ async fn main() -> std::io::Result<()> {
             .service(add_peer)
             .service(get_collections)
             .service(get_collection)
+            .service(create_collection)
             .app_data(consensus_app_data.clone())
             .app_data(dispatcher_app_data.clone())
     })
