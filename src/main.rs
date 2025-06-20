@@ -3,24 +3,24 @@ pub mod args;
 pub mod consensus;
 pub mod storage;
 
-use crate::api::{
-    cluster::{add_peer, get_cluster, ConsensusAppData},
-    collection::{create_collection, get_collection, get_collections, Dispatcher},
+use crate::{
+    api::{
+        cluster::{ConsensusAppData, add_peer, get_cluster},
+        collection::{Dispatcher, create_collection, get_collection, get_collections},
+    },
+    args::Args,
+    consensus::Msg,
 };
 use actix_web::{App, HttpServer, web};
 use api::service::index;
 use args::parse_args;
 use consensus::{init_consensus, run_consensus_receiver_loop, send_propose};
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-    let args = parse_args();
-    println!("Starting node with url: {}", args.url);
-
+async fn setup_consensus(args: &Args) -> std::io::Result<mpsc::Sender<Msg>> {
     // ToDo: Extract out mpsc::sender so we can send requests to consensus
 
-    let (mut raft_node, _slog_logger, sender_receiver) = init_consensus(&args)
+    let (mut raft_node, _slog_logger, sender_receiver) = init_consensus(args)
         .await
         .expect("Failed to initialize consensus");
 
@@ -33,6 +33,18 @@ async fn main() -> std::io::Result<()> {
         println!("Running consensus receiver loop");
         run_consensus_receiver_loop(&mut raft_node, receiver).await;
     });
+
+    Ok(sender)
+}
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let args = parse_args();
+    println!("Starting node with url: {}", args.url);
+
+    let sender = setup_consensus(&args)
+        .await
+        .expect("Failed to setup consensus");
 
     let consensus_app_data = web::Data::from(Arc::new(ConsensusAppData::new(sender)));
 
