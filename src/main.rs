@@ -5,7 +5,7 @@ pub mod storage;
 
 use crate::api::{
     cluster::{ConsensusAppData, add_peer, get_cluster},
-    collection::{get_collection, get_collections},
+    collection::{Dispatcher, get_collection, get_collections},
 };
 use actix_web::{App, HttpServer, web};
 use api::service::index;
@@ -36,6 +36,8 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_app_data = web::Data::from(Arc::new(ConsensusAppData::new(sender)));
 
+    let dispatcher_app_data = web::Data::from(Arc::new(Dispatcher::dummy()));
+
     println!("Running Actix Web server on {}", args.url);
 
     // Start Actix Web server on the same Tokio runtime
@@ -47,6 +49,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_collections)
             .service(get_collection)
             .app_data(consensus_app_data.clone())
+            .app_data(dispatcher_app_data.clone())
     })
     .bind(args.url)?
     .run()
