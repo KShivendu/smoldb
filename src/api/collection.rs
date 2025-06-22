@@ -8,7 +8,9 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::RwLock;
 
-use crate::storage::content_manager::{Collection, CollectionConfig, CollectionMetaOperation, TableOfContent};
+use crate::storage::content_manager::{
+    Collection, CollectionConfig, CollectionMetaOperation, TableOfContent,
+};
 
 // Router that decides if query should go through ToC or consensus
 pub struct Dispatcher {
@@ -89,13 +91,20 @@ async fn create_collection(
     let collection_name = collection_name.into_inner();
 
     // ToDo: Push this to consensus instead of directly committing locally?
-    dispatcher
+    let result = dispatcher
         .toc
         .perform_collection_meta_op(CollectionMetaOperation::CreateCollection {
             collection_name: collection_name.clone(),
             params: operation.params.clone(),
         })
         .await;
+
+    if let Err(e) = result {
+        return actix_web::HttpResponse::BadRequest().body(format!(
+            "Failed to create collection '{}': {}",
+            collection_name, e
+        ));
+    }
 
     actix_web::HttpResponse::Created().body(format!(
         "Collection '{}' created successfully",
