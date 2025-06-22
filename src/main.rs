@@ -10,6 +10,7 @@ use crate::{
     },
     args::Args,
     consensus::Msg,
+    storage::content_manager::TableOfContent,
 };
 use actix_web::{App, HttpServer, web};
 use api::service::index;
@@ -48,7 +49,9 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_app_data = web::Data::from(Arc::new(ConsensusAppData::new(sender)));
 
-    let dispatcher_app_data = web::Data::from(Arc::new(Dispatcher::dummy()));
+    let toc = TableOfContent::load();
+
+    let dispatcher_app_data = web::Data::from(Arc::new(Dispatcher::from(toc)));
 
     println!("Running Actix Web server on {}", args.url);
 

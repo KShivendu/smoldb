@@ -1,5 +1,5 @@
 use crate::storage::error::StorageError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     io::Write,
@@ -15,7 +15,7 @@ pub struct TableOfContent {
     pub collections: Arc<RwLock<Collections>>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CollectionConfig {
     pub params: String,
 }
@@ -51,6 +51,7 @@ pub type CollectionId = String;
 pub struct Collection {
     pub id: CollectionId,
     pub config: CollectionConfig,
+    #[serde(skip)]
     pub path: PathBuf,
 }
 
@@ -70,6 +71,31 @@ impl Collection {
             path: path.to_owned(),
         })
     }
+
+    pub fn load(id: CollectionId, path: &Path) -> Result<Self, StorageError> {
+        let config_path = path.join(COLLECTION_CONFIG_FILE);
+        if !config_path.exists() {
+            return Err(StorageError::BadInput(format!(
+                "Collection config file does not exist at path: {}",
+                config_path.display()
+            )));
+        }
+
+        let config_file = std::fs::File::open(&config_path).map_err(|e| {
+            StorageError::ServiceError(format!("Failed to open collection config file: {}", e))
+        })?;
+
+        let config_file_buf = std::io::BufReader::new(&config_file);
+        let config: CollectionConfig = serde_json::from_reader(config_file_buf).map_err(|e| {
+            StorageError::BadInput(format!("Failed to parse collection config JSON: {}", e))
+        })?;
+
+        Ok(Collection {
+            id,
+            config,
+            path: path.to_path_buf(),
+        })
+    }
 }
 
 pub type Collections = HashMap<CollectionId, Collection>;
@@ -83,6 +109,45 @@ pub enum CollectionMetaOperation {
 
 impl TableOfContent {
     pub fn from(collections: Collections) -> Self {
+        TableOfContent {
+            collections: Arc::new(RwLock::new(collections)),
+        }
+    }
+
+    pub fn load() -> Self {
+        let collections_path = Path::new("storage").join(COLLECTIONS_DIR);
+        std::fs::create_dir_all(&collections_path).expect("Failed to create collections directory");
+
+        // Load collections from the directory
+        let mut collections = HashMap::new();
+        let collection_paths =
+            std::fs::read_dir(&collections_path).expect("Failed to read collections directory");
+        for dir_entry in collection_paths {
+            let path = dir_entry.expect("Can't read directory entry").path();
+
+            if !path.join(COLLECTION_CONFIG_FILE).exists() {
+                // Skip directories without a config file
+                // This indirectly also checks if the path is a directory
+                println!(
+                    "Skipping path {} as it does not contain a collection config file",
+                    path.display()
+                );
+                continue;
+            }
+
+            let collection_name = path
+                .file_name()
+                .expect("Can't resolve filename for collection")
+                .to_str()
+                .expect("Collection name is not valid UTF-8")
+                .to_string();
+
+            let collection = Collection::load(collection_name, &path)
+                .expect("Failed to load collection from path");
+
+            collections.insert(collection.id.clone(), collection);
+        }
+
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
         }

@@ -26,6 +26,10 @@ impl Dispatcher {
         }
     }
 
+    pub fn from(toc: TableOfContent) -> Self {
+        Dispatcher { toc: Arc::new(toc) }
+    }
+
     pub fn dummy() -> Self {
         Dispatcher {
             toc: Arc::new(TableOfContent::from(HashMap::from_iter([(
