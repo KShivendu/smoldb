@@ -13,6 +13,7 @@ serde_json = "1.0.140"
 sled = {version = "0.34.7", default-features = false}
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
+thiserror = "2.0.12"
 tokio = { version = "1.45.1", features = ["full"] }
 
 [features]
