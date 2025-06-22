@@ -30,9 +30,10 @@ impl Dispatcher {
                 "c1".to_string(),
                 Collection {
                     id: "c1".to_string(),
-                    collection_config: CollectionConfig {
+                    config: CollectionConfig {
                         params: "dummy_params".to_string(),
                     },
+                    path: "dummy_path".into(),
                 },
             )]))),
         }

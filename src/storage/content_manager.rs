@@ -1,6 +1,13 @@
+use crate::storage::error::StorageError;
 use serde::Serialize;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tokio::sync::RwLock;
+
+pub const COLLECTIONS_DIR: &str = "collections";
 
 pub struct TableOfContent {
     pub collections: Arc<RwLock<Collections>>,
@@ -16,7 +23,8 @@ pub type CollectionId = String;
 #[derive(Serialize)]
 pub struct Collection {
     pub id: CollectionId,
-    pub collection_config: CollectionConfig,
+    pub config: CollectionConfig,
+    pub path: PathBuf,
 }
 
 pub type Collections = HashMap<CollectionId, Collection>;
@@ -35,6 +43,29 @@ impl TableOfContent {
         }
     }
 
+    /// Creates a new directory at the expected collection path.
+    pub async fn mkdir_collection_dir(
+        &self,
+        collection_name: &str,
+    ) -> Result<PathBuf, StorageError> {
+        let path = Path::new("storage")
+            .join(COLLECTIONS_DIR)
+            .join(collection_name);
+
+        if path.exists() {
+            return Err(StorageError::BadInput(format!(
+                "Collection path already exists: {}",
+                path.display()
+            )));
+        }
+
+        tokio::fs::create_dir_all(&path).await.map_err(|e| {
+            StorageError::ServiceError(format!("Can't create directory for collection: {}", e))
+        })?;
+
+        Ok(path)
+    }
+
     pub async fn perform_collection_meta_op(&self, operation: CollectionMetaOperation) {
         match operation {
             CollectionMetaOperation::CreateCollection {
@@ -42,13 +73,21 @@ impl TableOfContent {
                 params,
             } => {
                 println!("Creating collection {}", collection_name);
-                self.collections.write().await.insert(
-                    collection_name.clone(),
-                    Collection {
-                        id: collection_name,
-                        collection_config: CollectionConfig { params },
-                    },
-                );
+                let path = self
+                    .mkdir_collection_dir(&collection_name)
+                    .await
+                    .expect("Failed to create collection directory");
+
+                let collection = Collection {
+                    id: collection_name.clone(),
+                    config: CollectionConfig { params },
+                    path,
+                };
+
+                self.collections
+                    .write()
+                    .await
+                    .insert(collection_name, collection);
             }
         }
     }
