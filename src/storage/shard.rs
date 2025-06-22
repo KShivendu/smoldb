@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::storage::error::StorageError;
+use crate::storage::{error::StorageError, segment::Segment};
 
 pub type SegmentId = u64;
 pub type ShardId = u64;
@@ -19,10 +19,12 @@ impl LocalShard {
         let segments_dir = path.join(SEGMENTS_DIR);
         std::fs::create_dir_all(&segments_dir).expect("Failed to create segments directory");
 
+        let segment0 = Segment::create(&segments_dir).expect("Failed to create initial segment");
+
         LocalShard {
             id,
             path: path.to_owned(),
-            segments: HashMap::from_iter([(0, Segment::create(&segments_dir))]),
+            segments: HashMap::from_iter([(0, segment0)]),
         }
     }
 
@@ -51,38 +53,16 @@ impl LocalShard {
                 "Couldn't parse shard id from shard directory"
             )))?;
 
+        let mut segments = HashMap::new();
+        for (id, segment_path) in segment_paths {
+            let segment = Segment::load(&segment_path)?;
+            segments.insert(id, segment);
+        }
+
         Ok(Self {
             id,
             path: path.to_owned(),
-            segments: segment_paths
-                .into_iter()
-                .map(|(id, path)| (id, Segment::load(&path)))
-                .collect(),
+            segments,
         })
-    }
-}
-
-pub struct Segment {
-    pub path: PathBuf,
-    // ToDo: ID tracker, data storage, index, etc
-}
-
-impl Segment {
-    pub fn create(segments_dir: &PathBuf) -> Self {
-        // ToDo: Have uuid segment ID
-        let path = segments_dir.join("0");
-        std::fs::create_dir_all(&path).expect("Failed to create segment directory");
-
-        Self { path }
-    }
-
-    pub fn load(path: &PathBuf) -> Self {
-        if !path.exists() {
-            panic!("Segment path does not exist: {:?}", path);
-        }
-
-        Self {
-            path: path.to_owned(),
-        }
     }
 }
