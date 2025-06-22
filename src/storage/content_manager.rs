@@ -1,4 +1,7 @@
-use crate::storage::error::StorageError;
+use crate::storage::{
+    error::StorageError,
+    shard::{LocalShard, ShardId},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -15,7 +18,7 @@ pub struct TableOfContent {
     pub collections: Arc<RwLock<Collections>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct CollectionConfig {
     pub params: String,
 }
@@ -47,11 +50,10 @@ impl CollectionConfig {
 
 pub type CollectionId = String;
 
-#[derive(Serialize)]
 pub struct Collection {
     pub id: CollectionId,
     pub config: CollectionConfig,
-    #[serde(skip)]
+    pub shards: HashMap<ShardId, LocalShard>,
     pub path: PathBuf,
 }
 
@@ -65,9 +67,14 @@ impl Collection {
 
         config.save(path)?;
 
+        // ToDo: Initialize with more shards and have remote shards
+        let s0_path = path.join("0");
+        let shards = HashMap::from_iter([(0, LocalShard::init(s0_path, 0))]);
+
         Ok(Collection {
             id,
             config,
+            shards,
             path: path.to_owned(),
         })
     }
@@ -81,20 +88,62 @@ impl Collection {
             )));
         }
 
-        let config_file = std::fs::File::open(&config_path).map_err(|e| {
-            StorageError::ServiceError(format!("Failed to open collection config file: {}", e))
+        let config: CollectionConfig = {
+            let config_file = std::fs::File::open(&config_path).map_err(|e| {
+                StorageError::ServiceError(format!("Failed to open collection config file: {}", e))
+            })?;
+
+            let config_file_buf = std::io::BufReader::new(&config_file);
+            serde_json::from_reader(config_file_buf).map_err(|e| {
+                StorageError::BadInput(format!("Failed to parse collection config JSON: {}", e))
+            })?
+        };
+
+        // ToDo: Load shards
+        let mut shards = HashMap::new();
+        let dir_contents = std::fs::read_dir(path).map_err(|e| {
+            StorageError::ServiceError(format!("Failed to read collection directory: {}", e))
         })?;
 
-        let config_file_buf = std::io::BufReader::new(&config_file);
-        let config: CollectionConfig = serde_json::from_reader(config_file_buf).map_err(|e| {
-            StorageError::BadInput(format!("Failed to parse collection config JSON: {}", e))
-        })?;
+        for entry in dir_contents {
+            let path = entry.expect("Can't read directory entry").path();
+            if !path.is_dir() {
+                continue; // Skip non-directory entries
+            }
+
+            let shard = LocalShard::load(&path)?;
+            shards.insert(shard.id, shard);
+        }
 
         Ok(Collection {
             id,
             config,
+            shards,
             path: path.to_path_buf(),
         })
+    }
+}
+
+#[derive(Serialize)]
+pub struct CollectionInfo {
+    pub id: CollectionId,
+    pub config: CollectionConfig,
+    pub shard_count: usize,
+    pub segment_count: usize,
+}
+
+impl From<&Collection> for CollectionInfo {
+    fn from(collection: &Collection) -> Self {
+        CollectionInfo {
+            id: collection.id.clone(),
+            config: collection.config.clone(),
+            shard_count: collection.shards.len(),
+            segment_count: collection
+                .shards
+                .values()
+                .map(|shard| shard.segments.len())
+                .sum(),
+        }
     }
 }
 

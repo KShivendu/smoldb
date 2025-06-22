@@ -9,7 +9,7 @@ use serde_json::json;
 use tokio::sync::RwLock;
 
 use crate::storage::content_manager::{
-    Collection, CollectionConfig, CollectionMetaOperation, TableOfContent,
+    Collection, CollectionConfig, CollectionInfo, CollectionMetaOperation, TableOfContent,
 };
 
 // Router that decides if query should go through ToC or consensus
@@ -39,6 +39,7 @@ impl Dispatcher {
                     config: CollectionConfig {
                         params: "dummy_params".to_string(),
                     },
+                    shards: HashMap::new(),
                     path: "dummy_path".into(),
                 },
             )]))),
@@ -73,7 +74,7 @@ async fn get_collection(
         .await
         .get(&collection_name)
     {
-        return actix_web::HttpResponse::Ok().json(collection);
+        return actix_web::HttpResponse::Ok().json(CollectionInfo::from(collection));
     }
 
     actix_web::HttpResponse::Ok().json(json!({
