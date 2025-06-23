@@ -10,20 +10,31 @@ cargo run
 
 Now call these APIs at `localhost:9900`
 
-```http
-PUT /collections/test
+```bash
+# Create collection
+curl -X PUT http://localhost:6333/collections/test \
+  -H "Content-Type: application/json" \
+  -d '{
+    "params": "..."
+  }'
+
+# Add points
+curl -X PUT http://localhost:6333/collections/test/points \
+  -H "Content-Type: application/json" \
+  -d '{
+    "points": [ { "id": 0, "payload": { "msg": "hello world" } } ]
+  }'
+
+# Get point (response below)
+curl -X GET http://localhost:6333/collections/test/points/0
+
+# Response:
 {
-  "params": "..."
+  "id": 0,
+  "payload": {
+    "msg": "hello world"
+  }
 }
-
-GET /collections/test
-
-PUT /collections/test/points
-{
-  "points": [ { "id": 0, "payload": { "msg": "hello world" } } ]
-}
-
-GET /collections/test/points/0
 ```
 
 ### ToDo:
