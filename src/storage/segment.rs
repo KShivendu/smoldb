@@ -1,8 +1,28 @@
-use crate::{
-    api::points::{Point, PointId},
-    storage::error::StorageError,
-};
+use crate::storage::error::StorageError;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum PointId {
+    Id(u64),
+    Uuid(String),
+}
+
+impl PointId {
+    pub fn into_string(&self) -> String {
+        match self {
+            PointId::Id(id) => id.to_string(),
+            PointId::Uuid(uuid) => uuid.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Point {
+    pub id: PointId,
+    pub payload: serde_json::Value,
+}
 
 pub struct Segment {
     pub path: PathBuf,

@@ -1,16 +1,14 @@
-use std::{collections::HashMap, sync::Arc};
-
+use crate::storage::content_manager::{
+    Collection, CollectionConfig, CollectionInfo, CollectionMetaOperation, TableOfContent,
+};
 use actix_web::{
     Responder,
     web::{self, Json},
 };
 use serde::Deserialize;
 use serde_json::json;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
-
-use crate::storage::content_manager::{
-    Collection, CollectionConfig, CollectionInfo, CollectionMetaOperation, TableOfContent,
-};
 
 // Router that decides if query should go through ToC or consensus
 pub struct Dispatcher {

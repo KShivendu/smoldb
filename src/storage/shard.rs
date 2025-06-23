@@ -1,9 +1,8 @@
-use std::{collections::HashMap, path::PathBuf};
-
-use crate::{
-    api::points::{Point, PointId},
-    storage::{error::StorageError, segment::Segment},
+use crate::storage::{
+    error::StorageError,
+    segment::{Point, PointId, Segment},
 };
+use std::{collections::HashMap, path::PathBuf};
 
 pub type SegmentId = u64;
 pub type ShardId = u64;

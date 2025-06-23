@@ -1,31 +1,12 @@
-use crate::api::collection::Dispatcher;
+use crate::{
+    api::collection::Dispatcher,
+    storage::segment::{Point, PointId},
+};
 use actix_web::{
     Responder,
     web::{self, Json},
 };
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(untagged)]
-pub enum PointId {
-    Id(u64),
-    Uuid(String),
-}
-
-impl PointId {
-    pub fn into_string(&self) -> String {
-        match self {
-            PointId::Id(id) => id.to_string(),
-            PointId::Uuid(uuid) => uuid.clone(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Point {
-    pub id: PointId,
-    pub payload: serde_json::Value,
-}
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct UpsertPoints {

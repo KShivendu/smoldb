@@ -5,8 +5,9 @@ pub mod storage;
 
 use crate::{
     api::{
-        cluster::{add_peer, get_cluster, ConsensusAppData},
-        collection::{create_collection, get_collection, get_collections, Dispatcher}, points::{get_point, upsert_points},
+        cluster::{ConsensusAppData, add_peer, get_cluster},
+        collection::{Dispatcher, create_collection, get_collection, get_collections},
+        points::{get_point, upsert_points},
     },
     args::Args,
     consensus::Msg,

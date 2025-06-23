@@ -1,7 +1,8 @@
 use crate::{
-    api::points::{Point, PointId, PointsOperation},
+    api::points::PointsOperation,
     storage::{
         error::StorageError,
+        segment::{Point, PointId},
         shard::{LocalShard, ShardId},
     },
 };
@@ -123,6 +124,42 @@ impl Collection {
             config,
             shards,
             path: path.to_path_buf(),
+        })
+    }
+
+    pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
+        // ToDo: Add shard routing with hashring?
+        let Some((_, shard)) = self.shards.iter().next() else {
+            return Err(StorageError::BadInput(format!(
+                "Collection '{}' has no shards",
+                self.id
+            )));
+        };
+
+        shard.insert_points(&points).map_err(|e| {
+            StorageError::ServiceError(format!(
+                "Failed to upsert points in collection '{}': {}",
+                self.id, e
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    pub fn get_points(&self, ids: &[PointId]) -> Result<Vec<Point>, StorageError> {
+        // ToDo: Add shard routing with hashring?
+        let Some((_, shard)) = &self.shards.iter().next() else {
+            return Err(StorageError::BadInput(format!(
+                "Collection '{}' has no shards",
+                self.id
+            )));
+        };
+
+        shard.get_points(ids).map_err(|e| {
+            StorageError::ServiceError(format!(
+                "Failed to retrieve points from collection '{}': {}",
+                self.id, e
+            ))
         })
     }
 }
@@ -271,20 +308,7 @@ impl TableOfContent {
 
         match operation {
             PointsOperation::Upsert(upsert_points) => {
-                // ToDo: Add shard routing with hashring?
-                let Some((_, shard)) = collection.shards.iter().next() else {
-                    return Err(StorageError::BadInput(format!(
-                        "Collection '{}' has no shards",
-                        collection_name
-                    )));
-                };
-
-                shard.insert_points(&upsert_points.points).map_err(|e| {
-                    StorageError::ServiceError(format!(
-                        "Failed to upsert points in collection '{}': {}",
-                        collection_name, e
-                    ))
-                })?;
+                collection.insert_points(&upsert_points.points)?;
             }
         }
 
@@ -301,19 +325,6 @@ impl TableOfContent {
             StorageError::BadInput(format!("Collection '{}' does not exist", collection_name))
         })?;
 
-        // ToDo: Add shard routing with hashring?
-        let Some((_, shard)) = collection.shards.iter().next() else {
-            return Err(StorageError::BadInput(format!(
-                "Collection '{}' has no shards",
-                collection_name
-            )));
-        };
-
-        shard.get_points(ids).map_err(|e| {
-            StorageError::ServiceError(format!(
-                "Failed to retrieve points from collection '{}': {}",
-                collection_name, e
-            ))
-        })
+        collection.get_points(ids)
     }
 }
