@@ -1,6 +1,9 @@
-use crate::storage::{
-    error::StorageError,
-    shard::{LocalShard, ShardId},
+use crate::{
+    api::points::{Point, PointId, PointsOperation},
+    storage::{
+        error::StorageError,
+        shard::{LocalShard, ShardId},
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -253,5 +256,64 @@ impl TableOfContent {
                 Ok(true)
             }
         }
+    }
+
+    pub async fn perform_points_op(
+        &self,
+        collection_name: &str,
+        operation: PointsOperation,
+    ) -> Result<bool, StorageError> {
+        // ToDo: Have independent read locks for each collection. It should improve perf?
+        let collections = self.collections.read().await;
+        let collection = collections.get(collection_name).ok_or_else(|| {
+            StorageError::BadInput(format!("Collection '{}' does not exist", collection_name))
+        })?;
+
+        match operation {
+            PointsOperation::Upsert(upsert_points) => {
+                // ToDo: Add shard routing with hashring?
+                let Some((_, shard)) = collection.shards.iter().next() else {
+                    return Err(StorageError::BadInput(format!(
+                        "Collection '{}' has no shards",
+                        collection_name
+                    )));
+                };
+
+                shard.insert_points(&upsert_points.points).map_err(|e| {
+                    StorageError::ServiceError(format!(
+                        "Failed to upsert points in collection '{}': {}",
+                        collection_name, e
+                    ))
+                })?;
+            }
+        }
+
+        Ok(true)
+    }
+
+    pub async fn retrieve_points(
+        &self,
+        collection_name: &str,
+        ids: &[PointId],
+    ) -> Result<Vec<Point>, StorageError> {
+        let collections = self.collections.read().await;
+        let collection = collections.get(collection_name).ok_or_else(|| {
+            StorageError::BadInput(format!("Collection '{}' does not exist", collection_name))
+        })?;
+
+        // ToDo: Add shard routing with hashring?
+        let Some((_, shard)) = collection.shards.iter().next() else {
+            return Err(StorageError::BadInput(format!(
+                "Collection '{}' has no shards",
+                collection_name
+            )));
+        };
+
+        shard.get_points(ids).map_err(|e| {
+            StorageError::ServiceError(format!(
+                "Failed to retrieve points from collection '{}': {}",
+                collection_name, e
+            ))
+        })
     }
 }

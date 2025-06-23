@@ -1,6 +1,9 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::storage::{error::StorageError, segment::Segment};
+use crate::{
+    api::points::{Point, PointId},
+    storage::{error::StorageError, segment::Segment},
+};
 
 pub type SegmentId = u64;
 pub type ShardId = u64;
@@ -64,5 +67,27 @@ impl LocalShard {
             path: path.to_owned(),
             segments,
         })
+    }
+
+    pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
+        // ToDo: Select segment based on point id or some other criteria
+        if let Some(segment) = self.segments.get(&0) {
+            segment.insert_points(points)?;
+            Ok(())
+        } else {
+            Err(StorageError::ServiceError(
+                "No segments available".to_string(),
+            ))
+        }
+    }
+
+    pub fn get_points(&self, ids: &[PointId]) -> Result<Vec<Point>, StorageError> {
+        if let Some(segment) = self.segments.get(&0) {
+            segment.get_points(ids)
+        } else {
+            Err(StorageError::ServiceError(
+                "No segments available".to_string(),
+            ))
+        }
     }
 }

@@ -5,8 +5,8 @@ pub mod storage;
 
 use crate::{
     api::{
-        cluster::{ConsensusAppData, add_peer, get_cluster},
-        collection::{Dispatcher, create_collection, get_collection, get_collections},
+        cluster::{add_peer, get_cluster, ConsensusAppData},
+        collection::{create_collection, get_collection, get_collections, Dispatcher}, points::{get_point, upsert_points},
     },
     args::Args,
     consensus::Msg,
@@ -64,6 +64,8 @@ async fn main() -> std::io::Result<()> {
             .service(get_collections)
             .service(get_collection)
             .service(create_collection)
+            .service(upsert_points)
+            .service(get_point)
             .app_data(consensus_app_data.clone())
             .app_data(dispatcher_app_data.clone())
     })

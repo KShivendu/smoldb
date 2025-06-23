@@ -1,4 +1,7 @@
-use crate::storage::error::StorageError;
+use crate::{
+    api::points::{Point, PointId},
+    storage::error::StorageError,
+};
 use std::path::PathBuf;
 
 pub struct Segment {
@@ -38,5 +41,37 @@ impl Segment {
             path: path.to_owned(),
             db,
         })
+    }
+
+    pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
+        for point in points {
+            let key = point.id.into_string();
+            let value = serde_json::to_string(point).map_err(|e| {
+                StorageError::ServiceError(format!("Failed to serialize point: {}", e))
+            })?;
+            self.db.insert(key, value.as_str()).map_err(|e| {
+                StorageError::ServiceError(format!("Failed to insert point into segment db: {}", e))
+            })?;
+        }
+        self.db.flush().map_err(|e| {
+            StorageError::ServiceError(format!("Failed to flush segment db: {}", e))
+        })?;
+        Ok(())
+    }
+
+    pub fn get_points(&self, ids: &[PointId]) -> Result<Vec<Point>, StorageError> {
+        let mut points = Vec::new();
+        for id in ids {
+            let key = id.into_string();
+            if let Some(value) = self.db.get(key).map_err(|e| {
+                StorageError::ServiceError(format!("Failed to get point from segment db: {}", e))
+            })? {
+                let point: Point = serde_json::from_slice(&value).map_err(|e| {
+                    StorageError::ServiceError(format!("Failed to deserialize point: {}", e))
+                })?;
+                points.push(point);
+            }
+        }
+        Ok(points)
     }
 }

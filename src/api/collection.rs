@@ -14,7 +14,7 @@ use crate::storage::content_manager::{
 
 // Router that decides if query should go through ToC or consensus
 pub struct Dispatcher {
-    toc: Arc<TableOfContent>,
+    pub toc: Arc<TableOfContent>,
 }
 
 impl Dispatcher {
