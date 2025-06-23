@@ -16,18 +16,14 @@ PUT /collections/test
   "params": "..."
 }
 
+GET /collections/test
+
 PUT /collections/test/points
 {
   "points": [ { "id": 0, "payload": { "msg": "hello world" } } ]
 }
 
-// Response of GET /collections/test/points/0:
-{
-  "id": 111,
-  "payload": {
-    "msg": "Hi there 111"
-  }
-}
+GET /collections/test/points/0
 ```
 
 ### ToDo:
