@@ -14,7 +14,11 @@ impl Segment {
         std::fs::create_dir_all(&path).expect("Failed to create segment directory");
 
         let db = sled::open(&path).map_err(|e| {
-            StorageError::ServiceError(format!("Failed to open sled database: {}", e))
+            StorageError::ServiceError(format!("Failed to open segment database: {}", e))
+        })?;
+
+        db.insert("msg", "hello world").map_err(|e| {
+            StorageError::ServiceError(format!("Failed to insert into segment db: {}", e))
         })?;
 
         Ok(Self { path, db })
@@ -28,7 +32,7 @@ impl Segment {
             )));
         }
 
-        let db = sled::open(&path).expect("Failed to open sled database");
+        let db = sled::open(&path).expect("Failed to open segment database");
 
         Ok(Self {
             path: path.to_owned(),
