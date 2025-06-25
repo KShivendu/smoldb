@@ -1,1 +1,4 @@
 /target
+/storage
+flamegraph.svg
+perf.data
