@@ -18,7 +18,7 @@ impl PointId {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Point {
     pub id: PointId,
     pub payload: serde_json::Value,
