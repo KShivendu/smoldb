@@ -40,10 +40,6 @@ impl Segment {
             StorageError::ServiceError(format!("Failed to open segment database: {}", e))
         })?;
 
-        db.insert("msg", "hello world").map_err(|e| {
-            StorageError::ServiceError(format!("Failed to insert into segment db: {}", e))
-        })?;
-
         Ok(Self { path, db })
     }
 
