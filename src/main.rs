@@ -13,7 +13,7 @@ use crate::{
     consensus::Msg,
     storage::content_manager::TableOfContent,
 };
-use actix_web::{App, HttpServer, web};
+use actix_web::{App, HttpServer, middleware, web};
 use api::service::index;
 use args::parse_args;
 use consensus::{init_consensus, run_consensus_receiver_loop, send_propose};
@@ -59,6 +59,7 @@ async fn main() -> std::io::Result<()> {
     // Start Actix Web server on the same Tokio runtime
     HttpServer::new(move || {
         App::new()
+            .wrap(middleware::NormalizePath::trim())
             .service(index)
             .service(get_cluster)
             .service(add_peer)
