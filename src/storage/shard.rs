@@ -80,7 +80,7 @@ impl LocalShard {
         }
     }
 
-    pub fn get_points(&self, ids: &[PointId]) -> Result<Vec<Point>, StorageError> {
+    pub fn get_points(&self, ids: Option<&[PointId]>) -> Result<Vec<Point>, StorageError> {
         if let Some(segment) = self.segments.get(&0) {
             segment.get_points(ids)
         } else {

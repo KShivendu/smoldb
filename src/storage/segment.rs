@@ -79,8 +79,34 @@ impl Segment {
         Ok(())
     }
 
-    pub fn get_points(&self, ids: &[PointId]) -> Result<Vec<Point>, StorageError> {
+    pub fn get_points(&self, ids: Option<&[PointId]>) -> Result<Vec<Point>, StorageError> {
         let mut points = Vec::new();
+
+        let Some(ids) = ids else {
+            // If no ids are provided, return all points
+            for result in self.db.iter() {
+                match result {
+                    Ok((_, value)) => {
+                        let point: Point = serde_json::from_slice(&value).map_err(|e| {
+                            StorageError::ServiceError(format!(
+                                "Failed to deserialize point: {}",
+                                e
+                            ))
+                        })?;
+                        points.push(point);
+                    }
+                    Err(e) => {
+                        return Err(StorageError::ServiceError(format!(
+                            "Failed to iterate over segment db: {}",
+                            e
+                        )));
+                    }
+                }
+            }
+            return Ok(points);
+        };
+
+        // If ids are provided, retrieve only those points
         for id in ids {
             let key = id.into_string();
             if let Some(value) = self.db.get(key).map_err(|e| {

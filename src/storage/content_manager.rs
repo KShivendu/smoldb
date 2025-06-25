@@ -127,14 +127,16 @@ impl Collection {
         })
     }
 
+    // ToDo: Add shard routing with hashring based on Point ID?
+    fn select_shard(&self) -> Result<&LocalShard, StorageError> {
+        // For now, just return the first shard
+        self.shards.values().next().ok_or_else(|| {
+            StorageError::BadInput(format!("Collection '{}' has no shards", self.id))
+        })
+    }
+
     pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
-        // ToDo: Add shard routing with hashring?
-        let Some((_, shard)) = self.shards.iter().next() else {
-            return Err(StorageError::BadInput(format!(
-                "Collection '{}' has no shards",
-                self.id
-            )));
-        };
+        let shard = self.select_shard()?;
 
         shard.insert_points(&points).map_err(|e| {
             StorageError::ServiceError(format!(
@@ -146,14 +148,8 @@ impl Collection {
         Ok(())
     }
 
-    pub fn get_points(&self, ids: &[PointId]) -> Result<Vec<Point>, StorageError> {
-        // ToDo: Add shard routing with hashring?
-        let Some((_, shard)) = &self.shards.iter().next() else {
-            return Err(StorageError::BadInput(format!(
-                "Collection '{}' has no shards",
-                self.id
-            )));
-        };
+    pub fn get_points(&self, ids: Option<&[PointId]>) -> Result<Vec<Point>, StorageError> {
+        let shard = self.select_shard()?;
 
         shard.get_points(ids).map_err(|e| {
             StorageError::ServiceError(format!(
@@ -318,7 +314,7 @@ impl TableOfContent {
     pub async fn retrieve_points(
         &self,
         collection_name: &str,
-        ids: &[PointId],
+        ids: Option<&[PointId]>,
     ) -> Result<Vec<Point>, StorageError> {
         let collections = self.collections.read().await;
         let collection = collections.get(collection_name).ok_or_else(|| {

@@ -58,7 +58,7 @@ async fn get_point(
 
     let result = dispatcher
         .toc
-        .retrieve_points(&collection_name, &[point_id])
+        .retrieve_points(&collection_name, Some(&[point_id]))
         .await;
 
     match result {
@@ -75,5 +75,30 @@ async fn get_point(
             return actix_web::HttpResponse::InternalServerError()
                 .body(format!("Error retrieving point with id '{}': {}", id, e));
         }
+    }
+}
+
+#[actix_web::get("/collections/{collection_name}/points")]
+async fn list_points(
+    collection_name: web::Path<String>,
+    dispatcher: web::Data<Dispatcher>,
+) -> impl Responder {
+    let collection_name = collection_name.into_inner();
+    let result = dispatcher.toc.retrieve_points(&collection_name, None).await;
+    match result {
+        Ok(points) => {
+            if points.is_empty() {
+                actix_web::HttpResponse::NotFound().body(format!(
+                    "No points found in collection '{}'",
+                    collection_name
+                ))
+            } else {
+                actix_web::HttpResponse::Ok().json(points)
+            }
+        }
+        Err(e) => actix_web::HttpResponse::InternalServerError().body(format!(
+            "Error listing points in collection '{}': {}",
+            collection_name, e
+        )),
     }
 }

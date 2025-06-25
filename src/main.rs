@@ -7,7 +7,7 @@ use crate::{
     api::{
         cluster::{ConsensusAppData, add_peer, get_cluster},
         collection::{Dispatcher, create_collection, get_collection, get_collections},
-        points::{get_point, upsert_points},
+        points::{get_point, list_points, upsert_points},
     },
     args::Args,
     consensus::Msg,
@@ -67,6 +67,7 @@ async fn main() -> std::io::Result<()> {
             .service(create_collection)
             .service(upsert_points)
             .service(get_point)
+            .service(list_points)
             .app_data(consensus_app_data.clone())
             .app_data(dispatcher_app_data.clone())
     })
