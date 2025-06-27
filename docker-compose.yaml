@@ -14,7 +14,8 @@ services:
     ports:
       - "9900:9900"
       - "9910:9910"
-    command: ./smoldb --uri 'http://smoldb-node-0:9920'
+    entrypoint: []
+    command: ./smoldb --url 'smoldb-node-0:9900'
 
   smoldb-node-1:
     image: kshivendu/smoldb:latest
@@ -31,7 +32,8 @@ services:
     ports:
       - "9901:9900"
       - "9911:9910"
-    command: bash -c "sleep 5 && ./smoldb --bootstrap 'http://smoldb-node-0:9920' --uri 'http://smoldb-node-1:9920'"
+    entrypoint: []
+    command: bash -c "sleep 5 && ./smoldb --boostrap 'smoldb-node-0:9900' --url 'smoldb-node-1:9900'"
 
   smoldb-node-2:
     image: kshivendu/smoldb:latest
@@ -48,4 +50,5 @@ services:
     ports:
       - "9902:9900"
       - "9912:9910"
-    command: bash -c "sleep 6 && ./smoldb --bootstrap 'http://smoldb-node-0:9920' --uri 'http://smoldb-node-2:9920'"
+    entrypoint: []
+    command: bash -c "sleep 6 && ./smoldb --boostrap 'smoldb-node-0:9900' --url 'smoldb-node-2:9900'"

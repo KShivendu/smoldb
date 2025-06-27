@@ -123,5 +123,7 @@ LABEL org.opencontainers.image.vendor="kshivendu"
 ENTRYPOINT ["/smoldb"]
 
 # docker build --network=host -t kshivendu/smoldb:latest .
-# docker run -p 9900:9900 -p 9910:9910 kshivendu/smoldb:latest
-# docker run -p 9900:9900 -p 9910:9910 kshivendu/smoldb:latest
+# docker run -p 9900:9900 -p 9910:9910 kshivendu/smoldb
+# docker run -p 9900:9900 -p 9910:9910 kshivendu/smoldb
+
+# docker run --rm -p 9900:9900 --name smoldb -p 9910:9910 kshivendu/smoldb
