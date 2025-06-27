@@ -8,8 +8,8 @@ use tempfile::TempDir;
 
 // Takes 619.19 ns on my machine
 // After hashring and tokio: 874.32 ns
-pub fn single_upserts(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Single upsert benchmarks");
+pub fn single_write(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Single write benchmarks");
     group.sample_size(20);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -33,7 +33,7 @@ pub fn single_upserts(c: &mut Criterion) {
         payload: json!({ "msg": "Hello world" }),
     }];
 
-    group.bench_function("single_upsert", |b| {
+    group.bench_function("single_write", |b| {
         b.to_async(&rt).iter(|| async {
             collection.insert_points(&points).await.unwrap();
         })
@@ -42,8 +42,8 @@ pub fn single_upserts(c: &mut Criterion) {
 
 // Takes 68.347 ms on my machine
 // After hashring and tokio: 172.99ms
-pub fn concurrent_upsert(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Concurrent upsert benchmarks");
+pub fn concurrent_write(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Concurrent write benchmarks");
     group.sample_size(20);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -63,7 +63,8 @@ pub fn concurrent_upsert(c: &mut Criterion) {
     .unwrap();
 
     let num_points = 100_000;
-    let num_threads = 4;
+    let num_threads = 16;
+    let chunk_size = (num_points / num_threads) as usize;
 
     let collection_arc = std::sync::Arc::new(collection);
 
@@ -74,9 +75,9 @@ pub fn concurrent_upsert(c: &mut Criterion) {
         })
         .collect();
 
-    group.bench_function("concurrent_upsert", |b| {
+    group.bench_function("concurrent_write", |b| {
         b.to_async(&rt).iter(|| async {
-            for chunk in points.chunks((num_points / num_threads) as usize) {
+            for chunk in points.chunks(chunk_size) {
                 let collection_clone = collection_arc.clone();
                 let chunk_clone = chunk.to_vec();
                 collection_clone.insert_points(&chunk_clone).await.unwrap();
@@ -150,6 +151,7 @@ fn concurrent_read(c: &mut Criterion) {
 
     let num_points = 100_000;
     let num_threads = 4;
+    let chunk_size = (num_points / num_threads) as usize;
 
     let points: Vec<Point> = (0..num_points)
         .map(|i| Point {
@@ -166,7 +168,7 @@ fn concurrent_read(c: &mut Criterion) {
 
     group.bench_function("concurrent_read", |b| {
         b.to_async(&rt).iter(|| async {
-            for chunk in point_ids.chunks((num_points / num_threads) as usize) {
+            for chunk in point_ids.chunks(chunk_size) {
                 collection.get_points(Some(&chunk)).await.unwrap();
             }
         })
@@ -175,8 +177,8 @@ fn concurrent_read(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    single_upserts,
-    concurrent_upsert,
+    single_write,
+    concurrent_write,
     single_read,
     concurrent_read
 );
