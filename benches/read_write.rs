@@ -88,7 +88,7 @@ pub fn concurrent_upsert(c: &mut Criterion) {
 // Perf in the beginning: ???
 // Perf with hashring and tokio: 729.73 ns
 pub fn single_read(c: &mut Criterion) {
-    let mut group = c.benchmark_group("read");
+    let mut group = c.benchmark_group("Single read benchmarks");
     group.sample_size(20);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -126,5 +126,58 @@ pub fn single_read(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, single_upserts, concurrent_upsert, single_read);
+// Perf in the beginning: ???
+// Perf with hashring and tokio: 124.54ms (100_000 points, 4 threads, 2 shards; only 170x slower than single read)
+fn concurrent_read(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Concurrent read benchmarks");
+    group.sample_size(20);
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let tempdir = TempDir::new().expect("Failed to create temporary directory");
+
+    let collection = Collection::init(
+        "test_collection".to_string(),
+        CollectionConfig {
+            params: "...".to_string(),
+        },
+        tempdir.path(),
+    )
+    .unwrap();
+
+    let num_points = 100_000;
+    let num_threads = 4;
+
+    let points: Vec<Point> = (0..num_points)
+        .map(|i| Point {
+            id: PointId::Id(i),
+            payload: json!({ "msg": format!("Hello world {}", i) }),
+        })
+        .collect();
+
+    rt.block_on(async {
+        collection.insert_points(&points).await.unwrap();
+    });
+
+    let point_ids = points.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
+
+    group.bench_function("concurrent_read", |b| {
+        b.to_async(&rt).iter(|| async {
+            for chunk in point_ids.chunks((num_points / num_threads) as usize) {
+                collection.get_points(Some(&chunk)).await.unwrap();
+            }
+        })
+    });
+}
+
+criterion_group!(
+    benches,
+    single_upserts,
+    concurrent_upsert,
+    single_read,
+    concurrent_read
+);
 criterion_main!(benches);

@@ -29,5 +29,5 @@ rocksdb = ["dep:rocksdb"]
 debug = true
 
 [[bench]]
-name = "upsert"
+name = "read_write"
 harness = false
