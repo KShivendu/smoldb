@@ -28,8 +28,8 @@ pub struct CollectionConfig {
 }
 
 impl CollectionConfig {
-    pub fn save(&self, path: &Path) -> Result<(), StorageError> {
-        let config_path = path.join(COLLECTION_CONFIG_FILE);
+    pub fn save(&self, collection_dir: &Path) -> Result<(), StorageError> {
+        let config_path = collection_dir.join(COLLECTION_CONFIG_FILE);
         let serde_json_bytes = serde_json::to_vec(self).map_err(|e| {
             StorageError::BadInput(format!(
                 "Failed to serialize collection config to JSON: {}",
@@ -56,23 +56,51 @@ pub type CollectionId = String;
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, LocalShard>,
+    ring: hashring::HashRing<ShardId>,
 }
 
 impl ShardHolder {
+    pub fn new(shards: HashMap<ShardId, LocalShard>) -> Self {
+        let mut ring = hashring::HashRing::new();
+        for shard_id in shards.keys() {
+            ring.add(*shard_id);
+        }
+
+        ShardHolder { shards, ring }
+    }
+
     pub fn empty() -> Self {
         ShardHolder {
             shards: HashMap::new(),
+            ring: hashring::HashRing::new(),
         }
     }
 
-    // ToDo: Add shard routing with hashring based on Point ID?
-    pub fn select_shard(&self) -> Result<&LocalShard, StorageError> {
-        // For now, just return the first shard ID
-        if let Some((_, shard)) = self.shards.iter().next() {
-            Ok(shard)
-        } else {
-            Err(StorageError::BadInput("No shards available".to_string()))
+    pub fn get_shard(&self, shard_id: ShardId) -> Result<&LocalShard, StorageError> {
+        self.shards
+            .get(&shard_id)
+            .ok_or_else(|| StorageError::BadInput(format!("Shard {} not found", shard_id)))
+    }
+
+    pub fn select_shards(
+        &self,
+        point_ids: &[PointId],
+    ) -> Result<HashMap<ShardId, Vec<PointId>>, StorageError> {
+        let mut shards_to_point_ids = HashMap::new();
+        for point_id in point_ids {
+            let shard_id = self.ring.get(&point_id).ok_or_else(|| {
+                StorageError::ServiceError(format!(
+                    // Should always return a shard if there's at least one shard
+                    "No shards found",
+                ))
+            })?;
+
+            shards_to_point_ids
+                .entry(*shard_id)
+                .or_insert_with(Vec::new)
+                .push(point_id.clone());
         }
+        Ok(shards_to_point_ids)
     }
 }
 
@@ -95,12 +123,16 @@ impl Collection {
 
         // ToDo: Initialize with more shards and have remote shards
         let s0_path = path.join("0");
-        let shards = HashMap::from_iter([(0, LocalShard::init(s0_path, 0))]);
+        let s1_path = path.join("1");
+        let shards = HashMap::from_iter([
+            (0, LocalShard::init(s0_path, 0)),
+            (1, LocalShard::init(s1_path, 1)),
+        ]);
 
         Ok(Collection {
             id,
             config,
-            shard_holder: Arc::new(RwLock::new(ShardHolder { shards })),
+            shard_holder: Arc::new(RwLock::new(ShardHolder::new(shards))),
             path: path.to_owned(),
         })
     }
@@ -144,35 +176,62 @@ impl Collection {
         Ok(Collection {
             id,
             config,
-            shard_holder: Arc::new(RwLock::new(ShardHolder { shards })),
+            shard_holder: Arc::new(RwLock::new(ShardHolder::new(shards))),
             path: path.to_path_buf(),
         })
     }
 
     pub async fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
         let shard_holder = &self.shard_holder.read().await;
-        let shard = shard_holder.select_shard()?;
 
-        shard.insert_points(&points).map_err(|e| {
-            StorageError::ServiceError(format!(
-                "Failed to upsert points in collection '{}': {}",
-                self.id, e
-            ))
-        })?;
+        let points_map: HashMap<PointId, Point> = points
+            .iter()
+            .map(|point| (point.id.clone(), point.clone()))
+            .collect();
+
+        let point_ids: Vec<_> = points.iter().map(|point| point.id.clone()).collect();
+
+        // ToDo: Run this operation concurrently for each shard
+        for (shard_id, shard_point_ids) in shard_holder.select_shards(&point_ids)? {
+            let shard = shard_holder
+                .shards
+                .get(&shard_id)
+                .ok_or_else(|| StorageError::BadInput(format!("Shard {} not found", shard_id)))?;
+
+            let points = shard_point_ids
+                .iter()
+                .filter_map(|id| points_map.get(id).cloned())
+                .collect::<Vec<_>>();
+
+            shard.insert_points(&points)?
+        }
 
         Ok(())
     }
 
     pub async fn get_points(&self, ids: Option<&[PointId]>) -> Result<Vec<Point>, StorageError> {
         let shard_holder = self.shard_holder.read().await;
-        let shard = shard_holder.select_shard()?;
 
-        shard.get_points(ids).map_err(|e| {
-            StorageError::ServiceError(format!(
-                "Failed to retrieve points from collection '{}': {}",
-                self.id, e
-            ))
-        })
+        let Some(ids) = ids else {
+            // If no ids are provided, return all points from all shards
+            let mut all_points = vec![];
+            for shard in shard_holder.shards.values() {
+                let points = shard.get_points(None)?;
+                all_points.extend(points);
+            }
+            return Ok(all_points);
+        };
+
+        let mut points = vec![];
+
+        for (shard_id, shard_point_ids) in shard_holder.select_shards(ids)? {
+            let shard = shard_holder.get_shard(shard_id)?;
+
+            let collected_points = shard.get_points(Some(&shard_point_ids))?;
+            points.extend(collected_points);
+        }
+
+        Ok(points)
     }
 }
 
@@ -256,10 +315,7 @@ impl TableOfContent {
     }
 
     /// Creates a new directory at the expected collection path.
-    pub async fn mkdir_collection_dir(
-        &self,
-        collection_name: &str,
-    ) -> Result<PathBuf, StorageError> {
+    pub async fn mkdir_collection_dir(collection_name: &str) -> Result<PathBuf, StorageError> {
         let path = Path::new("storage")
             .join(COLLECTIONS_DIR)
             .join(collection_name);
@@ -288,7 +344,7 @@ impl TableOfContent {
                 params,
             } => {
                 println!("Creating collection {}", collection_name);
-                let path = self.mkdir_collection_dir(&collection_name).await?;
+                let path = Self::mkdir_collection_dir(&collection_name).await?;
 
                 let collection =
                     Collection::init(collection_name.clone(), CollectionConfig { params }, &path)?;
@@ -321,7 +377,15 @@ impl TableOfContent {
 
         match operation {
             PointsOperation::Upsert(upsert_points) => {
-                collection.insert_points(&upsert_points.points).await?;
+                collection
+                    .insert_points(&upsert_points.points)
+                    .await
+                    .map_err(|e| {
+                        StorageError::ServiceError(format!(
+                            "Failed to upsert points in collection '{}': {}",
+                            collection_name, e
+                        ))
+                    })?;
             }
         }
 
@@ -338,6 +402,49 @@ impl TableOfContent {
             StorageError::BadInput(format!("Collection '{}' does not exist", collection_name))
         })?;
 
-        collection.get_points(ids).await
+        collection.get_points(ids).await.map_err(|e| {
+            StorageError::ServiceError(format!(
+                "Failed to retrieve points from collection '{}': {}",
+                collection_name, e
+            ))
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_shard_routing() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+
+        let shard_holder = ShardHolder::new(HashMap::from_iter([
+            (0, LocalShard::init(tmp_dir.path().join("0"), 0)),
+            (1, LocalShard::init(tmp_dir.path().join("1"), 1)),
+        ]));
+
+        let shards_to_point_ids = shard_holder
+            .select_shards(&[
+                PointId::Id(1),
+                PointId::Id(2),
+                PointId::Id(100),
+                PointId::Uuid("dummy-uuid".to_string()),
+            ])
+            .unwrap();
+
+        let expected_grouping = HashMap::from_iter([
+            (
+                0,
+                vec![
+                    PointId::Id(1),
+                    PointId::Id(100),
+                    PointId::Uuid("dummy-uuid".to_string()),
+                ],
+            ),
+            (1, vec![PointId::Id(2)]),
+        ]);
+
+        assert_eq!(shards_to_point_ids, expected_grouping);
     }
 }

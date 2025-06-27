@@ -2,7 +2,7 @@ use crate::storage::error::StorageError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Hash, Eq, PartialEq, Debug)]
 #[serde(untagged)]
 pub enum PointId {
     Id(u64),
