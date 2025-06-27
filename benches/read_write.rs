@@ -8,8 +8,8 @@ use tempfile::TempDir;
 
 // Takes 619.19 ns on my machine
 // After hashring and tokio: 874.32 ns
-pub fn single_upsert(c: &mut Criterion) {
-    let mut group = c.benchmark_group("upserts");
+pub fn single_upserts(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Single upsert benchmarks");
     group.sample_size(20);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -35,8 +35,6 @@ pub fn single_upsert(c: &mut Criterion) {
 
     group.bench_function("single_upsert", |b| {
         b.to_async(&rt).iter(|| async {
-            // ToDo: Make async and benchmark that?
-            // sleep(Duration::from_secs(10));
             collection.insert_points(&points).await.unwrap();
         })
     });
@@ -45,7 +43,7 @@ pub fn single_upsert(c: &mut Criterion) {
 // Takes 68.347 ms on my machine
 // After hashring and tokio: 172.99ms
 pub fn concurrent_upsert(c: &mut Criterion) {
-    let mut group = c.benchmark_group("concurrent_upserts");
+    let mut group = c.benchmark_group("Concurrent upsert benchmarks");
     group.sample_size(20);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -87,6 +85,46 @@ pub fn concurrent_upsert(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, single_upsert);
-// criterion_group!(benches, concurrent_upsert);
+// Perf in the beginning: ???
+// Perf with hashring and tokio: 729.73 ns
+pub fn single_read(c: &mut Criterion) {
+    let mut group = c.benchmark_group("read");
+    group.sample_size(20);
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let tempdir = TempDir::new().expect("Failed to create temporary directory");
+
+    let collection = Collection::init(
+        "test_collection".to_string(),
+        CollectionConfig {
+            params: "...".to_string(),
+        },
+        tempdir.path(),
+    )
+    .unwrap();
+
+    let points = [Point {
+        id: PointId::Id(0),
+        payload: json!({ "msg": "Hello world" }),
+    }];
+
+    rt.block_on(async {
+        collection.insert_points(&points).await.unwrap();
+    });
+
+    group.bench_function("single_read", |b| {
+        b.to_async(&rt).iter(|| async {
+            collection
+                .get_points(Some(&[PointId::Id(0)]))
+                .await
+                .unwrap();
+        })
+    });
+}
+
+criterion_group!(benches, single_upserts, concurrent_upsert, single_read);
 criterion_main!(benches);
