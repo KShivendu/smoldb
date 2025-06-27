@@ -7,6 +7,7 @@ use smoldb::storage::{
 use tempfile::TempDir;
 
 // Takes 619.19 ns on my machine
+// After hashring and tokio: 874.32 ns
 pub fn single_upsert(c: &mut Criterion) {
     let mut group = c.benchmark_group("upserts");
     group.sample_size(20);
@@ -42,6 +43,7 @@ pub fn single_upsert(c: &mut Criterion) {
 }
 
 // Takes 68.347 ms on my machine
+// After hashring and tokio: 172.99ms
 pub fn concurrent_upsert(c: &mut Criterion) {
     let mut group = c.benchmark_group("concurrent_upserts");
     group.sample_size(20);
@@ -85,6 +87,6 @@ pub fn concurrent_upsert(c: &mut Criterion) {
     });
 }
 
-// criterion_group!(benches, single_upsert);
-criterion_group!(benches, concurrent_upsert);
+criterion_group!(benches, single_upsert);
+// criterion_group!(benches, concurrent_upsert);
 criterion_main!(benches);
