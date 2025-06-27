@@ -1,5 +1,6 @@
 use crate::storage::content_manager::{
-    Collection, CollectionConfig, CollectionInfo, CollectionMetaOperation, TableOfContent,
+    Collection, CollectionConfig, CollectionInfo, CollectionMetaOperation, ShardHolder,
+    TableOfContent,
 };
 use actix_web::{
     Responder,
@@ -37,7 +38,7 @@ impl Dispatcher {
                     config: CollectionConfig {
                         params: "dummy_params".to_string(),
                     },
-                    shards: HashMap::new(),
+                    shard_holder: Arc::new(RwLock::new(ShardHolder::empty())),
                     path: "dummy_path".into(),
                 },
             )]))),
@@ -72,7 +73,7 @@ async fn get_collection(
         .await
         .get(&collection_name)
     {
-        return actix_web::HttpResponse::Ok().json(CollectionInfo::from(collection));
+        return actix_web::HttpResponse::Ok().json(CollectionInfo::from(collection).await);
     }
 
     actix_web::HttpResponse::Ok().json(json!({

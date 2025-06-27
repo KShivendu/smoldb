@@ -54,10 +54,32 @@ impl CollectionConfig {
 
 pub type CollectionId = String;
 
+pub struct ShardHolder {
+    shards: HashMap<ShardId, LocalShard>,
+}
+
+impl ShardHolder {
+    pub fn empty() -> Self {
+        ShardHolder {
+            shards: HashMap::new(),
+        }
+    }
+
+    // ToDo: Add shard routing with hashring based on Point ID?
+    pub fn select_shard(&self) -> Result<&LocalShard, StorageError> {
+        // For now, just return the first shard ID
+        if let Some((_, shard)) = self.shards.iter().next() {
+            Ok(shard)
+        } else {
+            Err(StorageError::BadInput("No shards available".to_string()))
+        }
+    }
+}
+
 pub struct Collection {
     pub id: CollectionId,
     pub config: CollectionConfig,
-    pub shards: HashMap<ShardId, LocalShard>,
+    pub shard_holder: Arc<RwLock<ShardHolder>>,
     pub path: PathBuf,
 }
 
@@ -78,7 +100,7 @@ impl Collection {
         Ok(Collection {
             id,
             config,
-            shards,
+            shard_holder: Arc::new(RwLock::new(ShardHolder { shards })),
             path: path.to_owned(),
         })
     }
@@ -122,21 +144,14 @@ impl Collection {
         Ok(Collection {
             id,
             config,
-            shards,
+            shard_holder: Arc::new(RwLock::new(ShardHolder { shards })),
             path: path.to_path_buf(),
         })
     }
 
-    // ToDo: Add shard routing with hashring based on Point ID?
-    fn select_shard(&self) -> Result<&LocalShard, StorageError> {
-        // For now, just return the first shard
-        self.shards.values().next().ok_or_else(|| {
-            StorageError::BadInput(format!("Collection '{}' has no shards", self.id))
-        })
-    }
-
-    pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
-        let shard = self.select_shard()?;
+    pub async fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
+        let shard_holder = &self.shard_holder.read().await;
+        let shard = shard_holder.select_shard()?;
 
         shard.insert_points(&points).map_err(|e| {
             StorageError::ServiceError(format!(
@@ -148,8 +163,9 @@ impl Collection {
         Ok(())
     }
 
-    pub fn get_points(&self, ids: Option<&[PointId]>) -> Result<Vec<Point>, StorageError> {
-        let shard = self.select_shard()?;
+    pub async fn get_points(&self, ids: Option<&[PointId]>) -> Result<Vec<Point>, StorageError> {
+        let shard_holder = self.shard_holder.read().await;
+        let shard = shard_holder.select_shard()?;
 
         shard.get_points(ids).map_err(|e| {
             StorageError::ServiceError(format!(
@@ -168,13 +184,14 @@ pub struct CollectionInfo {
     pub segment_count: usize,
 }
 
-impl From<&Collection> for CollectionInfo {
-    fn from(collection: &Collection) -> Self {
+impl CollectionInfo {
+    pub async fn from(collection: &Collection) -> Self {
+        let shard_holder = collection.shard_holder.read().await;
         CollectionInfo {
             id: collection.id.clone(),
             config: collection.config.clone(),
-            shard_count: collection.shards.len(),
-            segment_count: collection
+            shard_count: shard_holder.shards.len(),
+            segment_count: shard_holder
                 .shards
                 .values()
                 .map(|shard| shard.segments.len())
@@ -304,7 +321,7 @@ impl TableOfContent {
 
         match operation {
             PointsOperation::Upsert(upsert_points) => {
-                collection.insert_points(&upsert_points.points)?;
+                collection.insert_points(&upsert_points.points).await?;
             }
         }
 
@@ -321,6 +338,6 @@ impl TableOfContent {
             StorageError::BadInput(format!("Collection '{}' does not exist", collection_name))
         })?;
 
-        collection.get_points(ids)
+        collection.get_points(ids).await
     }
 }

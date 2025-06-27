@@ -5,7 +5,7 @@ use crate::storage::{
 use std::{collections::HashMap, path::PathBuf};
 
 pub type SegmentId = u64;
-pub type ShardId = u64;
+pub type ShardId = u32;
 
 const SEGMENTS_DIR: &str = "segments";
 
