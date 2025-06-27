@@ -5,36 +5,36 @@ pub mod storage;
 
 use crate::{
     api::{
-        cluster::{ConsensusAppData, add_peer, get_cluster},
-        collection::{Dispatcher, create_collection, get_collection, get_collections},
+        cluster::{add_peer, get_cluster, ConsensusAppData},
+        collection::{create_collection, get_collection, get_collections, Dispatcher},
         points::{get_point, list_points, upsert_points},
     },
     args::Args,
     consensus::Msg,
     storage::content_manager::TableOfContent,
 };
-use actix_web::{App, HttpServer, middleware, web};
+use actix_web::{middleware, web, App, HttpServer};
 use api::service::index;
 use args::parse_args;
-use consensus::{init_consensus, run_consensus_receiver_loop, send_propose};
-use std::sync::{Arc, mpsc};
+use consensus::init_consensus;
+use std::sync::{mpsc, Arc};
 
 async fn setup_consensus(args: &Args) -> std::io::Result<mpsc::Sender<Msg>> {
     // ToDo: Extract out mpsc::sender so we can send requests to consensus
 
-    let (mut raft_node, _slog_logger, sender_receiver) = init_consensus(args)
+    let (mut _raft_node, _slog_logger, sender_receiver) = init_consensus(args)
         .await
         .expect("Failed to initialize consensus");
 
-    let (sender, receiver) = sender_receiver;
+    let (sender, _receiver) = sender_receiver;
 
     // If you don't clone sender, you get Disconnected error if function is finished (however, it's not cause now we have infinite loop)
-    send_propose(sender.clone());
+    // send_propose(sender.clone());
 
-    tokio::spawn(async move {
-        println!("Running consensus receiver loop");
-        run_consensus_receiver_loop(&mut raft_node, receiver).await;
-    });
+    // tokio::spawn(async move {
+    //     println!("Running consensus receiver loop");
+    //     run_consensus_receiver_loop(&mut raft_node, receiver).await;
+    // });
 
     Ok(sender)
 }
