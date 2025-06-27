@@ -1,16 +1,20 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use serde_json::json;
-use tempfile::TempDir;
-
 use smoldb::storage::{
     content_manager::{Collection, CollectionConfig},
     segment::{Point, PointId},
 };
+use tempfile::TempDir;
 
 // Takes 619.19 ns on my machine
 pub fn single_upsert(c: &mut Criterion) {
     let mut group = c.benchmark_group("upserts");
     group.sample_size(20);
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 
     let tempdir = TempDir::new().expect("Failed to create temporary directory");
 
@@ -29,9 +33,10 @@ pub fn single_upsert(c: &mut Criterion) {
     }];
 
     group.bench_function("single_upsert", |b| {
-        b.iter(|| {
+        b.to_async(&rt).iter(|| async {
             // ToDo: Make async and benchmark that?
-            collection.insert_points(&points).unwrap();
+            // sleep(Duration::from_secs(10));
+            collection.insert_points(&points).await.unwrap();
         })
     });
 }
@@ -40,6 +45,11 @@ pub fn single_upsert(c: &mut Criterion) {
 pub fn concurrent_upsert(c: &mut Criterion) {
     let mut group = c.benchmark_group("concurrent_upserts");
     group.sample_size(20);
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 
     let tempdir = TempDir::new().expect("Failed to create temporary directory");
 
@@ -65,23 +75,16 @@ pub fn concurrent_upsert(c: &mut Criterion) {
         .collect();
 
     group.bench_function("concurrent_upsert", |b| {
-        b.iter(|| {
-            let mut handles = vec![];
+        b.to_async(&rt).iter(|| async {
             for chunk in points.chunks((num_points / num_threads) as usize) {
                 let collection_clone = collection_arc.clone();
                 let chunk_clone = chunk.to_vec();
-                let handle = std::thread::spawn(move || {
-                    collection_clone.insert_points(&chunk_clone).unwrap();
-                });
-                handles.push(handle);
-            }
-            for handle in handles {
-                handle.join().expect("Thread panicked");
+                collection_clone.insert_points(&chunk_clone).await.unwrap();
             }
         })
     });
 }
 
-criterion_group!(benches, single_upsert);
-// criterion_group!(benches, concurrent_upsert);
+// criterion_group!(benches, single_upsert);
+criterion_group!(benches, concurrent_upsert);
 criterion_main!(benches);
