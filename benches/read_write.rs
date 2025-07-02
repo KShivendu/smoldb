@@ -169,7 +169,7 @@ fn concurrent_read(c: &mut Criterion) {
     group.bench_function("concurrent_read", |b| {
         b.to_async(&rt).iter(|| async {
             for chunk in point_ids.chunks(chunk_size) {
-                collection.get_points(Some(&chunk)).await.unwrap();
+                collection.get_points(Some(chunk)).await.unwrap();
             }
         })
     });

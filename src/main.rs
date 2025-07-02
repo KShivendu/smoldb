@@ -56,7 +56,7 @@ async fn main() -> std::io::Result<()> {
 
     // If set, running in cluster mode?
     if let Some(bootstrap_url) = args.bootstrap {
-        println!("Running in cluster mode with bootstrap node at {}", bootstrap_url);
+        println!("Running in cluster mode with bootstrap node at {bootstrap_url}");
     }
 
     println!("Running Actix Web server on {}", args.url);

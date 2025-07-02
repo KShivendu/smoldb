@@ -36,12 +36,11 @@ async fn upsert_points(
 
     if let Err(e) = result {
         return actix_web::HttpResponse::BadRequest().body(format!(
-            "Failed to create collection '{}': {}",
-            collection_name, e
+            "Failed to create collection '{collection_name}': {e}"
         ));
     }
 
-    actix_web::HttpResponse::Created().body(format!("{} points upserted successfully", num_points))
+    actix_web::HttpResponse::Created().body(format!("{num_points} points upserted successfully"))
 }
 
 #[actix_web::get("/collections/{collection_name}/points/{id}")]
@@ -63,17 +62,16 @@ async fn get_point(
 
     match result {
         Ok(points) if points.is_empty() => {
-            return actix_web::HttpResponse::NotFound().body(format!(
-                "Point with id '{}' not found in collection '{}'",
-                id, collection_name
-            ));
+            actix_web::HttpResponse::NotFound().body(format!(
+                "Point with id '{id}' not found in collection '{collection_name}'"
+            ))
         }
         Ok(points) => {
-            return actix_web::HttpResponse::Ok().json(&points[0]);
+            actix_web::HttpResponse::Ok().json(&points[0])
         }
         Err(e) => {
-            return actix_web::HttpResponse::InternalServerError()
-                .body(format!("Error retrieving point with id '{}': {}", id, e));
+            actix_web::HttpResponse::InternalServerError()
+                .body(format!("Error retrieving point with id '{id}': {e}"))
         }
     }
 }
@@ -89,16 +87,14 @@ async fn list_points(
         Ok(points) => {
             if points.is_empty() {
                 actix_web::HttpResponse::NotFound().body(format!(
-                    "No points found in collection '{}'",
-                    collection_name
+                    "No points found in collection '{collection_name}'"
                 ))
             } else {
                 actix_web::HttpResponse::Ok().json(points)
             }
         }
         Err(e) => actix_web::HttpResponse::InternalServerError().body(format!(
-            "Error listing points in collection '{}': {}",
-            collection_name, e
+            "Error listing points in collection '{collection_name}': {e}"
         )),
     }
 }

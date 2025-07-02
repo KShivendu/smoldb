@@ -1,6 +1,6 @@
 use crate::storage::error::StorageError;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Clone, Hash, Eq, PartialEq, Debug)]
 #[serde(untagged)]
@@ -31,13 +31,13 @@ pub struct Segment {
 }
 
 impl Segment {
-    pub fn create(segments_dir: &PathBuf) -> Result<Self, StorageError> {
+    pub fn create(segments_dir: &Path) -> Result<Self, StorageError> {
         // ToDo: Have uuid segment ID
         let path = segments_dir.join("0");
         std::fs::create_dir_all(&path).expect("Failed to create segment directory");
 
         let db = sled::open(&path).map_err(|e| {
-            StorageError::ServiceError(format!("Failed to open segment database: {}", e))
+            StorageError::ServiceError(format!("Failed to open segment database: {e}"))
         })?;
 
         Ok(Self { path, db })
@@ -46,12 +46,11 @@ impl Segment {
     pub fn load(path: &PathBuf) -> Result<Self, StorageError> {
         if !path.exists() {
             return Err(StorageError::ServiceError(format!(
-                "Segment path does not exist: {:?}",
-                path
+                "Segment path does not exist: {path:?}"
             )));
         }
 
-        let db = sled::open(&path).expect("Failed to open segment database");
+        let db = sled::open(path).expect("Failed to open segment database");
 
         Ok(Self {
             path: path.to_owned(),
@@ -63,14 +62,14 @@ impl Segment {
         for point in points {
             let key = point.id.into_string();
             let value = serde_json::to_string(point).map_err(|e| {
-                StorageError::ServiceError(format!("Failed to serialize point: {}", e))
+                StorageError::ServiceError(format!("Failed to serialize point: {e}"))
             })?;
             self.db.insert(key, value.as_str()).map_err(|e| {
-                StorageError::ServiceError(format!("Failed to insert point into segment db: {}", e))
+                StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
             })?;
         }
         self.db.flush().map_err(|e| {
-            StorageError::ServiceError(format!("Failed to flush segment db: {}", e))
+            StorageError::ServiceError(format!("Failed to flush segment db: {e}"))
         })?;
         Ok(())
     }
@@ -85,16 +84,14 @@ impl Segment {
                     Ok((_, value)) => {
                         let point: Point = serde_json::from_slice(&value).map_err(|e| {
                             StorageError::ServiceError(format!(
-                                "Failed to deserialize point: {}",
-                                e
+                                "Failed to deserialize point: {e}"
                             ))
                         })?;
                         points.push(point);
                     }
                     Err(e) => {
                         return Err(StorageError::ServiceError(format!(
-                            "Failed to iterate over segment db: {}",
-                            e
+                            "Failed to iterate over segment db: {e}"
                         )));
                     }
                 }
@@ -106,10 +103,10 @@ impl Segment {
         for id in ids {
             let key = id.into_string();
             if let Some(value) = self.db.get(key).map_err(|e| {
-                StorageError::ServiceError(format!("Failed to get point from segment db: {}", e))
+                StorageError::ServiceError(format!("Failed to get point from segment db: {e}"))
             })? {
                 let point: Point = serde_json::from_slice(&value).map_err(|e| {
-                    StorageError::ServiceError(format!("Failed to deserialize point: {}", e))
+                    StorageError::ServiceError(format!("Failed to deserialize point: {e}"))
                 })?;
                 points.push(point);
             }

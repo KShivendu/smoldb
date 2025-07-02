@@ -81,7 +81,7 @@ pub fn send_propose(sender: mpsc::Sender<Msg>) {
             match res {
                 Ok(_) => println!("Proposal sent successfully"),
                 Err(e) => {
-                    println!("Failed to send proposal: {}", e);
+                    println!("Failed to send proposal: {e}");
                     // break; // Exit the loop if sending fails
                 }
             }
@@ -113,8 +113,7 @@ pub async fn run_consensus_receiver_loop(
             }) => {
                 // ToDo: Handle different consensus operations
                 println!(
-                    "Received proposal with ID: {} and operation {operation:?}",
-                    id
+                    "Received proposal with ID: {id} and operation {operation:?}"
                 );
                 cbs.insert(id, callback);
                 // ToDo: Data needs to be converted to CBOR format
@@ -122,7 +121,7 @@ pub async fn run_consensus_receiver_loop(
                 // Note: this returns ProposalDropped when the ID is repeated.
                 raft_node
                     .propose(vec![], vec![id])
-                    .expect(&format!("failed to propose entry with {id}"));
+                    .unwrap_or_else(|_| panic!("failed to propose entry with {id}"));
             }
             Ok(Msg::Raft(m)) => {
                 raft_node.step(m).unwrap();
@@ -208,7 +207,7 @@ fn on_ready(raft_node: &mut RawNode<MemStorage>, _cbs: &mut HashMap<u8, Box<dyn 
 /// Send out the messages to other peers
 fn send_messages(messages: Vec<Message>) {
     for msg in messages {
-        println!("Sending message: {:?}", msg);
+        println!("Sending message: {msg:?}");
     }
 }
 
@@ -234,13 +233,13 @@ fn handle_committed_entries(entries: Vec<Entry>, last_apply_index: &mut u64) {
 }
 
 fn handle_normal(entry: Entry) {
-    println!("Handle normal entry: {:?}", entry);
+    println!("Handle normal entry: {entry:?}");
 }
 
 fn handle_conf_change(entry: Entry) {
-    println!("Handle conf change entry: {:?}", entry);
+    println!("Handle conf change entry: {entry:?}");
 }
 
 fn handle_conf_change_v2(entry: Entry) {
-    println!("Handle conf change v2 entry: {:?}", entry);
+    println!("Handle conf change v2 entry: {entry:?}");
 }
