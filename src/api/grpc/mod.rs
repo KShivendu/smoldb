@@ -44,18 +44,14 @@ pub async fn init(host: String, grpc_port: u16) -> std::io::Result<()> {
 
     let mut server = Server::builder();
 
-    let _ = server
+    server
         .add_service(ServiceServer::new(p2p_service))
         .serve_with_shutdown(socket, async {
             #[cfg(unix)]
             wait_stop_signal("gRPC server").await;
         })
         .await
-        .or_else(|e| {
-            Err(std::io::Error::other(format!(
-                "Failed to start gRPC server: {e}",
-            )))
-        })?;
+        .map_err(|e| std::io::Error::other(format!("Failed to start gRPC server: {e}",)))?;
 
     Ok(())
 }

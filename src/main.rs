@@ -49,7 +49,7 @@ async fn start_http_server(
     consensus_app_data: Data<ConsensusAppData>,
     dispatcher_app_data: Data<Dispatcher>,
 ) -> std::io::Result<()> {
-    println!("Starting Actix Web server on {}", url);
+    println!("Starting Actix Web server on {url}");
 
     HttpServer::new(move || {
         App::new()
@@ -76,10 +76,10 @@ async fn start_p2p_server() -> Result<(), Box<dyn std::error::Error>> {
     let p2p_host = "0.0.0.0".to_string();
     let p2p_port = 9920_u16;
 
-    println!("Starting internal gRPC server on {}:{}", p2p_host, p2p_port);
+    println!("Starting internal gRPC server on {p2p_host}:{p2p_port}",);
 
     if let Err(e) = api::grpc::init(p2p_host, p2p_port).await {
-        eprintln!("Failed to start gRPC server: {}", e);
+        eprintln!("Failed to start gRPC server: {e}");
     }
 
     Ok(())
@@ -119,7 +119,7 @@ async fn main() -> std::io::Result<()> {
             if let Err(e) =
                 start_http_server(&args.url, consensus_app_data, dispatcher_app_data).await
             {
-                eprintln!("HTTP Server error: {}", e);
+                eprintln!("HTTP Server error: {e}");
             }
         });
     });
@@ -129,7 +129,7 @@ async fn main() -> std::io::Result<()> {
     let p2p_handle = std::thread::spawn(move || {
         rt_p2p.block_on(async {
             if let Err(e) = start_p2p_server().await {
-                eprintln!("gRPC Server error: {}", e);
+                eprintln!("gRPC Server error: {e}");
             }
         });
     });
