@@ -51,7 +51,9 @@ impl LocalShard {
             .file_name()
             .and_then(|name| name.to_str())
             .and_then(|name| name.parse::<ShardId>().ok())
-            .ok_or(StorageError::ServiceError("Couldn't parse shard id from shard directory".to_string()))?;
+            .ok_or(StorageError::ServiceError(
+                "Couldn't parse shard id from shard directory".to_string(),
+            ))?;
 
         let mut segments = HashMap::new();
         for (id, segment_path) in segment_paths {

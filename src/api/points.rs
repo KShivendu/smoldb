@@ -3,8 +3,8 @@ use crate::{
     storage::segment::{Point, PointId},
 };
 use actix_web::{
-    Responder,
     web::{self, Json},
+    Responder,
 };
 use serde::Deserialize;
 
@@ -61,18 +61,12 @@ async fn get_point(
         .await;
 
     match result {
-        Ok(points) if points.is_empty() => {
-            actix_web::HttpResponse::NotFound().body(format!(
-                "Point with id '{id}' not found in collection '{collection_name}'"
-            ))
-        }
-        Ok(points) => {
-            actix_web::HttpResponse::Ok().json(&points[0])
-        }
-        Err(e) => {
-            actix_web::HttpResponse::InternalServerError()
-                .body(format!("Error retrieving point with id '{id}': {e}"))
-        }
+        Ok(points) if points.is_empty() => actix_web::HttpResponse::NotFound().body(format!(
+            "Point with id '{id}' not found in collection '{collection_name}'"
+        )),
+        Ok(points) => actix_web::HttpResponse::Ok().json(&points[0]),
+        Err(e) => actix_web::HttpResponse::InternalServerError()
+            .body(format!("Error retrieving point with id '{id}': {e}")),
     }
 }
 
@@ -86,9 +80,8 @@ async fn list_points(
     match result {
         Ok(points) => {
             if points.is_empty() {
-                actix_web::HttpResponse::NotFound().body(format!(
-                    "No points found in collection '{collection_name}'"
-                ))
+                actix_web::HttpResponse::NotFound()
+                    .body(format!("No points found in collection '{collection_name}'"))
             } else {
                 actix_web::HttpResponse::Ok().json(points)
             }

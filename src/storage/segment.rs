@@ -68,9 +68,9 @@ impl Segment {
                 StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
             })?;
         }
-        self.db.flush().map_err(|e| {
-            StorageError::ServiceError(format!("Failed to flush segment db: {e}"))
-        })?;
+        self.db
+            .flush()
+            .map_err(|e| StorageError::ServiceError(format!("Failed to flush segment db: {e}")))?;
         Ok(())
     }
 
@@ -83,9 +83,7 @@ impl Segment {
                 match result {
                     Ok((_, value)) => {
                         let point: Point = serde_json::from_slice(&value).map_err(|e| {
-                            StorageError::ServiceError(format!(
-                                "Failed to deserialize point: {e}"
-                            ))
+                            StorageError::ServiceError(format!("Failed to deserialize point: {e}"))
                         })?;
                         points.push(point);
                     }
