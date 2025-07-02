@@ -54,6 +54,11 @@ async fn main() -> std::io::Result<()> {
 
     let dispatcher_app_data = web::Data::from(Arc::new(Dispatcher::from(toc)));
 
+    // If set, running in cluster mode?
+    if let Some(bootstrap_url) = args.bootstrap {
+        println!("Running in cluster mode with bootstrap node at {}", bootstrap_url);
+    }
+
     println!("Running Actix Web server on {}", args.url);
 
     // Start Actix Web server on the same Tokio runtime
