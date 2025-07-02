@@ -1,7 +1,7 @@
 version: "3.7"
 
 services:
-  smoldb-node-0:
+  smoldb-0:
     image: kshivendu/smoldb:latest
     # build:
     #   context: .
@@ -15,9 +15,9 @@ services:
       - "9900:9900"
       - "9910:9910"
     entrypoint: []
-    command: ./smoldb --url 'smoldb-node-0:9900'
+    command: ./smoldb --url 'smoldb-0:9900'
 
-  smoldb-node-1:
+  smoldb-1:
     image: kshivendu/smoldb:latest
     # build:
     #   context: .
@@ -28,14 +28,14 @@ services:
       - QDRANT__CLUSTER__RESHARDING_ENABLED=true
       - QDRANT__CLUSTER__P2P__PORT=6335
     depends_on:
-      - smoldb-node-0
+      - smoldb-0
     ports:
       - "9901:9900"
       - "9911:9910"
     entrypoint: []
-    command: bash -c "sleep 5 && ./smoldb --boostrap 'smoldb-node-0:9900' --url 'smoldb-node-1:9900'"
+    command: bash -c "sleep 5 && ./smoldb --bootstrap 'smoldb-0:9900' --url 'smoldb-1:9900'"
 
-  smoldb-node-2:
+  smoldb-2:
     image: kshivendu/smoldb:latest
     # build:
     #   context: .
@@ -46,9 +46,9 @@ services:
       - QDRANT__CLUSTER__RESHARDING_ENABLED=true
       - QDRANT__CLUSTER__P2P__PORT=6335
     depends_on:
-      - smoldb-node-0
+      - smoldb-0
     ports:
       - "9902:9900"
       - "9912:9910"
     entrypoint: []
-    command: bash -c "sleep 6 && ./smoldb --boostrap 'smoldb-node-0:9900' --url 'smoldb-node-2:9900'"
+    command: bash -c "sleep 6 && ./smoldb --bootstrap 'smoldb-0:9900' --url 'smoldb-2:9900'"
