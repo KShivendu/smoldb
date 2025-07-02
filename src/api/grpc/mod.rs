@@ -1,3 +1,4 @@
+#[rustfmt::skip] // tonic uses `prettyplease` to format its output
 mod smoldb_p2p_grpc;
 
 use smoldb_p2p_grpc::{
