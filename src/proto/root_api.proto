@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package smoldb_p2p_grpc;
+
+service Service {
+  rpc RootApi (RootApiRequest) returns (RootApiReply) {}
+}
+
+message RootApiRequest {}
+
+message RootApiReply {
+  string title = 1;
+  string version = 2;
+}
