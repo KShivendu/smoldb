@@ -11,7 +11,7 @@ pub struct RootApiReply {
     pub commit: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Generated client implementations.
-pub mod smoldb_internal_service_client {
+pub mod service_client {
     #![allow(
         unused_variables,
         dead_code,
@@ -22,10 +22,10 @@ pub mod smoldb_internal_service_client {
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
-    pub struct SmoldbInternalServiceClient<T> {
+    pub struct ServiceClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl SmoldbInternalServiceClient<tonic::transport::Channel> {
+    impl ServiceClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -36,7 +36,7 @@ pub mod smoldb_internal_service_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> SmoldbInternalServiceClient<T>
+    impl<T> ServiceClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::Body>,
         T::Error: Into<StdError>,
@@ -54,7 +54,7 @@ pub mod smoldb_internal_service_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> SmoldbInternalServiceClient<InterceptedService<T, F>>
+        ) -> ServiceClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -68,7 +68,7 @@ pub mod smoldb_internal_service_client {
                 http::Request<tonic::body::Body>,
             >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
         {
-            SmoldbInternalServiceClient::new(InterceptedService::new(inner, interceptor))
+            ServiceClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -115,17 +115,17 @@ pub mod smoldb_internal_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/smoldb.SmoldbInternalService/RootApi",
+                "/smoldb_internal_grpc.Service/RootApi",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("smoldb.SmoldbInternalService", "RootApi"));
+                .insert(GrpcMethod::new("smoldb_internal_grpc.Service", "RootApi"));
             self.inner.unary(req, path, codec).await
         }
     }
 }
 /// Generated server implementations.
-pub mod smoldb_internal_service_server {
+pub mod service_server {
     #![allow(
         unused_variables,
         dead_code,
@@ -134,23 +134,23 @@ pub mod smoldb_internal_service_server {
         clippy::let_unit_value,
     )]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with SmoldbInternalServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with ServiceServer.
     #[async_trait]
-    pub trait SmoldbInternalService: std::marker::Send + std::marker::Sync + 'static {
+    pub trait Service: std::marker::Send + std::marker::Sync + 'static {
         async fn root_api(
             &self,
             request: tonic::Request<super::RootApiRequest>,
         ) -> std::result::Result<tonic::Response<super::RootApiReply>, tonic::Status>;
     }
     #[derive(Debug)]
-    pub struct SmoldbInternalServiceServer<T> {
+    pub struct ServiceServer<T> {
         inner: Arc<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
         max_decoding_message_size: Option<usize>,
         max_encoding_message_size: Option<usize>,
     }
-    impl<T> SmoldbInternalServiceServer<T> {
+    impl<T> ServiceServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -201,10 +201,9 @@ pub mod smoldb_internal_service_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>>
-    for SmoldbInternalServiceServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for ServiceServer<T>
     where
-        T: SmoldbInternalService,
+        T: Service,
         B: Body + std::marker::Send + 'static,
         B::Error: Into<StdError> + std::marker::Send + 'static,
     {
@@ -219,12 +218,10 @@ pub mod smoldb_internal_service_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/smoldb.SmoldbInternalService/RootApi" => {
+                "/smoldb_internal_grpc.Service/RootApi" => {
                     #[allow(non_camel_case_types)]
-                    struct RootApiSvc<T: SmoldbInternalService>(pub Arc<T>);
-                    impl<
-                        T: SmoldbInternalService,
-                    > tonic::server::UnaryService<super::RootApiRequest>
+                    struct RootApiSvc<T: Service>(pub Arc<T>);
+                    impl<T: Service> tonic::server::UnaryService<super::RootApiRequest>
                     for RootApiSvc<T> {
                         type Response = super::RootApiReply;
                         type Future = BoxFuture<
@@ -237,8 +234,7 @@ pub mod smoldb_internal_service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SmoldbInternalService>::root_api(&inner, request)
-                                    .await
+                                <T as Service>::root_api(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -287,7 +283,7 @@ pub mod smoldb_internal_service_server {
             }
         }
     }
-    impl<T> Clone for SmoldbInternalServiceServer<T> {
+    impl<T> Clone for ServiceServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -300,8 +296,8 @@ pub mod smoldb_internal_service_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "smoldb.SmoldbInternalService";
-    impl<T> tonic::server::NamedService for SmoldbInternalServiceServer<T> {
+    pub const SERVICE_NAME: &str = "smoldb_internal_grpc.Service";
+    impl<T> tonic::server::NamedService for ServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
 }

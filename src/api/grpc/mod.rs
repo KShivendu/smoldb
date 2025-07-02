@@ -1,17 +1,16 @@
-mod smoldb;
-use std::net::{IpAddr, SocketAddr};
+mod smoldb_internal_grpc;
 
-use smoldb::{smoldb_internal_service_server::SmoldbInternalService, RootApiReply, RootApiRequest};
+use smoldb_internal_grpc::{
+    service_server::Service, service_server::ServiceServer, RootApiReply, RootApiRequest,
+};
+use std::net::{IpAddr, SocketAddr};
 use tonic::{transport::Server, Request, Response, Status};
 
-use crate::api::grpc::smoldb::smoldb_internal_service_server::SmoldbInternalServiceServer;
-
-// Additional health check service that follows gRPC health check protocol as described in #2614
 #[derive(Default)]
-pub struct SmolDbInternalGrpcService {}
+pub struct SmoldbService {}
 
 #[tonic::async_trait]
-impl SmoldbInternalService for SmolDbInternalGrpcService {
+impl Service for SmoldbService {
     async fn root_api(
         &self,
         _request: Request<RootApiRequest>,
@@ -41,12 +40,12 @@ async fn wait_stop_signal(for_what: &str) {
 
 pub async fn init(host: String, grpc_port: u16) -> std::io::Result<()> {
     let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
-    let internal_service = SmolDbInternalGrpcService::default();
+    let internal_service = SmoldbService::default();
 
     let mut server = Server::builder();
 
     let _ = server
-        .add_service(SmoldbInternalServiceServer::new(internal_service))
+        .add_service(ServiceServer::new(internal_service))
         .serve_with_shutdown(socket, async {
             #[cfg(unix)]
             wait_stop_signal("gRPC server").await;
