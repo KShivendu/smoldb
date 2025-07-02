@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package smoldb;
+
+service SmoldbInternalService {
+  rpc RootApi (RootApiRequest) returns (RootApiReply) {}
+}
+
+message RootApiRequest {}
+
+message RootApiReply {
+  string title = 1;
+  string version = 2;
+  optional string commit = 3;
+}
