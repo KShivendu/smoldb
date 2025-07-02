@@ -66,6 +66,10 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Update apt
+        run: sudo apt-get update
+      - name: Install dependencies
+        run: sudo apt-get install clang
       - name: Rustfmt Check
         run: cargo +nightly fmt --all -- --check
       - name: Clippy Check
