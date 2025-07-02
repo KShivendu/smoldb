@@ -69,7 +69,7 @@ jobs:
       - name: Update apt
         run: sudo apt-get update
       - name: Install dependencies
-        run: sudo apt-get install clang
+        run: sudo apt-get install llvm-dev libclang-dev clang
       - name: Rustfmt Check
         run: cargo +nightly fmt --all -- --check
       - name: Clippy Check
