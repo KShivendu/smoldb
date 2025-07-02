@@ -6,13 +6,13 @@ on:
   pull_request:
     branches: [ '**' ]
 
-env:
-  RUST_BACKTRACE: full
 
 jobs:
   unit-tests:
     name: Rust Unit Tests
     runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: full
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
