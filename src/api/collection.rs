@@ -105,13 +105,11 @@ async fn create_collection(
 
     if let Err(e) = result {
         return actix_web::HttpResponse::BadRequest().body(format!(
-            "Failed to create collection '{}': {}",
-            collection_name, e
+            "Failed to create collection '{collection_name}': {e}"
         ));
     }
 
     actix_web::HttpResponse::Created().body(format!(
-        "Collection '{}' created successfully",
-        collection_name
+        "Collection '{collection_name}' created successfully"
     ))
 }

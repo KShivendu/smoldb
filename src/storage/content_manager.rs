@@ -32,20 +32,19 @@ impl CollectionConfig {
         let config_path = collection_dir.join(COLLECTION_CONFIG_FILE);
         let serde_json_bytes = serde_json::to_vec(self).map_err(|e| {
             StorageError::BadInput(format!(
-                "Failed to serialize collection config to JSON: {}",
-                e
+                "Failed to serialize collection config to JSON: {e}"
             ))
         })?;
 
         let mut file = std::fs::File::create(config_path).map_err(|e| {
-            StorageError::ServiceError(format!("Failed to create collection config file: {}", e))
+            StorageError::ServiceError(format!("Failed to create collection config file: {e}"))
         })?;
 
         // Use buffered write for higher perf otherwise it will do multiple kernel calls
         std::io::BufWriter::new(&mut file)
             .write_all(&serde_json_bytes)
             .map_err(|e| {
-                StorageError::ServiceError(format!("Failed to write collection config: {}", e))
+                StorageError::ServiceError(format!("Failed to write collection config: {e}"))
             })?;
 
         Ok(())
@@ -79,7 +78,7 @@ impl ShardHolder {
     pub fn get_shard(&self, shard_id: ShardId) -> Result<&LocalShard, StorageError> {
         self.shards
             .get(&shard_id)
-            .ok_or_else(|| StorageError::BadInput(format!("Shard {} not found", shard_id)))
+            .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))
     }
 
     pub fn select_shards(
@@ -89,10 +88,7 @@ impl ShardHolder {
         let mut shards_to_point_ids = HashMap::new();
         for point_id in point_ids {
             let shard_id = self.ring.get(&point_id).ok_or_else(|| {
-                StorageError::ServiceError(format!(
-                    // Should always return a shard if there's at least one shard
-                    "No shards found",
-                ))
+                StorageError::ServiceError("No shards found".to_string())
             })?;
 
             shards_to_point_ids
@@ -148,19 +144,19 @@ impl Collection {
 
         let config: CollectionConfig = {
             let config_file = std::fs::File::open(&config_path).map_err(|e| {
-                StorageError::ServiceError(format!("Failed to open collection config file: {}", e))
+                StorageError::ServiceError(format!("Failed to open collection config file: {e}"))
             })?;
 
             let config_file_buf = std::io::BufReader::new(&config_file);
             serde_json::from_reader(config_file_buf).map_err(|e| {
-                StorageError::BadInput(format!("Failed to parse collection config JSON: {}", e))
+                StorageError::BadInput(format!("Failed to parse collection config JSON: {e}"))
             })?
         };
 
         // ToDo: Load shards
         let mut shards = HashMap::new();
         let dir_contents = std::fs::read_dir(path).map_err(|e| {
-            StorageError::ServiceError(format!("Failed to read collection directory: {}", e))
+            StorageError::ServiceError(format!("Failed to read collection directory: {e}"))
         })?;
 
         for entry in dir_contents {
@@ -196,7 +192,7 @@ impl Collection {
             let shard = shard_holder
                 .shards
                 .get(&shard_id)
-                .ok_or_else(|| StorageError::BadInput(format!("Shard {} not found", shard_id)))?;
+                .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))?;
 
             let points = shard_point_ids
                 .iter()
@@ -328,7 +324,7 @@ impl TableOfContent {
         }
 
         tokio::fs::create_dir_all(&path).await.map_err(|e| {
-            StorageError::ServiceError(format!("Can't create directory for collection: {}", e))
+            StorageError::ServiceError(format!("Can't create directory for collection: {e}"))
         })?;
 
         Ok(path)
@@ -343,7 +339,7 @@ impl TableOfContent {
                 collection_name,
                 params,
             } => {
-                println!("Creating collection {}", collection_name);
+                println!("Creating collection {collection_name}");
                 let path = Self::mkdir_collection_dir(&collection_name).await?;
 
                 let collection =
@@ -353,8 +349,7 @@ impl TableOfContent {
                     let mut write_collections = self.collections.write().await;
                     if write_collections.contains_key(&collection_name) {
                         return Err(StorageError::BadInput(format!(
-                            "Collection with name '{}' already exists",
-                            collection_name
+                            "Collection with name '{collection_name}' already exists"
                         )));
                     }
                     write_collections.insert(collection_name, collection);
@@ -372,7 +367,7 @@ impl TableOfContent {
         // ToDo: Have independent read locks for each collection. It should improve perf?
         let collections = self.collections.read().await;
         let collection = collections.get(collection_name).ok_or_else(|| {
-            StorageError::BadInput(format!("Collection '{}' does not exist", collection_name))
+            StorageError::BadInput(format!("Collection '{collection_name}' does not exist"))
         })?;
 
         match operation {
@@ -382,8 +377,7 @@ impl TableOfContent {
                     .await
                     .map_err(|e| {
                         StorageError::ServiceError(format!(
-                            "Failed to upsert points in collection '{}': {}",
-                            collection_name, e
+                            "Failed to upsert points in collection '{collection_name}': {e}"
                         ))
                     })?;
             }
@@ -399,13 +393,12 @@ impl TableOfContent {
     ) -> Result<Vec<Point>, StorageError> {
         let collections = self.collections.read().await;
         let collection = collections.get(collection_name).ok_or_else(|| {
-            StorageError::BadInput(format!("Collection '{}' does not exist", collection_name))
+            StorageError::BadInput(format!("Collection '{collection_name}' does not exist"))
         })?;
 
         collection.get_points(ids).await.map_err(|e| {
             StorageError::ServiceError(format!(
-                "Failed to retrieve points from collection '{}': {}",
-                collection_name, e
+                "Failed to retrieve points from collection '{collection_name}': {e}"
             ))
         })
     }
