@@ -52,10 +52,9 @@ pub async fn init(host: String, grpc_port: u16) -> std::io::Result<()> {
         })
         .await
         .or_else(|e| {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to start gRPC server: {e}",),
-            ))
+            Err(std::io::Error::other(format!(
+                "Failed to start gRPC server: {e}",
+            )))
         })?;
 
     Ok(())
