@@ -1,0 +1,72 @@
+name: "Test Suite"
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ '**' ]
+
+env:
+  RUST_BACKTRACE: full
+
+jobs:
+  unit-tests:
+    name: Rust Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-tarpaulin
+        if: github.event_name == 'push'
+      - name: Run Rust Unit Tests
+        run: |
+          if [ "${{ github.event_name }}" == "push" ]; then
+            COVERAGE=1 tests/unit.sh
+          else
+            tests/unit.sh
+          fi
+      - name: Upload Unit Test Coverage
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-coverage
+          path: coverage/unit/cobertura.xml
+
+  upload-coverage:
+    name: Upload Code Coverage
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    # Only generate/upload coverage on pushing to branch, not on PRs
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4 # Source code should be available for codecov to work
+      - name: Download Unit Test Coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-coverage
+          path: coverage/unit/
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/unit/cobertura.xml
+
+  format-lint:
+    name: Linters and formatters
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install minimal nightly (only for fmt)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Rustfmt Check
+        run: cargo +nightly fmt --all -- --check
+      - name: Clippy Check
+        run: cargo clippy --all-targets --all-features -- -D warnings
