@@ -1,24 +1,23 @@
-mod smoldb_internal_grpc;
+mod smoldb_p2p_grpc;
 
-use smoldb_internal_grpc::{
+use smoldb_p2p_grpc::{
     service_server::Service, service_server::ServiceServer, RootApiReply, RootApiRequest,
 };
 use std::net::{IpAddr, SocketAddr};
 use tonic::{transport::Server, Request, Response, Status};
 
 #[derive(Default)]
-pub struct SmoldbService {}
+pub struct P2PService {}
 
 #[tonic::async_trait]
-impl Service for SmoldbService {
+impl Service for P2PService {
     async fn root_api(
         &self,
         _request: Request<RootApiRequest>,
     ) -> Result<Response<RootApiReply>, Status> {
         let response = RootApiReply {
             title: "Smoldb Internal Service".to_string(),
-            commit: Some("COMMIT_HERE".to_string()),
-            version: "VERSION_HERE".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         };
 
         Ok(Response::new(response))
@@ -40,12 +39,12 @@ async fn wait_stop_signal(for_what: &str) {
 
 pub async fn init(host: String, grpc_port: u16) -> std::io::Result<()> {
     let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
-    let internal_service = SmoldbService::default();
+    let p2p_service = P2PService::default();
 
     let mut server = Server::builder();
 
     let _ = server
-        .add_service(ServiceServer::new(internal_service))
+        .add_service(ServiceServer::new(p2p_service))
         .serve_with_shutdown(socket, async {
             #[cfg(unix)]
             wait_stop_signal("gRPC server").await;
