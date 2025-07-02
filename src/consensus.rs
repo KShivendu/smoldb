@@ -1,14 +1,14 @@
 use crate::args::Args;
 use raft::{
-    Config, RawNode,
     prelude::{Entry, EntryType, Message},
     storage::MemStorage,
+    Config, RawNode,
 };
-use slog::{Drain, o};
+use slog::{o, Drain};
 use std::{
     collections::HashMap,
     error::Error,
-    sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, channel},
+    sync::mpsc::{self, channel, Receiver, RecvTimeoutError, Sender},
     thread,
     time::Duration,
 };
@@ -112,9 +112,7 @@ pub async fn run_consensus_receiver_loop(
                 operation,
             }) => {
                 // ToDo: Handle different consensus operations
-                println!(
-                    "Received proposal with ID: {id} and operation {operation:?}"
-                );
+                println!("Received proposal with ID: {id} and operation {operation:?}");
                 cbs.insert(id, callback);
                 // ToDo: Data needs to be converted to CBOR format
 

@@ -1,5 +1,5 @@
+use rocksdb::{Options, DB};
 use std::path::PathBuf;
-use rocksdb::{DB, Options};
 
 pub fn open_db(path: impl Into<PathBuf>) -> DB {
     let path = path.into();

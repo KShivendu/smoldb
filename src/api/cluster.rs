@@ -1,5 +1,5 @@
 use crate::consensus::{ConsensusOperation, Msg};
-use actix_web::{HttpResponse, Responder, web};
+use actix_web::{web, HttpResponse, Responder};
 use serde::Serialize;
 use serde_json::Value;
 use std::{collections::HashMap, sync::mpsc::Sender};

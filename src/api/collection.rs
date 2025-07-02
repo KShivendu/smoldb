@@ -3,8 +3,8 @@ use crate::storage::content_manager::{
     TableOfContent,
 };
 use actix_web::{
-    Responder,
     web::{self, Json},
+    Responder,
 };
 use serde::Deserialize;
 use serde_json::json;

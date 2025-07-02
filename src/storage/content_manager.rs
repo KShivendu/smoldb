@@ -87,9 +87,10 @@ impl ShardHolder {
     ) -> Result<HashMap<ShardId, Vec<PointId>>, StorageError> {
         let mut shards_to_point_ids = HashMap::new();
         for point_id in point_ids {
-            let shard_id = self.ring.get(&point_id).ok_or_else(|| {
-                StorageError::ServiceError("No shards found".to_string())
-            })?;
+            let shard_id = self
+                .ring
+                .get(&point_id)
+                .ok_or_else(|| StorageError::ServiceError("No shards found".to_string()))?;
 
             shards_to_point_ids
                 .entry(*shard_id)
