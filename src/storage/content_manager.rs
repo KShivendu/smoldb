@@ -99,7 +99,7 @@ impl ReplicaHolder {
             .get(&shard_id)
             .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))?;
 
-        return Ok(&replica_set.local);
+        Ok(&replica_set.local)
     }
 
     pub fn select_shards(
@@ -439,9 +439,12 @@ mod tests {
     async fn test_shard_routing() {
         let tmp_dir = tempfile::tempdir().unwrap();
 
+        let s0 = LocalShard::init(tmp_dir.path().join("0"), 0);
+        let s1 = LocalShard::init(tmp_dir.path().join("1"), 1);
+
         let shard_holder = ReplicaHolder::new(HashMap::from_iter([
-            (0, LocalShard::init(tmp_dir.path().join("0"), 0)),
-            (1, LocalShard::init(tmp_dir.path().join("1"), 1)),
+            (0, ReplicaSet::new(s0, vec![])),
+            (1, ReplicaSet::new(s1, vec![])),
         ]));
 
         let shards_to_point_ids = shard_holder
