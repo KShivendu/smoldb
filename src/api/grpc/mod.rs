@@ -1,5 +1,5 @@
 #[rustfmt::skip] // tonic uses `prettyplease` to format its output
-mod smoldb_p2p_grpc;
+pub mod smoldb_p2p_grpc;
 
 mod raft_service;
 mod simple_service;
@@ -10,13 +10,15 @@ use crate::{
         simple_service::SimpleService,
         smoldb_p2p_grpc::{raft_server::RaftServer, service_server::ServiceServer},
     },
-    consensus,
+    consensus::{self, ConsensusState},
 };
+use http::Uri;
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::mpsc::Sender,
+    sync::{mpsc::Sender, Arc},
+    time::Duration,
 };
-use tonic::transport::Server;
+use tonic::transport::{Channel, Error as TonicError, Server};
 
 #[cfg(unix)]
 async fn wait_stop_signal(for_what: &str) {
@@ -31,16 +33,29 @@ async fn wait_stop_signal(for_what: &str) {
     }
 }
 
+pub async fn make_grpc_channel(
+    timeout: Duration,
+    connection_timeout: Duration,
+    uri: Uri,
+) -> Result<Channel, TonicError> {
+    let endpoint = Channel::builder(uri)
+        .timeout(timeout)
+        .connect_timeout(connection_timeout);
+    // `connect` is using the `Reconnect` network service internally to handle dropped connections
+    endpoint.connect().await
+}
+
 pub async fn init(
     host: String,
     grpc_port: u16,
     sender: Sender<consensus::Msg>,
+    consensus_state: Option<Arc<ConsensusState>>,
 ) -> std::io::Result<()> {
     let mut server = Server::builder();
     let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
 
     let p2p_service = ServiceServer::new(SimpleService::default());
-    let raft_service = RaftServer::new(RaftService::new(sender));
+    let raft_service = RaftServer::new(RaftService::new(sender, consensus_state));
 
     server
         .add_service(p2p_service)
