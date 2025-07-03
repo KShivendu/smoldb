@@ -31,11 +31,11 @@ async fn get_cluster(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     let dispatcher = dispatcher.into_inner();
 
     if let Some(cluster_info) = dispatcher.get_cluster_info().await {
-        return HttpResponse::Ok().json(cluster_info);
+        HttpResponse::Ok().json(cluster_info)
     } else {
-        return HttpResponse::Ok().json(json!({
+        HttpResponse::Ok().json(json!({
             "enabled": false,
-        }));
+        }))
     }
 }
 

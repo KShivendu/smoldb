@@ -83,7 +83,7 @@ impl Raft for RaftService {
         let all_peers = persistent
             .peers
             .into_iter()
-            .map(|(id, uri)| Peer { id: id, uri: uri })
+            .map(|(id, uri)| Peer { id, uri })
             .collect();
 
         let this_peer_id = persistent.peer_id;
