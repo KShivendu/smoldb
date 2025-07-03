@@ -1,6 +1,6 @@
 # smoldb
 
-A smol database implemented from scratch. It is heavily inspired by [Qdrant](https://github.com/qdrant/qdrant)'s design.
+A smol distributed database implemented from scratch. It is heavily inspired by [Qdrant](https://github.com/qdrant/qdrant)'s design. It's mainly built with the goal of learning.
 
 ### Usage:
 
@@ -35,8 +35,4 @@ curl -X GET http://localhost:9900/collections/test/points/0
 }
 ```
 
-### ToDo:
-- [ ] Think about what kind of database this should be.
-- [ ] Consensus for config/shard/cluster updates
-- [ ] Operations wal and wal delta transfer for data updates
-
+Check [roadmap](./ROADMAP.md) for details
