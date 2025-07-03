@@ -33,6 +33,28 @@ curl -X GET http://localhost:9900/collections/test/points/0
     "msg": "hello world"
   }
 }
+
+# Get collection's cluster info (response below)
+curl -X GET http://localhost:9900/collections/test/cluster
+
+# Response:
+{
+    "peer_id": 0,
+    "shard_count": 2,
+    "local_shards": [
+        {
+            "shard_id": 1,
+            "point_count": 0,
+            "state": "Active"
+        },
+        {
+            "shard_id": 0,
+            "point_count": 1,
+            "state": "Active"
+        }
+    ],
+    "remote_shards": []
+}
 ```
 
 Check [roadmap](./ROADMAP.md) for details
