@@ -54,7 +54,7 @@ pub enum Msg {
         operation: ConsensusOperation,
         callback: Box<dyn Fn() + Send>,
     },
-    Raft(Message),
+    Raft(Box<Message>),
 }
 
 /// Spawn a thread to **continuously** send a proposal to mpsc::Sender (eventually to Raft).
@@ -122,7 +122,7 @@ pub async fn run_consensus_receiver_loop(
                     .unwrap_or_else(|_| panic!("failed to propose entry with {id}"));
             }
             Ok(Msg::Raft(m)) => {
-                raft_node.step(m).unwrap();
+                raft_node.step(*m).unwrap();
             }
             Err(RecvTimeoutError::Timeout) => {
                 // Timeout occurred, checking Raft node...

@@ -1,6 +1,7 @@
 use crate::{
     api::grpc::smoldb_p2p_grpc::{
-        raft_server::Raft, AddPeerToKnownMessage, AllPeers, PeerId, RaftMessage as RaftMessageBytes, Uri,
+        raft_server::Raft, AddPeerToKnownMessage, AllPeers, PeerId,
+        RaftMessage as RaftMessageBytes, Uri,
     },
     consensus,
 };
@@ -26,13 +27,13 @@ impl Raft for RaftService {
         // For now, we just return an empty response.
 
         let message_bytes = &request.get_mut().message[..];
-        let message = <RaftMessageParsed as ProtocolBufferMessage>::decode(message_bytes)
-            .map_err(|e| Status::internal(format!("Failed to decode Raft message: {}", e)))?;
+        let message = <RaftMessageParsed>::decode(message_bytes)
+            .map_err(|e| Status::internal(format!("Failed to decode Raft message: {e}")))?;
 
         self.sender
-            .send(consensus::Msg::Raft(message))
+            .send(consensus::Msg::Raft(Box::new(message)))
             .map_err(|e| {
-                Status::internal(format!("Failed to send Raft message over channel: {}", e))
+                Status::internal(format!("Failed to send Raft message over channel: {e}"))
             })?;
 
         Ok(Response::new(()))
