@@ -1,3 +1,4 @@
+use crate::consensus::{ConsensusState, Persistent};
 use crate::storage::content_manager::{
     Collection, CollectionConfig, CollectionInfo, CollectionMetaOperation, ShardHolder,
     TableOfContent,
@@ -6,27 +7,33 @@ use actix_web::{
     web::{self, Json},
     Responder,
 };
+use http::Uri;
 use serde::Deserialize;
 use serde_json::json;
+use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 // Router that decides if query should go through ToC or consensus
 pub struct Dispatcher {
     pub toc: Arc<TableOfContent>,
+    pub consensus_state: Option<Arc<ConsensusState>>,
 }
 
 impl Dispatcher {
-    pub fn empty() -> Self {
+    pub fn from(toc: TableOfContent, consensus_state: Option<Arc<ConsensusState>>) -> Self {
         Dispatcher {
-            toc: Arc::new(TableOfContent {
-                collections: Arc::new(RwLock::new(HashMap::new())),
-            }),
+            toc: Arc::new(toc),
+            consensus_state,
         }
     }
 
-    pub fn from(toc: TableOfContent) -> Self {
-        Dispatcher { toc: Arc::new(toc) }
+    pub async fn get_cluster_info(&self) -> Option<Persistent> {
+        if let Some(consensus_state) = &self.consensus_state {
+            Some(consensus_state.persistent.read().await.clone())
+        } else {
+            None
+        }
     }
 
     pub fn dummy() -> Self {
@@ -38,10 +45,13 @@ impl Dispatcher {
                     config: CollectionConfig {
                         params: "dummy_params".to_string(),
                     },
-                    shard_holder: Arc::new(RwLock::new(ShardHolder::empty())),
+                    shard_holder: Arc::new(RwLock::new(ShardHolder::dummy())),
                     path: "dummy_path".into(),
                 },
             )]))),
+            consensus_state: Some(Arc::new(ConsensusState::dummy(
+                Uri::from_str("http://smoldb-dummy:9900").unwrap(),
+            ))),
         }
     }
 }

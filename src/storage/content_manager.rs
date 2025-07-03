@@ -68,7 +68,7 @@ impl ShardHolder {
         ShardHolder { shards, ring }
     }
 
-    pub fn empty() -> Self {
+    pub fn dummy() -> Self {
         ShardHolder {
             shards: HashMap::new(),
             ring: hashring::HashRing::new(),

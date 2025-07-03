@@ -1,31 +1,138 @@
+use crate::api::grpc::{
+    make_grpc_channel,
+    smoldb_p2p_grpc::{raft_client::RaftClient, AddPeerToKnownMessage},
+};
+use http::Uri;
 use raft::{
     prelude::{Entry, EntryType, Message},
     storage::MemStorage,
     Config, RawNode,
 };
+use rand::Rng;
+use serde::Serialize;
+use serde_json::Value;
 use slog::{o, Drain};
 use std::{
     collections::HashMap,
     error::Error,
-    sync::mpsc::{self, channel, Receiver, RecvTimeoutError, Sender},
+    sync::{
+        mpsc::{self, channel, Receiver, RecvTimeoutError, Sender},
+        Arc,
+    },
     thread::{self},
     time::Duration,
 };
-use tokio::time::Instant;
+use tokio::{runtime::Handle, sync::RwLock, time::Instant};
 
 const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
 
-type PeerId = u64;
+pub type PeerId = u64;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Persistent {
+    pub peer_id: PeerId,
+    pub peers: HashMap<PeerId, String>,
+    pub raft_info: Value,
+}
+
+#[derive(Debug)]
+pub struct ConsensusState {
+    // ToDo: Replace with parking_lot::RwLock?
+    pub persistent: RwLock<Persistent>,
+}
+
+impl ConsensusState {
+    pub fn dummy(p2p_uri: http::Uri) -> Self {
+        let mut rng = rand::rng();
+        let random_peer_id = rng.random::<u64>();
+
+        let p = Persistent {
+            peer_id: random_peer_id,
+            peers: HashMap::from([(random_peer_id, p2p_uri.to_string())]),
+            raft_info: serde_json::json!({
+                "term": 1,
+                "commit_index": 1,
+                "last_applied": 1,
+                "role": "leader",
+                "leader": 1
+            }),
+        };
+        ConsensusState {
+            persistent: RwLock::new(p),
+        }
+    }
+
+    pub async fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), Box<dyn Error>> {
+        // Add a new peer to the consensus state
+        let mut persistent = self.persistent.write().await;
+        // if persistent.peers.contains_key(&peer_id) {
+        //     return Err(Box::from(format!("Peer with ID {peer_id} already exists.")));
+        // }
+        persistent.peers.insert(peer_id, uri.to_string());
+        Ok(())
+    }
+}
 
 pub struct Consensus {
     raft_node: RawNode<MemStorage>,
     receiver: Receiver<Msg>,
+    runtime: Handle,
 }
 
 impl Consensus {
+    /// Bootstrap the consensus from existing node (leader)
+    async fn bootstrap(
+        &self,
+        cluster_uri: Uri,
+        consensus_state: Arc<ConsensusState>,
+    ) -> Result<(), Box<dyn Error>> {
+        let bootstrap_timeout_sec = 10;
+        let channel = make_grpc_channel(
+            Duration::from_secs(bootstrap_timeout_sec),
+            Duration::from_secs(bootstrap_timeout_sec),
+            cluster_uri,
+        )
+        .await?;
+
+        let persistent = consensus_state.persistent.read().await.clone();
+        let peer_id = persistent.peer_id;
+        let peer_uri = persistent
+            .peers
+            .get(&peer_id)
+            .cloned()
+            .ok_or_else(|| format!("Peer with ID {peer_id} not found in persistent state"))?;
+
+        let mut client = RaftClient::new(channel);
+        let all_peers = client
+            .add_peer_to_known(tonic::Request::new(AddPeerToKnownMessage {
+                id: peer_id,
+                uri: Some(peer_uri),
+                port: Some(9920),
+            }))
+            .await?
+            .into_inner();
+
+        println!("Adding all received peers: {all_peers:?}");
+        for peer in all_peers.all_peers {
+            // Add peer to local state
+            consensus_state
+                .add_peer(peer.id, peer.uri.parse::<Uri>()?)
+                .await?;
+        }
+
+        // local_state.set_first_voter(all_peeers.first_peer_id);
+        // local_state.set_conf_state(ConfState::from((vec![all_peers.first_peer_id], vec![])))?;
+
+        Ok(())
+    }
+
     /// Initialize consensus and run in loop with a dedicated thread.
-    pub fn start() -> Result<Sender<Msg>, Box<dyn Error>> {
-        let (mut consensus, sender) = Self::new()?;
+    pub fn start(
+        bootstrap_uri: Option<Uri>,
+        consensus_state: Arc<ConsensusState>,
+        runtime: Handle,
+    ) -> Result<Sender<Msg>, Box<dyn Error>> {
+        let (mut consensus, sender) = Self::new(runtime)?;
 
         // Start a thread for consensus
         // Note: we don't need to preserve the thread handle,
@@ -34,6 +141,17 @@ impl Consensus {
         thread::Builder::new()
             .name("consensus".to_string())
             .spawn(move || {
+                // If set, running in cluster mode?
+                if let Some(bootstrap_uri) = bootstrap_uri {
+                    println!("Bootstrapping consensus from {bootstrap_uri}");
+                    consensus
+                        .runtime
+                        .block_on(async {
+                            consensus.bootstrap(bootstrap_uri, consensus_state).await
+                        })
+                        .unwrap();
+                }
+
                 println!("Starting consensus thread...");
                 if let Err(e) = consensus.run_loop() {
                     eprintln!("Consensus thread stopped with error: {e}");
@@ -45,8 +163,8 @@ impl Consensus {
         Ok(sender)
     }
 
-    /// Initialize a new Consensus instance with a Raft node, sender, and receiver.
-    fn new() -> Result<(Self, Sender<Msg>), Box<dyn Error>> {
+    /// Create a new Consensus instance with a Raft node, sender, and receiver.
+    fn new(runtime: Handle) -> Result<(Self, Sender<Msg>), Box<dyn Error>> {
         let storage = MemStorage::new_with_conf_state((vec![1], vec![]));
         let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!());
 
@@ -61,6 +179,7 @@ impl Consensus {
         let consensus = Consensus {
             raft_node: raft,
             receiver,
+            runtime,
         };
 
         Ok((consensus, sender))
@@ -72,6 +191,7 @@ impl Consensus {
             let Self {
                 raft_node,
                 receiver,
+                runtime: _,
             } = self;
 
             // Wait for messages from the receiver
@@ -114,11 +234,13 @@ pub enum ConsensusOperation {
 }
 
 pub enum Msg {
+    // Custom messages for consensus operations
     Propose {
         id: u8,
         operation: ConsensusOperation,
         callback: Box<dyn Fn() + Send>,
     },
+    // Internal raft crate messages
     Raft(Box<Message>),
 }
 

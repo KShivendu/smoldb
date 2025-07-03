@@ -4,6 +4,7 @@ pub mod consensus;
 pub mod storage;
 
 use crate::consensus::Consensus;
+use crate::consensus::ConsensusState;
 use crate::{
     api::{
         cluster::{add_peer, get_cluster, ConsensusAppData},
@@ -20,15 +21,18 @@ use actix_web::{
 };
 use api::service::index;
 use args::parse_args;
+use http::Uri;
 use std::sync::{mpsc::Sender, Arc};
 
 // Function to start the Actix Web server
 async fn start_http_server(
-    url: &str,
+    url: Uri,
     consensus_app_data: Data<ConsensusAppData>,
     dispatcher_app_data: Data<Dispatcher>,
 ) -> std::io::Result<()> {
     println!("Starting Actix Web server on {url}");
+
+    let (host, port) = (url.host().unwrap(), url.port_u16().unwrap());
 
     HttpServer::new(move || {
         App::new()
@@ -45,19 +49,23 @@ async fn start_http_server(
             .app_data(consensus_app_data.clone())
             .app_data(dispatcher_app_data.clone())
     })
-    .bind(url)?
+    .bind((host, port))?
     .run()
     .await
 }
 
 // Function to start the Tonic internal (p2p) gRPC server
-async fn start_p2p_server(msg_sender: Sender<Msg>) -> Result<(), Box<dyn std::error::Error>> {
-    let p2p_host = "0.0.0.0".to_string();
-    let p2p_port = 9920_u16;
+async fn start_p2p_server(
+    p2p_uri: Uri,
+    msg_sender: Sender<Msg>,
+    consensus_state: Option<Arc<ConsensusState>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let p2p_host = p2p_uri.host().unwrap().to_string();
+    let p2p_port = p2p_uri.port_u16().unwrap();
 
     println!("Starting internal gRPC server on {p2p_host}:{p2p_port}");
 
-    if let Err(e) = api::grpc::init(p2p_host, p2p_port, msg_sender).await {
+    if let Err(e) = api::grpc::init(p2p_host, p2p_port, msg_sender, consensus_state).await {
         eprintln!("Failed to start gRPC server: {e}");
     }
 
@@ -69,32 +77,39 @@ async fn main() -> std::io::Result<()> {
     let args = parse_args();
     println!("Starting node with url: {}", args.url);
 
-    let sender = Consensus::start().expect("Failed to start consensus");
+    // Create a dedicated thread for internal gRPC service while we also run Actix Web server
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(8)
+        .thread_name("general")
+        .build()
+        .expect("Failed to create Tokio runtime");
+
+    let consensus_async_runtime = rt.handle().clone();
+
+    let consensus_state = Arc::new(ConsensusState::dummy(args.p2p_url.clone()));
+
+    let sender = Consensus::start(
+        args.bootstrap.clone(),
+        consensus_state.clone(),
+        consensus_async_runtime,
+    )
+    .expect("Failed to start consensus");
 
     let consensus_app_data = web::Data::from(Arc::new(ConsensusAppData::new(sender.clone())));
 
     let toc = TableOfContent::load();
 
-    let dispatcher_app_data = web::Data::from(Arc::new(Dispatcher::from(toc)));
-
-    // If set, running in cluster mode?
-    if let Some(bootstrap_url) = args.bootstrap {
-        println!("Running in cluster mode with bootstrap node at {bootstrap_url}");
-    }
-
-    // Create a dedicated thread for internal gRPC service while we also run Actix Web server
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(2)
-        .thread_name("general")
-        .build()
-        .expect("Failed to create Tokio runtime");
+    let dispatcher_app_data = web::Data::from(Arc::new(Dispatcher::from(
+        toc,
+        Some(consensus_state.clone()),
+    )));
 
     let rt_http = rt.handle().clone();
     let http_handle = std::thread::spawn(move || {
         rt_http.block_on(async {
             if let Err(e) =
-                start_http_server(&args.url, consensus_app_data, dispatcher_app_data).await
+                start_http_server(args.url, consensus_app_data, dispatcher_app_data).await
             {
                 eprintln!("HTTP Server error: {e}");
             }
@@ -106,7 +121,9 @@ async fn main() -> std::io::Result<()> {
     let sender_to_move = sender.clone();
     let p2p_handle = std::thread::spawn(move || {
         rt_p2p.block_on(async {
-            if let Err(e) = start_p2p_server(sender_to_move).await {
+            if let Err(e) =
+                start_p2p_server(args.p2p_url, sender_to_move, Some(consensus_state)).await
+            {
                 eprintln!("gRPC Server error: {e}");
             }
         });
