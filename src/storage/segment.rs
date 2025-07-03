@@ -111,4 +111,8 @@ impl Segment {
         }
         Ok(points)
     }
+
+    pub fn count_points(&self) -> usize {
+        self.db.len()
+    }
 }

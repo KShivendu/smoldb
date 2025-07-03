@@ -3,6 +3,7 @@ pub mod args;
 pub mod consensus;
 pub mod storage;
 
+use crate::api::collection::get_collection_cluster_info;
 use crate::consensus::Consensus;
 use crate::consensus::ConsensusState;
 use crate::{
@@ -41,6 +42,7 @@ async fn start_http_server(
             .service(get_cluster)
             .service(add_peer)
             .service(get_collections)
+            .service(get_collection_cluster_info)
             .service(get_collection)
             .service(create_collection)
             .service(upsert_points)
@@ -75,7 +77,6 @@ async fn start_p2p_server(
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let args = parse_args();
-    println!("Starting node with url: {}", args.url);
 
     // Create a dedicated thread for internal gRPC service while we also run Actix Web server
     let rt = tokio::runtime::Builder::new_multi_thread()
