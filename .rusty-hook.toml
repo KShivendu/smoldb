@@ -1,0 +1,8 @@
+# Trigger directly with rusty-hook run --hook <pre-commit|pre-push>
+
+[hooks]
+pre-commit = "cargo +nightly fmt --all -- --check"
+pre-push = "cargo clippy --all-targets --all-features -- -D warnings"
+
+[logging]
+verbose = true
