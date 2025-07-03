@@ -1,4 +1,3 @@
-use crate::args::Args;
 use raft::{
     prelude::{Entry, EntryType, Message},
     storage::MemStorage,
@@ -9,7 +8,7 @@ use std::{
     collections::HashMap,
     error::Error,
     sync::mpsc::{self, channel, Receiver, RecvTimeoutError, Sender},
-    thread,
+    thread::{self},
     time::Duration,
 };
 use tokio::time::Instant;
@@ -18,28 +17,94 @@ const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
 
 type PeerId = u64;
 
-pub async fn init_consensus(
-    _args: &Args,
-) -> Result<
-    (
-        RawNode<MemStorage>,
-        slog::Logger,
-        (Sender<Msg>, Receiver<Msg>),
-    ),
-    Box<dyn Error>,
-> {
-    let storage = MemStorage::new_with_conf_state((vec![1], vec![]));
-    let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!());
+pub struct Consensus {
+    raft_node: RawNode<MemStorage>,
+    receiver: Receiver<Msg>,
+}
 
-    let config = Config {
-        id: 1, // The unique ID for the Raft node
-        ..Default::default()
-    };
-    let raft = RawNode::new(&config, storage, &logger)?;
+impl Consensus {
+    /// Initialize consensus and run in loop with a dedicated thread.
+    pub fn start() -> Result<Sender<Msg>, Box<dyn Error>> {
+        let (mut consensus, sender) = Self::new()?;
 
-    let sender_receiver = channel::<Msg>();
+        // Start a thread for consensus
+        // Note: we don't need to preserve the thread handle,
+        // as we are not going to join it later.
+        // The thread will run until the program exits.
+        thread::Builder::new()
+            .name("consensus".to_string())
+            .spawn(move || {
+                println!("Starting consensus thread...");
+                if let Err(e) = consensus.run_loop() {
+                    eprintln!("Consensus thread stopped with error: {e}");
+                } else {
+                    println!("Consensus thread stopped");
+                }
+            })?;
 
-    Ok((raft, logger, sender_receiver))
+        Ok(sender)
+    }
+
+    /// Initialize a new Consensus instance with a Raft node, sender, and receiver.
+    fn new() -> Result<(Self, Sender<Msg>), Box<dyn Error>> {
+        let storage = MemStorage::new_with_conf_state((vec![1], vec![]));
+        let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!());
+
+        let config = Config {
+            id: 1, // The unique ID for the Raft node
+            ..Default::default()
+        };
+        let raft = RawNode::new(&config, storage, &logger)?;
+
+        let (sender, receiver) = channel::<Msg>();
+
+        let consensus = Consensus {
+            raft_node: raft,
+            receiver,
+        };
+
+        Ok((consensus, sender))
+    }
+
+    /// Run the consensus loop at each tick.
+    fn run_loop(&mut self) -> Result<(), Box<dyn Error>> {
+        loop {
+            let Self {
+                raft_node,
+                receiver,
+            } = self;
+
+            // Wait for messages from the receiver
+            match receiver.recv_timeout(RAFT_TICK_INTERVAL) {
+                Ok(msg) => {
+                    match msg {
+                        Msg::Propose {
+                            id,
+                            operation,
+                            callback: _,
+                        } => {
+                            println!(
+                                "Received proposal with ID: {id} and operation: {operation:?}"
+                            );
+                        }
+                        Msg::Raft(message) => {
+                            println!("Received Raft message: {message:?}");
+                            // Process the Raft message
+                            raft_node.step(*message)?;
+                        }
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    // Timeout occurred, we can tick the Raft node
+                    raft_node.tick();
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    println!("Receiver disconnected, exiting loop.");
+                    return Ok(());
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -57,42 +122,7 @@ pub enum Msg {
     Raft(Box<Message>),
 }
 
-/// Spawn a thread to **continuously** send a proposal to mpsc::Sender (eventually to Raft).
-pub fn send_propose(sender: mpsc::Sender<Msg>) {
-    thread::spawn(move || {
-        let mut counter = 0;
-
-        loop {
-            thread::sleep(Duration::from_secs(3));
-            println!("proposed a request");
-            counter += 1;
-
-            let temp_sender = sender.clone();
-
-            // let (s1, r1) = mpsc::channel::<u8>();
-            let res = temp_sender.send(Msg::Propose {
-                id: counter,
-                operation: ConsensusOperation::UpdateData(counter as u64),
-                callback: Box::new(move || {
-                    // s1.send(0).unwrap();
-                    println!("Propose callback executed");
-                }),
-            });
-            match res {
-                Ok(_) => println!("Proposal sent successfully"),
-                Err(e) => {
-                    println!("Failed to send proposal: {e}");
-                    // break; // Exit the loop if sending fails
-                }
-            }
-            // let n = r1.recv().unwrap();
-            // assert_eq!(n, 0);
-
-            println!("finished the proposal callback");
-        }
-    });
-}
-
+/// ToDo: Integrate into  [`Consensus::run_loop`] to handle incoming messages
 pub async fn run_consensus_receiver_loop(
     raft_node: &mut RawNode<MemStorage>,
     receiver: mpsc::Receiver<Msg>,
