@@ -8,7 +8,6 @@ actix-web = "4.11.0"
 clap = { version = "4.5.38", features = ["derive"] }
 hashring = "0.3.6"
 prost = "0.13.5"
-rocksdb = { version = "0.23.0", default-features = false, optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 sled = { version = "0.34.7", default-features = false }
@@ -30,10 +29,10 @@ tonic-build = "0.13.1"
 
 [dev-dependencies]
 criterion = { version = "0.6.0", features = ["async_tokio", "html_reports"] }
+rusty-hook = "0.11.2"
 
 [features]
 default = []
-rocksdb = ["dep:rocksdb"]
 
 [profile.bench]
 debug = true
