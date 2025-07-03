@@ -76,9 +76,11 @@ async fn start_p2p_server() -> Result<(), Box<dyn std::error::Error>> {
     let p2p_host = "0.0.0.0".to_string();
     let p2p_port = 9920_u16;
 
-    println!("Starting internal gRPC server on {p2p_host}:{p2p_port}",);
+    println!("Starting internal gRPC server on {p2p_host}:{p2p_port}");
 
-    if let Err(e) = api::grpc::init(p2p_host, p2p_port).await {
+    let (sender, _reciever) = mpsc::channel::<Msg>();
+
+    if let Err(e) = api::grpc::init(p2p_host, p2p_port, sender).await {
         eprintln!("Failed to start gRPC server: {e}");
     }
 
