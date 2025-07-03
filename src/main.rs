@@ -3,13 +3,13 @@ pub mod args;
 pub mod consensus;
 pub mod storage;
 
+use crate::consensus::Consensus;
 use crate::{
     api::{
         cluster::{add_peer, get_cluster, ConsensusAppData},
         collection::{create_collection, get_collection, get_collections, Dispatcher},
         points::{get_point, list_points, upsert_points},
     },
-    args::Args,
     consensus::Msg,
     storage::content_manager::TableOfContent,
 };
@@ -20,28 +20,7 @@ use actix_web::{
 };
 use api::service::index;
 use args::parse_args;
-use consensus::init_consensus;
-use std::sync::{mpsc, Arc};
-
-async fn setup_consensus(args: &Args) -> std::io::Result<mpsc::Sender<Msg>> {
-    // ToDo: Extract out mpsc::sender so we can send requests to consensus
-
-    let (mut _raft_node, _slog_logger, sender_receiver) = init_consensus(args)
-        .await
-        .expect("Failed to initialize consensus");
-
-    let (sender, _receiver) = sender_receiver;
-
-    // If you don't clone sender, you get Disconnected error if function is finished (however, it's not cause now we have infinite loop)
-    // send_propose(sender.clone());
-
-    // tokio::spawn(async move {
-    //     println!("Running consensus receiver loop");
-    //     run_consensus_receiver_loop(&mut raft_node, receiver).await;
-    // });
-
-    Ok(sender)
-}
+use std::sync::{mpsc::Sender, Arc};
 
 // Function to start the Actix Web server
 async fn start_http_server(
@@ -72,15 +51,13 @@ async fn start_http_server(
 }
 
 // Function to start the Tonic internal (p2p) gRPC server
-async fn start_p2p_server() -> Result<(), Box<dyn std::error::Error>> {
+async fn start_p2p_server(msg_sender: Sender<Msg>) -> Result<(), Box<dyn std::error::Error>> {
     let p2p_host = "0.0.0.0".to_string();
     let p2p_port = 9920_u16;
 
     println!("Starting internal gRPC server on {p2p_host}:{p2p_port}");
 
-    let (sender, _reciever) = mpsc::channel::<Msg>();
-
-    if let Err(e) = api::grpc::init(p2p_host, p2p_port, sender).await {
+    if let Err(e) = api::grpc::init(p2p_host, p2p_port, msg_sender).await {
         eprintln!("Failed to start gRPC server: {e}");
     }
 
@@ -92,11 +69,9 @@ async fn main() -> std::io::Result<()> {
     let args = parse_args();
     println!("Starting node with url: {}", args.url);
 
-    let sender = setup_consensus(&args)
-        .await
-        .expect("Failed to setup consensus");
+    let sender = Consensus::start().expect("Failed to start consensus");
 
-    let consensus_app_data = web::Data::from(Arc::new(ConsensusAppData::new(sender)));
+    let consensus_app_data = web::Data::from(Arc::new(ConsensusAppData::new(sender.clone())));
 
     let toc = TableOfContent::load();
 
@@ -128,9 +103,10 @@ async fn main() -> std::io::Result<()> {
 
     // Start p2p gRPC server on the same Tokio runtime
     let rt_p2p = rt.handle().clone();
+    let sender_to_move = sender.clone();
     let p2p_handle = std::thread::spawn(move || {
         rt_p2p.block_on(async {
-            if let Err(e) = start_p2p_server().await {
+            if let Err(e) = start_p2p_server(sender_to_move).await {
                 eprintln!("gRPC Server error: {e}");
             }
         });

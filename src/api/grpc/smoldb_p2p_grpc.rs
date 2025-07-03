@@ -252,7 +252,7 @@ pub mod raft_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// Send Raft message to another peer
+        /// Send Raft message to this peer
         pub async fn send(
             &mut self,
             request: impl tonic::IntoRequest<super::RaftMessage>,
@@ -513,7 +513,7 @@ pub mod raft_server {
     /// Generated trait containing gRPC methods that should be implemented for use with RaftServer.
     #[async_trait]
     pub trait Raft: std::marker::Send + std::marker::Sync + 'static {
-        /// Send Raft message to another peer
+        /// Send Raft message to this peer
         async fn send(
             &self,
             request: tonic::Request<super::RaftMessage>,

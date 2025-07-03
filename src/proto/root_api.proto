@@ -21,7 +21,7 @@ message RootApiReply {
 // Raft service:
 
 service Raft {
-  // Send Raft message to another peer
+  // Send Raft message to this peer
   rpc Send (RaftMessage) returns (google.protobuf.Empty);
   // Send to bootstrap peer
   // Returns uri by id if bootstrap knows this peer
