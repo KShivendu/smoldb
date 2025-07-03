@@ -89,4 +89,12 @@ impl LocalShard {
             ))
         }
     }
+
+    pub fn count_points(&self) -> usize {
+        if let Some(segment) = self.segments.get(&0) {
+            segment.count_points()
+        } else {
+            0
+        }
+    }
 }

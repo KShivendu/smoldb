@@ -1,5 +1,6 @@
 use crate::{
     api::points::PointsOperation,
+    consensus::PeerId,
     storage::{
         error::StorageError,
         segment::{Point, PointId},
@@ -53,32 +54,52 @@ impl CollectionConfig {
 
 pub type CollectionId = String;
 
-pub struct ShardHolder {
-    shards: HashMap<ShardId, LocalShard>,
+pub struct RemoteShard {
+    pub id: ShardId,
+    pub collection: CollectionId,
+    pub peer_id: PeerId,
+}
+
+pub struct ReplicaSet {
+    pub local: LocalShard,
+    pub remotes: Vec<RemoteShard>,
+}
+
+impl ReplicaSet {
+    pub fn new(local: LocalShard, remotes: Vec<RemoteShard>) -> Self {
+        ReplicaSet { local, remotes }
+    }
+}
+
+pub struct ReplicaHolder {
+    pub shards: HashMap<ShardId, ReplicaSet>,
     ring: hashring::HashRing<ShardId>,
 }
 
-impl ShardHolder {
-    pub fn new(shards: HashMap<ShardId, LocalShard>) -> Self {
+impl ReplicaHolder {
+    pub fn new(shards: HashMap<ShardId, ReplicaSet>) -> Self {
         let mut ring = hashring::HashRing::new();
         for shard_id in shards.keys() {
             ring.add(*shard_id);
         }
 
-        ShardHolder { shards, ring }
+        ReplicaHolder { shards, ring }
     }
 
     pub fn dummy() -> Self {
-        ShardHolder {
+        ReplicaHolder {
             shards: HashMap::new(),
             ring: hashring::HashRing::new(),
         }
     }
 
-    pub fn get_shard(&self, shard_id: ShardId) -> Result<&LocalShard, StorageError> {
-        self.shards
+    pub async fn get_shard(&self, shard_id: ShardId) -> Result<&LocalShard, StorageError> {
+        let replica_set = self
+            .shards
             .get(&shard_id)
-            .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))
+            .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))?;
+
+        return Ok(&replica_set.local);
     }
 
     pub fn select_shards(
@@ -104,7 +125,7 @@ impl ShardHolder {
 pub struct Collection {
     pub id: CollectionId,
     pub config: CollectionConfig,
-    pub shard_holder: Arc<RwLock<ShardHolder>>,
+    pub replica_holder: Arc<RwLock<ReplicaHolder>>,
     pub path: PathBuf,
 }
 
@@ -122,14 +143,14 @@ impl Collection {
         let s0_path = path.join("0");
         let s1_path = path.join("1");
         let shards = HashMap::from_iter([
-            (0, LocalShard::init(s0_path, 0)),
-            (1, LocalShard::init(s1_path, 1)),
+            (0, ReplicaSet::new(LocalShard::init(s0_path, 0), vec![])),
+            (1, ReplicaSet::new(LocalShard::init(s1_path, 1), vec![])),
         ]);
 
         Ok(Collection {
             id,
             config,
-            shard_holder: Arc::new(RwLock::new(ShardHolder::new(shards))),
+            replica_holder: Arc::new(RwLock::new(ReplicaHolder::new(shards))),
             path: path.to_owned(),
         })
     }
@@ -155,7 +176,7 @@ impl Collection {
         };
 
         // ToDo: Load shards
-        let mut shards = HashMap::new();
+        let mut replicas = HashMap::new();
         let dir_contents = std::fs::read_dir(path).map_err(|e| {
             StorageError::ServiceError(format!("Failed to read collection directory: {e}"))
         })?;
@@ -167,19 +188,24 @@ impl Collection {
             }
 
             let shard = LocalShard::load(&path)?;
-            shards.insert(shard.id, shard);
+            let shard_id = shard.id;
+            replicas.insert(
+                shard_id,
+                // ToDo: Load remote shards if any
+                ReplicaSet::new(shard, vec![]),
+            );
         }
 
         Ok(Collection {
             id,
             config,
-            shard_holder: Arc::new(RwLock::new(ShardHolder::new(shards))),
+            replica_holder: Arc::new(RwLock::new(ReplicaHolder::new(replicas))),
             path: path.to_path_buf(),
         })
     }
 
     pub async fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
-        let shard_holder = &self.shard_holder.read().await;
+        let shard_holder = &self.replica_holder.read().await;
 
         let points_map: HashMap<PointId, Point> = points
             .iter()
@@ -190,7 +216,7 @@ impl Collection {
 
         // ToDo: Run this operation concurrently for each shard
         for (shard_id, shard_point_ids) in shard_holder.select_shards(&point_ids)? {
-            let shard = shard_holder
+            let replica_set = shard_holder
                 .shards
                 .get(&shard_id)
                 .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))?;
@@ -200,20 +226,20 @@ impl Collection {
                 .filter_map(|id| points_map.get(id).cloned())
                 .collect::<Vec<_>>();
 
-            shard.insert_points(&points)?
+            replica_set.local.insert_points(&points)?
         }
 
         Ok(())
     }
 
     pub async fn get_points(&self, ids: Option<&[PointId]>) -> Result<Vec<Point>, StorageError> {
-        let shard_holder = self.shard_holder.read().await;
+        let shard_holder = self.replica_holder.read().await;
 
         let Some(ids) = ids else {
             // If no ids are provided, return all points from all shards
             let mut all_points = vec![];
-            for shard in shard_holder.shards.values() {
-                let points = shard.get_points(None)?;
+            for replica_set in shard_holder.shards.values() {
+                let points = replica_set.local.get_points(None)?;
                 all_points.extend(points);
             }
             return Ok(all_points);
@@ -222,7 +248,7 @@ impl Collection {
         let mut points = vec![];
 
         for (shard_id, shard_point_ids) in shard_holder.select_shards(ids)? {
-            let shard = shard_holder.get_shard(shard_id)?;
+            let shard = shard_holder.get_shard(shard_id).await?;
 
             let collected_points = shard.get_points(Some(&shard_point_ids))?;
             points.extend(collected_points);
@@ -242,7 +268,7 @@ pub struct CollectionInfo {
 
 impl CollectionInfo {
     pub async fn from(collection: &Collection) -> Self {
-        let shard_holder = collection.shard_holder.read().await;
+        let shard_holder = collection.replica_holder.read().await;
         CollectionInfo {
             id: collection.id.clone(),
             config: collection.config.clone(),
@@ -250,7 +276,7 @@ impl CollectionInfo {
             segment_count: shard_holder
                 .shards
                 .values()
-                .map(|shard| shard.segments.len())
+                .map(|shard| shard.local.segments.len())
                 .sum(),
         }
     }
@@ -413,7 +439,7 @@ mod tests {
     async fn test_shard_routing() {
         let tmp_dir = tempfile::tempdir().unwrap();
 
-        let shard_holder = ShardHolder::new(HashMap::from_iter([
+        let shard_holder = ReplicaHolder::new(HashMap::from_iter([
             (0, LocalShard::init(tmp_dir.path().join("0"), 0)),
             (1, LocalShard::init(tmp_dir.path().join("1"), 1)),
         ]));
