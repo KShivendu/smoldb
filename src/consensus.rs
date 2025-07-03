@@ -13,7 +13,7 @@ use serde::Serialize;
 use serde_json::Value;
 use slog::{o, Drain};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     error::Error,
     sync::{
         mpsc::{self, channel, Receiver, RecvTimeoutError, Sender},
@@ -31,7 +31,8 @@ pub type PeerId = u64;
 #[derive(Debug, Clone, Serialize)]
 pub struct Persistent {
     pub peer_id: PeerId,
-    pub peers: HashMap<PeerId, String>,
+    // Using instead of HashMap to keep peers sorted (consistent) across the nodes
+    pub peers: BTreeMap<PeerId, String>,
     pub raft_info: Value,
 }
 
@@ -44,11 +45,12 @@ pub struct ConsensusState {
 impl ConsensusState {
     pub fn dummy(p2p_uri: http::Uri) -> Self {
         let mut rng = rand::rng();
-        let random_peer_id = rng.random::<u64>();
+        // Do not generate too big peer ID, to avoid problems with serialization
+        let random_peer_id = rng.random::<PeerId>() % (1 << 53);
 
         let p = Persistent {
             peer_id: random_peer_id,
-            peers: HashMap::from([(random_peer_id, p2p_uri.to_string())]),
+            peers: BTreeMap::from([(random_peer_id, p2p_uri.to_string())]),
             raft_info: serde_json::json!({
                 "term": 1,
                 "commit_index": 1,
