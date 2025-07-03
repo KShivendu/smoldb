@@ -122,7 +122,6 @@ pub enum Msg {
     Raft(Box<Message>),
 }
 
-
 /// ToDo: Integrate into  [`Consensus::run_loop`] to handle incoming messages
 pub async fn run_consensus_receiver_loop(
     raft_node: &mut RawNode<MemStorage>,
