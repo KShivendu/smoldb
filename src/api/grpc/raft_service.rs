@@ -4,6 +4,7 @@ use crate::{
         RaftMessage as RaftMessageBytes, Uri,
     },
     consensus::{self, ConsensusState},
+    storage::content_manager::TableOfContent,
 };
 use prost_for_raft::Message as ProtocolBufferMessage; // this trait is required for .decode() to work
 use raft::eraftpb::Message as RaftMessageParsed;
@@ -12,16 +13,19 @@ use tonic::{Request, Response, Status};
 
 pub struct RaftService {
     sender: Sender<consensus::Msg>,
+    toc: Arc<TableOfContent>,
     consensus_state: Option<Arc<ConsensusState>>,
 }
 
 impl RaftService {
     pub fn new(
         sender: Sender<consensus::Msg>,
+        toc: Arc<TableOfContent>,
         consensus_state: Option<Arc<ConsensusState>>,
     ) -> Self {
         RaftService {
             sender,
+            toc,
             consensus_state,
         }
     }
@@ -77,6 +81,19 @@ impl Raft for RaftService {
             .add_peer(request.id, uri)
             .await
             .map_err(|e| Status::internal(format!("Failed to add peer: {e}")))?;
+
+        let collections_guard = self.toc.collections.write().await;
+        for (collection_name, collection) in collections_guard.iter() {
+            let mut replica_holder_guard = collection.replica_holder.write().await;
+            replica_holder_guard
+                .add_remote_shards(request.id, collection_name.clone())
+                .await
+                .map_err(|e| {
+                    Status::internal(format!(
+                        "Failed to add remote shards for collection '{collection_name}': {e}",
+                    ))
+                })?;
+        }
 
         let persistent = consensus_state.persistent.read().await.clone();
 

@@ -1,9 +1,11 @@
 pub mod api;
 pub mod args;
+pub mod channel_service;
 pub mod consensus;
 pub mod storage;
 
 use crate::api::collection::get_collection_cluster_info;
+use crate::channel_service::ChannelService;
 use crate::consensus::Consensus;
 use crate::consensus::ConsensusState;
 use crate::{
@@ -59,6 +61,7 @@ async fn start_http_server(
 // Function to start the Tonic internal (p2p) gRPC server
 async fn start_p2p_server(
     p2p_uri: Uri,
+    toc: Arc<TableOfContent>,
     msg_sender: Sender<Msg>,
     consensus_state: Option<Arc<ConsensusState>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -67,7 +70,7 @@ async fn start_p2p_server(
 
     println!("Starting internal gRPC server on {p2p_host}:{p2p_port}");
 
-    if let Err(e) = api::grpc::init(p2p_host, p2p_port, msg_sender, consensus_state).await {
+    if let Err(e) = api::grpc::init(p2p_host, p2p_port, toc, msg_sender, consensus_state).await {
         eprintln!("Failed to start gRPC server: {e}");
     }
 
@@ -88,7 +91,7 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_async_runtime = rt.handle().clone();
 
-    let consensus_state = Arc::new(ConsensusState::dummy(args.p2p_url.clone()));
+    let consensus_state = Arc::new(ConsensusState::dummy(args.p2p_url.clone(), args.peer_id));
 
     let sender = Consensus::start(
         args.bootstrap.clone(),
@@ -99,10 +102,14 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_app_data = web::Data::from(Arc::new(ConsensusAppData::new(sender.clone())));
 
-    let toc = TableOfContent::load();
+    // Sharing the Arc<RwLock<HashMap<PeerId, Uri>>>
+    let channel_service = ChannelService::new(consensus_state.peer_address_by_id.clone());
+
+    let toc = TableOfContent::load(channel_service);
+    let toc_arc = Arc::new(toc);
 
     let dispatcher_app_data = web::Data::from(Arc::new(Dispatcher::from(
-        toc,
+        toc_arc.clone(),
         Some(consensus_state.clone()),
     )));
 
@@ -123,7 +130,7 @@ async fn main() -> std::io::Result<()> {
     let p2p_handle = std::thread::spawn(move || {
         rt_p2p.block_on(async {
             if let Err(e) =
-                start_p2p_server(args.p2p_url, sender_to_move, Some(consensus_state)).await
+                start_p2p_server(args.p2p_url, toc_arc, sender_to_move, Some(consensus_state)).await
             {
                 eprintln!("gRPC Server error: {e}");
             }

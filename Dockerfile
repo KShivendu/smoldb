@@ -35,7 +35,7 @@ COPY --from=xx / /
 # so, please, don't reorder them without prior consideration. 🥲
 
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y clang lld \
+    && apt-get install --no-install-recommends -y clang lld protobuf-compiler libprotobuf-dev \
     && rustup component add rustfmt
 
 # `ARG`/`ENV` pair is a workaround for `docker build` backward-compatibility.

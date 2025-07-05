@@ -1,16 +1,22 @@
 #[rustfmt::skip] // tonic uses `prettyplease` to format its output
 pub mod smoldb_p2p_grpc;
 
+mod points_service;
 mod raft_service;
 mod simple_service;
 
 use crate::{
     api::grpc::{
+        points_service::PointsInternalService,
         raft_service::RaftService,
         simple_service::SimpleService,
-        smoldb_p2p_grpc::{raft_server::RaftServer, service_server::ServiceServer},
+        smoldb_p2p_grpc::{
+            points_internal_server::PointsInternalServer, raft_server::RaftServer,
+            service_server::ServiceServer,
+        },
     },
     consensus::{self, ConsensusState},
+    storage::content_manager::TableOfContent,
 };
 use http::Uri;
 use std::{
@@ -45,9 +51,20 @@ pub async fn make_grpc_channel(
     endpoint.connect().await
 }
 
+pub async fn make_default_grpc_channel(uri: Uri) -> Result<Channel, TonicError> {
+    let bootstrap_timeout_sec = 10;
+    make_grpc_channel(
+        Duration::from_secs(bootstrap_timeout_sec),
+        Duration::from_secs(bootstrap_timeout_sec),
+        uri,
+    )
+    .await
+}
+
 pub async fn init(
     host: String,
     grpc_port: u16,
+    toc: Arc<TableOfContent>,
     sender: Sender<consensus::Msg>,
     consensus_state: Option<Arc<ConsensusState>>,
 ) -> std::io::Result<()> {
@@ -55,11 +72,17 @@ pub async fn init(
     let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
 
     let p2p_service = ServiceServer::new(SimpleService::default());
-    let raft_service = RaftServer::new(RaftService::new(sender, consensus_state));
+    let raft_service = RaftServer::new(RaftService::new(
+        sender,
+        toc.clone(),
+        consensus_state.clone(),
+    ));
+    let points_service = PointsInternalServer::new(PointsInternalService::new(toc));
 
     server
         .add_service(p2p_service)
         .add_service(raft_service)
+        .add_service(points_service)
         .serve_with_shutdown(socket, async {
             #[cfg(unix)]
             wait_stop_signal("gRPC server").await;

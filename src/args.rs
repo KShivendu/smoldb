@@ -13,6 +13,9 @@ pub struct Args {
     /// Url of the node
     #[clap(short, long, default_value = "http://0.0.0.0:9920")]
     pub p2p_url: Uri,
+    /// Peer id
+    #[clap(long)]
+    pub peer_id: Option<u64>,
 }
 
 pub fn parse_args() -> Args {

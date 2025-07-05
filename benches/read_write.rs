@@ -19,14 +19,17 @@ pub fn single_write(c: &mut Criterion) {
 
     let tempdir = TempDir::new().expect("Failed to create temporary directory");
 
-    let collection = Collection::init(
-        "test_collection".to_string(),
-        CollectionConfig {
-            params: "...".to_string(),
-        },
-        tempdir.path(),
-    )
-    .unwrap();
+    let collection = rt.block_on(async {
+        Collection::init(
+            "test_collection".to_string(),
+            CollectionConfig {
+                params: "...".to_string(),
+            },
+            tempdir.path(),
+        )
+        .await
+        .unwrap()
+    });
 
     let points = [Point {
         id: PointId::Id(0),
@@ -53,20 +56,22 @@ pub fn concurrent_write(c: &mut Criterion) {
 
     let tempdir = TempDir::new().expect("Failed to create temporary directory");
 
-    let collection = Collection::init(
-        "test_collection".to_string(),
-        CollectionConfig {
-            params: "...".to_string(),
-        },
-        tempdir.path(),
-    )
-    .unwrap();
+    let collection = rt.block_on(async {
+        Collection::init(
+            "test_collection".to_string(),
+            CollectionConfig {
+                params: "...".to_string(),
+            },
+            tempdir.path(),
+        )
+        .await
+        .unwrap()
+    });
+    let collection_arc = std::sync::Arc::new(collection);
 
     let num_points = 100_000;
     let num_threads = 16;
     let chunk_size = (num_points / num_threads) as usize;
-
-    let collection_arc = std::sync::Arc::new(collection);
 
     let points: Vec<Point> = (0..num_points)
         .map(|i| Point {
@@ -99,28 +104,31 @@ pub fn single_read(c: &mut Criterion) {
 
     let tempdir = TempDir::new().expect("Failed to create temporary directory");
 
-    let collection = Collection::init(
-        "test_collection".to_string(),
-        CollectionConfig {
-            params: "...".to_string(),
-        },
-        tempdir.path(),
-    )
-    .unwrap();
+    let collection = rt.block_on(async {
+        let collection = Collection::init(
+            "test_collection".to_string(),
+            CollectionConfig {
+                params: "...".to_string(),
+            },
+            tempdir.path(),
+        )
+        .await
+        .unwrap();
 
-    let points = [Point {
-        id: PointId::Id(0),
-        payload: json!({ "msg": "Hello world" }),
-    }];
+        let points = [Point {
+            id: PointId::Id(0),
+            payload: json!({ "msg": "Hello world" }),
+        }];
 
-    rt.block_on(async {
         collection.insert_points(&points).await.unwrap();
+
+        collection
     });
 
     group.bench_function("single_read", |b| {
         b.to_async(&rt).iter(|| async {
             collection
-                .get_points(Some(&[PointId::Id(0)]))
+                .get_points(Some(vec![PointId::Id(0)]), None, true)
                 .await
                 .unwrap();
         })
@@ -140,15 +148,6 @@ fn concurrent_read(c: &mut Criterion) {
 
     let tempdir = TempDir::new().expect("Failed to create temporary directory");
 
-    let collection = Collection::init(
-        "test_collection".to_string(),
-        CollectionConfig {
-            params: "...".to_string(),
-        },
-        tempdir.path(),
-    )
-    .unwrap();
-
     let num_points = 100_000;
     let num_threads = 4;
     let chunk_size = (num_points / num_threads) as usize;
@@ -160,8 +159,20 @@ fn concurrent_read(c: &mut Criterion) {
         })
         .collect();
 
-    rt.block_on(async {
+    let collection = rt.block_on(async {
+        let collection = Collection::init(
+            "test_collection".to_string(),
+            CollectionConfig {
+                params: "...".to_string(),
+            },
+            tempdir.path(),
+        )
+        .await
+        .unwrap();
+
         collection.insert_points(&points).await.unwrap();
+
+        collection
     });
 
     let point_ids = points.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
@@ -169,7 +180,10 @@ fn concurrent_read(c: &mut Criterion) {
     group.bench_function("concurrent_read", |b| {
         b.to_async(&rt).iter(|| async {
             for chunk in point_ids.chunks(chunk_size) {
-                collection.get_points(Some(chunk)).await.unwrap();
+                collection
+                    .get_points(Some(chunk.to_vec()), None, true)
+                    .await
+                    .unwrap();
             }
         })
     });

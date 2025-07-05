@@ -1,19 +1,15 @@
 use crate::consensus::{ConsensusState, PeerId, Persistent};
 use crate::storage::content_manager::{
-    Collection, CollectionConfig, CollectionInfo, CollectionMetaOperation, ReplicaHolder,
-    TableOfContent,
+    Collection, CollectionInfo, CollectionMetaOperation, TableOfContent,
 };
 use crate::storage::shard::ShardId;
 use actix_web::{
     web::{self, Json},
     Responder,
 };
-use http::Uri;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::str::FromStr;
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::RwLock;
+use std::sync::Arc;
 
 // Router that decides if query should go through ToC or consensus
 pub struct Dispatcher {
@@ -22,9 +18,9 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
-    pub fn from(toc: TableOfContent, consensus_state: Option<Arc<ConsensusState>>) -> Self {
+    pub fn from(toc: Arc<TableOfContent>, consensus_state: Option<Arc<ConsensusState>>) -> Self {
         Dispatcher {
-            toc: Arc::new(toc),
+            toc,
             consensus_state,
         }
     }
@@ -34,25 +30,6 @@ impl Dispatcher {
             Some(consensus_state.persistent.read().await.clone())
         } else {
             None
-        }
-    }
-
-    pub fn dummy() -> Self {
-        Dispatcher {
-            toc: Arc::new(TableOfContent::from(HashMap::from_iter([(
-                "c1".to_string(),
-                Collection {
-                    id: "c1".to_string(),
-                    config: CollectionConfig {
-                        params: "dummy_params".to_string(),
-                    },
-                    replica_holder: Arc::new(RwLock::new(ReplicaHolder::dummy())),
-                    path: "dummy_path".into(),
-                },
-            )]))),
-            consensus_state: Some(Arc::new(ConsensusState::dummy(
-                Uri::from_str("http://smoldb-dummy:9900").unwrap(),
-            ))),
         }
     }
 }
