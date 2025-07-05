@@ -108,8 +108,8 @@ impl CollectionClusterInfo {
             .collect::<Vec<_>>();
 
         let mut remote_shards = vec![];
-        for (_, replic_set) in replica_holder.shards.iter() {
-            for remote_shard in replic_set.remotes.iter() {
+        for (_, replica_set) in replica_holder.shards.iter() {
+            for remote_shard in replica_set.remotes.iter() {
                 remote_shards.push(CollectionClusterRemoteShard {
                     peer_id: remote_shard.peer_id,
                     shard_id: remote_shard.id,
