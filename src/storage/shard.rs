@@ -1,6 +1,9 @@
+use tonic::async_trait;
+
 use crate::storage::{
-    error::StorageError,
+    error::{CollectionError, CollectionResult, StorageError},
     segment::{Point, PointId, Segment},
+    shard_trait::{ShardOperationTrait, UpdateResult},
 };
 use std::{collections::HashMap, path::PathBuf};
 
@@ -14,6 +17,29 @@ pub struct LocalShard {
     pub path: PathBuf,
     pub segments: HashMap<SegmentId, Segment>,
     // ToDo: Wal
+}
+
+#[async_trait]
+impl ShardOperationTrait for LocalShard {
+    async fn get_points(&self, ids: Option<Vec<PointId>>) -> CollectionResult<Vec<Point>> {
+        if let Some(segment) = self.segments.get(&0) {
+            segment.get_points(ids).map_err(|e| {
+                CollectionError::StorageError(StorageError::ServiceError(format!(
+                    "Failed to get points from segment: {e}"
+                )))
+            })
+        } else {
+            Err(StorageError::ServiceError(
+                "No segments available".to_string(),
+            ))?
+        }
+    }
+
+    async fn update(&self, _wait: bool) -> CollectionResult<UpdateResult> {
+        Ok(UpdateResult {
+            operation_id: Some(0),
+        })
+    }
 }
 
 impl LocalShard {
@@ -80,7 +106,7 @@ impl LocalShard {
         }
     }
 
-    pub fn get_points(&self, ids: Option<&[PointId]>) -> Result<Vec<Point>, StorageError> {
+    pub fn get_points(&self, ids: Option<Vec<PointId>>) -> Result<Vec<Point>, StorageError> {
         if let Some(segment) = self.segments.get(&0) {
             segment.get_points(ids)
         } else {

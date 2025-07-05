@@ -1,12 +1,14 @@
 use crate::{
     api::points::PointsOperation,
-    consensus::PeerId,
+    channel_service::ChannelService,
     storage::{
-        error::StorageError,
+        error::{CollectionError, StorageError},
+        replicas::{ReplicaHolder, ReplicaSet},
         segment::{Point, PointId},
         shard::{LocalShard, ShardId},
     },
 };
+use futures::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -21,6 +23,7 @@ pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
 pub struct TableOfContent {
     pub collections: Arc<RwLock<Collections>>,
+    pub channel_service: ChannelService,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -52,86 +55,18 @@ impl CollectionConfig {
     }
 }
 
-pub type CollectionId = String;
-
-pub struct RemoteShard {
-    pub id: ShardId,
-    pub collection: CollectionId,
-    pub peer_id: PeerId,
-}
-
-pub struct ReplicaSet {
-    pub local: LocalShard,
-    pub remotes: Vec<RemoteShard>,
-}
-
-impl ReplicaSet {
-    pub fn new(local: LocalShard, remotes: Vec<RemoteShard>) -> Self {
-        ReplicaSet { local, remotes }
-    }
-}
-
-pub struct ReplicaHolder {
-    pub shards: HashMap<ShardId, ReplicaSet>,
-    ring: hashring::HashRing<ShardId>,
-}
-
-impl ReplicaHolder {
-    pub fn new(shards: HashMap<ShardId, ReplicaSet>) -> Self {
-        let mut ring = hashring::HashRing::new();
-        for shard_id in shards.keys() {
-            ring.add(*shard_id);
-        }
-
-        ReplicaHolder { shards, ring }
-    }
-
-    pub fn dummy() -> Self {
-        ReplicaHolder {
-            shards: HashMap::new(),
-            ring: hashring::HashRing::new(),
-        }
-    }
-
-    pub async fn get_shard(&self, shard_id: ShardId) -> Result<&LocalShard, StorageError> {
-        let replica_set = self
-            .shards
-            .get(&shard_id)
-            .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))?;
-
-        Ok(&replica_set.local)
-    }
-
-    pub fn select_shards(
-        &self,
-        point_ids: &[PointId],
-    ) -> Result<HashMap<ShardId, Vec<PointId>>, StorageError> {
-        let mut shards_to_point_ids = HashMap::new();
-        for point_id in point_ids {
-            let shard_id = self
-                .ring
-                .get(&point_id)
-                .ok_or_else(|| StorageError::ServiceError("No shards found".to_string()))?;
-
-            shards_to_point_ids
-                .entry(*shard_id)
-                .or_insert_with(Vec::new)
-                .push(point_id.clone());
-        }
-        Ok(shards_to_point_ids)
-    }
-}
+pub type CollectionName = String;
 
 pub struct Collection {
-    pub id: CollectionId,
+    pub id: CollectionName,
     pub config: CollectionConfig,
     pub replica_holder: Arc<RwLock<ReplicaHolder>>,
     pub path: PathBuf,
 }
 
 impl Collection {
-    pub fn init(
-        id: CollectionId,
+    pub async fn init(
+        id: CollectionName,
         config: CollectionConfig,
         path: &Path,
     ) -> Result<Self, StorageError> {
@@ -139,13 +74,24 @@ impl Collection {
 
         config.save(path)?;
 
-        // ToDo: Initialize with more shards and have remote shards
+        // ToDo: Initialize shards == num_cpus for max parallelism
         let s0_path = path.join("0");
         let s1_path = path.join("1");
-        let shards = HashMap::from_iter([
-            (0, ReplicaSet::new(LocalShard::init(s0_path, 0), vec![])),
-            (1, ReplicaSet::new(LocalShard::init(s1_path, 1), vec![])),
-        ]);
+
+        let shards = [s0_path, s1_path]
+            .into_iter()
+            .enumerate()
+            .map(|(shard_id, shard_path)| {
+                let shard_id = shard_id as ShardId;
+                let replica_set = ReplicaSet::new(
+                    LocalShard::init(shard_path, shard_id),
+                    vec![], // No remote shards for now
+                    id.clone(),
+                );
+
+                Ok((shard_id, replica_set))
+            })
+            .collect::<Result<HashMap<_, _>, StorageError>>()?;
 
         Ok(Collection {
             id,
@@ -155,7 +101,7 @@ impl Collection {
         })
     }
 
-    pub fn load(id: CollectionId, path: &Path) -> Result<Self, StorageError> {
+    pub fn load(id: CollectionName, path: &Path) -> Result<Self, StorageError> {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         if !config_path.exists() {
             return Err(StorageError::BadInput(format!(
@@ -189,10 +135,11 @@ impl Collection {
 
             let shard = LocalShard::load(&path)?;
             let shard_id = shard.id;
+
             replicas.insert(
                 shard_id,
                 // ToDo: Load remote shards if any
-                ReplicaSet::new(shard, vec![]),
+                ReplicaSet::new(shard, vec![], id.clone()),
             );
         }
 
@@ -232,35 +179,60 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn get_points(&self, ids: Option<&[PointId]>) -> Result<Vec<Point>, StorageError> {
-        let shard_holder = self.replica_holder.read().await;
+    pub async fn get_points(
+        &self,
+        ids: Option<Vec<PointId>>,
+        shard_id: Option<ShardId>,
+        local_only: bool,
+    ) -> Result<Vec<Point>, CollectionError> {
+        let replica_holder = self.replica_holder.read().await;
 
         let Some(ids) = ids else {
             // If no ids are provided, return all points from all shards
             let mut all_points = vec![];
-            for replica_set in shard_holder.shards.values() {
-                let points = replica_set.local.get_points(None)?;
-                all_points.extend(points);
+            for (current_shard_id, replica_set) in replica_holder.shards.iter() {
+                if let Some(desired_shard) = shard_id {
+                    if *current_shard_id != desired_shard {
+                        continue; // Skip shards that are not the desired shard
+                    }
+                }
+
+                let replica_results = replica_set
+                    .execute_cluster_read_operation(
+                        |shard| {
+                            let ids_cloned = ids.clone();
+                            async move { shard.get_points(ids_cloned).await }.boxed()
+                        },
+                        local_only,
+                    )
+                    .await?;
+
+                all_points.extend(replica_results.into_iter().flatten());
             }
             return Ok(all_points);
         };
 
-        let mut points = vec![];
+        if let Some(shard_id) = shard_id {
+            let replica_set = replica_holder.get_replica_set(shard_id).await?;
+            return Ok(replica_set.local.get_points(Some(ids))?);
+        } else {
+            let mut points = vec![];
 
-        for (shard_id, shard_point_ids) in shard_holder.select_shards(ids)? {
-            let shard = shard_holder.get_shard(shard_id).await?;
+            for (shard_id, shard_point_ids) in replica_holder.select_shards(&ids)? {
+                let replica_set = replica_holder.get_replica_set(shard_id).await?;
 
-            let collected_points = shard.get_points(Some(&shard_point_ids))?;
-            points.extend(collected_points);
-        }
+                let collected_points = replica_set.local.get_points(Some(shard_point_ids))?;
+                points.extend(collected_points);
+            }
 
-        Ok(points)
+            return Ok(points);
+        };
     }
 }
 
 #[derive(Serialize)]
 pub struct CollectionInfo {
-    pub id: CollectionId,
+    pub id: CollectionName,
     pub config: CollectionConfig,
     pub shard_count: usize,
     pub segment_count: usize,
@@ -282,7 +254,7 @@ impl CollectionInfo {
     }
 }
 
-pub type Collections = HashMap<CollectionId, Collection>;
+pub type Collections = HashMap<CollectionName, Collection>;
 
 pub enum CollectionMetaOperation {
     CreateCollection {
@@ -292,13 +264,7 @@ pub enum CollectionMetaOperation {
 }
 
 impl TableOfContent {
-    pub fn from(collections: Collections) -> Self {
-        TableOfContent {
-            collections: Arc::new(RwLock::new(collections)),
-        }
-    }
-
-    pub fn load() -> Self {
+    pub fn load(channel_service: ChannelService) -> Self {
         let collections_path = Path::new("storage").join(COLLECTIONS_DIR);
         std::fs::create_dir_all(&collections_path).expect("Failed to create collections directory");
 
@@ -334,6 +300,7 @@ impl TableOfContent {
 
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
+            channel_service,
         }
     }
 
@@ -370,7 +337,8 @@ impl TableOfContent {
                 let path = Self::mkdir_collection_dir(&collection_name).await?;
 
                 let collection =
-                    Collection::init(collection_name.clone(), CollectionConfig { params }, &path)?;
+                    Collection::init(collection_name.clone(), CollectionConfig { params }, &path)
+                        .await?;
 
                 {
                     let mut write_collections = self.collections.write().await;
@@ -416,14 +384,14 @@ impl TableOfContent {
     pub async fn retrieve_points(
         &self,
         collection_name: &str,
-        ids: Option<&[PointId]>,
+        ids: Option<Vec<PointId>>,
     ) -> Result<Vec<Point>, StorageError> {
         let collections = self.collections.read().await;
         let collection = collections.get(collection_name).ok_or_else(|| {
             StorageError::BadInput(format!("Collection '{collection_name}' does not exist"))
         })?;
 
-        collection.get_points(ids).await.map_err(|e| {
+        collection.get_points(ids, None, false).await.map_err(|e| {
             StorageError::ServiceError(format!(
                 "Failed to retrieve points from collection '{collection_name}': {e}"
             ))
@@ -443,8 +411,8 @@ mod tests {
         let s1 = LocalShard::init(tmp_dir.path().join("1"), 1);
 
         let shard_holder = ReplicaHolder::new(HashMap::from_iter([
-            (0, ReplicaSet::new(s0, vec![])),
-            (1, ReplicaSet::new(s1, vec![])),
+            (0, ReplicaSet::new(s0, vec![], "c1".to_string())),
+            (1, ReplicaSet::new(s1, vec![], "c1".to_string())),
         ]));
 
         let shards_to_point_ids = shard_holder

@@ -57,7 +57,7 @@ async fn get_point(
 
     let result = dispatcher
         .toc
-        .retrieve_points(&collection_name, Some(&[point_id]))
+        .retrieve_points(&collection_name, Some(vec![point_id]))
         .await;
 
     match result {

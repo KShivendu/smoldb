@@ -74,7 +74,7 @@ impl Segment {
         Ok(())
     }
 
-    pub fn get_points(&self, ids: Option<&[PointId]>) -> Result<Vec<Point>, StorageError> {
+    pub fn get_points(&self, ids: Option<Vec<PointId>>) -> Result<Vec<Point>, StorageError> {
         let mut points = Vec::new();
 
         let Some(ids) = ids else {

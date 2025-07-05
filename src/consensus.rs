@@ -40,17 +40,18 @@ pub struct Persistent {
 pub struct ConsensusState {
     // ToDo: Replace with parking_lot::RwLock?
     pub persistent: RwLock<Persistent>,
+    pub peer_address_by_id: Arc<RwLock<HashMap<PeerId, Uri>>>,
 }
 
 impl ConsensusState {
-    pub fn dummy(p2p_uri: http::Uri) -> Self {
+    pub fn dummy(p2p_uri: http::Uri, default_peer_id: Option<PeerId>) -> Self {
         let mut rng = rand::rng();
         // Do not generate too big peer ID, to avoid problems with serialization
-        let random_peer_id = rng.random::<PeerId>() % (1 << 53);
+        let peer_id = default_peer_id.unwrap_or_else(|| rng.random::<PeerId>() % (1 << 53));
 
         let p = Persistent {
-            peer_id: random_peer_id,
-            peers: BTreeMap::from([(random_peer_id, p2p_uri.to_string())]),
+            peer_id,
+            peers: BTreeMap::from([(peer_id, p2p_uri.to_string())]),
             raft_info: serde_json::json!({
                 "term": 1,
                 "commit_index": 1,
@@ -61,6 +62,7 @@ impl ConsensusState {
         };
         ConsensusState {
             persistent: RwLock::new(p),
+            peer_address_by_id: Arc::new(RwLock::new(HashMap::from([(peer_id, p2p_uri)]))),
         }
     }
 

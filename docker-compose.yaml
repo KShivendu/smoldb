@@ -3,52 +3,28 @@ version: "3.7"
 services:
   smoldb-0:
     image: kshivendu/smoldb:latest
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
-    environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
-      - QDRANT__CLUSTER__ENABLED=true
-      - QDRANT__CLUSTER__RESHARDING_ENABLED=true
-      - QDRANT__CLUSTER__P2P__PORT=6335
     ports:
-      - "9900:9900"
-      - "9910:9910"
+      - "9001:9900"
+      - "5001:9920"
     entrypoint: []
-    command: ./smoldb --url 'smoldb-0:9900'
+    command: ./smoldb
 
   smoldb-1:
     image: kshivendu/smoldb:latest
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
-    environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
-      - QDRANT__CLUSTER__ENABLED=true
-      - QDRANT__CLUSTER__RESHARDING_ENABLED=true
-      - QDRANT__CLUSTER__P2P__PORT=6335
     depends_on:
       - smoldb-0
     ports:
-      - "9901:9900"
-      - "9911:9910"
+      - "9002:9900"
+      - "5002:9920"
     entrypoint: []
-    command: bash -c "sleep 5 && ./smoldb --bootstrap 'smoldb-0:9900' --url 'smoldb-1:9900'"
+    command: sh -c "sleep 5 && ./smoldb --bootstrap 'http://smoldb-0:9900'" # this http:// part is important for bootstrap (might eventually fix)
 
   smoldb-2:
     image: kshivendu/smoldb:latest
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
-    environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
-      - QDRANT__CLUSTER__ENABLED=true
-      - QDRANT__CLUSTER__RESHARDING_ENABLED=true
-      - QDRANT__CLUSTER__P2P__PORT=6335
     depends_on:
       - smoldb-0
     ports:
-      - "9902:9900"
-      - "9912:9910"
+      - "9003:9900"
+      - "5003:9920"
     entrypoint: []
-    command: bash -c "sleep 6 && ./smoldb --bootstrap 'smoldb-0:9900' --url 'smoldb-2:9900'"
+    command: sh -c "sleep 6 && ./smoldb --bootstrap 'http://smoldb-0:9900'"
