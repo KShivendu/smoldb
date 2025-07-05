@@ -89,5 +89,5 @@ message GetPointsRequest {
 
 message Point {
   uint64 id = 1;
-  map<string, string> payload = 2; // limiting the payload type for now
+  string payload = 2; // limiting the payload type for now
 }

@@ -159,7 +159,7 @@ impl ShardOperationTrait for RemoteShard {
             .into_iter()
             .map(|p| Point {
                 id: PointId::Id(p.id),
-                payload: p.payload.into_iter().collect(),
+                payload: serde_json::from_str(&p.payload).unwrap(),
             })
             .collect::<Vec<_>>();
 

@@ -78,11 +78,8 @@ pub struct Point {
     #[prost(uint64, tag = "1")]
     pub id: u64,
     /// limiting the payload type for now
-    #[prost(map = "string, string", tag = "2")]
-    pub payload: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
+    #[prost(string, tag = "2")]
+    pub payload: ::prost::alloc::string::String,
 }
 /// Generated client implementations.
 pub mod service_client {

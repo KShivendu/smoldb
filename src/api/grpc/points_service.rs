@@ -5,7 +5,7 @@ use crate::{
     },
     storage::{content_manager::TableOfContent, segment::PointId},
 };
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 use tonic::{async_trait, Response};
 
 pub struct PointsInternalService {
@@ -59,17 +59,7 @@ impl PointsInternal for PointsInternalService {
                 .filter_map(|p| {
                     if let PointId::Id(id) = p.id {
                         // FixMe: This is a workaround for not being able to pass json just yet.
-                        let payload = p
-                            .payload
-                            .as_object()
-                            .map(|hashmap| {
-                                hashmap
-                                    .into_iter()
-                                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                                    .collect::<HashMap<_, _>>()
-                            })
-                            .unwrap_or_default();
-
+                        let payload = p.payload.to_string();
                         return Some(Point { id, payload });
                     }
                     None // ignore UUIDs for now
