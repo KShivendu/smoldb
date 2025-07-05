@@ -91,10 +91,7 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_async_runtime = rt.handle().clone();
 
-    let consensus_state = Arc::new(ConsensusState::dummy(
-        args.p2p_url.clone(),
-        args.peer_id.clone(),
-    ));
+    let consensus_state = Arc::new(ConsensusState::dummy(args.p2p_url.clone(), args.peer_id));
 
     let sender = Consensus::start(
         args.bootstrap.clone(),
@@ -105,10 +102,8 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_app_data = web::Data::from(Arc::new(ConsensusAppData::new(sender.clone())));
 
-    let mut channel_service = ChannelService::new();
-
     // Sharing the Arc<RwLock<HashMap<PeerId, Uri>>>
-    channel_service.id_to_address = consensus_state.peer_address_by_id.clone();
+    let channel_service = ChannelService::new(consensus_state.peer_address_by_id.clone());
 
     let toc = TableOfContent::load(channel_service);
     let toc_arc = Arc::new(toc);

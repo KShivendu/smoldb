@@ -107,7 +107,7 @@ impl ShardOperationTrait for RemoteShard {
         //     "Remote shard get_points not implemented".to_string(),
         // ))
 
-        let mut channel_service = ChannelService::new(); // Replace with actual channel service instance
+        let mut channel_service = ChannelService::default(); // Replace with actual channel service instance
 
         // let current_node_uri = http::Uri::from_str("http://localhost:50051").unwrap();
 
@@ -169,7 +169,7 @@ impl ShardOperationTrait for RemoteShard {
     async fn update(&self, _wait: bool) -> CollectionResult<UpdateResult> {
         Ok(UpdateResult {
             // Placeholder for actual operation ID logic
-            operation_id: Some(0 as u64),
+            operation_id: Some(0_u64),
         })
     }
 }
@@ -257,7 +257,7 @@ impl ReplicaHolder {
             .get(&shard_id)
             .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))?;
 
-        Ok(&replica_set)
+        Ok(replica_set)
     }
 
     // Wrong abstraction: but add remote shards for a given collection in each of the shards.

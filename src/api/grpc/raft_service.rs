@@ -90,8 +90,7 @@ impl Raft for RaftService {
                 .await
                 .map_err(|e| {
                     Status::internal(format!(
-                        "Failed to add remote shards for collection '{}': {e}",
-                        collection_name
+                        "Failed to add remote shards for collection '{collection_name}': {e}",
                     ))
                 })?;
         }

@@ -38,7 +38,7 @@ impl Default for TransportChannelPool {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ChannelService {
     /// Shared with consensus state
     pub id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>,
@@ -46,10 +46,10 @@ pub struct ChannelService {
 }
 
 impl ChannelService {
-    pub fn new() -> Self {
-        ChannelService {
-            id_to_address: Default::default(),
-            channel_pool: Default::default(),
+    pub fn new(id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>) -> Self {
+        Self {
+            id_to_address,
+            channel_pool: Arc::new(TransportChannelPool::default()),
         }
     }
 }

@@ -214,7 +214,7 @@ impl Collection {
 
         if let Some(shard_id) = shard_id {
             let replica_set = replica_holder.get_replica_set(shard_id).await?;
-            return Ok(replica_set.local.get_points(Some(ids))?);
+            Ok(replica_set.local.get_points(Some(ids))?)
         } else {
             let mut points = vec![];
 
@@ -225,8 +225,8 @@ impl Collection {
                 points.extend(collected_points);
             }
 
-            return Ok(points);
-        };
+            Ok(points)
+        }
     }
 }
 

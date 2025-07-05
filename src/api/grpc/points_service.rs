@@ -1,7 +1,3 @@
-use std::{collections::HashMap, sync::Arc};
-
-use tonic::{async_trait, Response};
-
 use crate::{
     api::grpc::smoldb_p2p_grpc::{
         points_internal_server::PointsInternal, GetPointsRequest, GetPointsResponse, Point,
@@ -9,6 +5,8 @@ use crate::{
     },
     storage::{content_manager::TableOfContent, segment::PointId},
 };
+use std::{collections::HashMap, sync::Arc};
+use tonic::{async_trait, Response};
 
 pub struct PointsInternalService {
     toc: Arc<TableOfContent>,
@@ -36,19 +34,13 @@ impl PointsInternal for PointsInternalService {
 
         let collections = self.toc.collections.read().await;
         let collection = collections.get(&collection_name).ok_or_else(|| {
-            tonic::Status::not_found(format!("Collection '{}' not found", collection_name))
+            tonic::Status::not_found(format!("Collection '{collection_name}' not found"))
         })?;
 
         let point_ids = if request.return_all {
             None
         } else {
-            Some(
-                request
-                    .ids
-                    .into_iter()
-                    .map(|id| PointId::Id(id))
-                    .collect::<Vec<_>>(),
-            )
+            Some(request.ids.into_iter().map(PointId::Id).collect::<Vec<_>>())
         };
 
         let points = collection
@@ -57,8 +49,7 @@ impl PointsInternal for PointsInternalService {
 
         let points = points.map_err(|e| {
             tonic::Status::internal(format!(
-                "Failed to retrieve points from collection '{}': {}",
-                collection_name, e
+                "Failed to retrieve points from collection '{collection_name}': {e}"
             ))
         })?;
 
@@ -71,20 +62,15 @@ impl PointsInternal for PointsInternalService {
                         let payload = p
                             .payload
                             .as_object()
-                            .and_then(|hashmap| {
-                                Some(
-                                    hashmap
-                                        .into_iter()
-                                        .map(|(k, v)| (k.to_string(), v.to_string()))
-                                        .collect::<HashMap<_, _>>(),
-                                )
+                            .map(|hashmap| {
+                                hashmap
+                                    .into_iter()
+                                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                                    .collect::<HashMap<_, _>>()
                             })
-                            .unwrap();
+                            .unwrap_or_default();
 
-                        return Some(Point {
-                            id,
-                            payload: payload,
-                        });
+                        return Some(Point { id, payload });
                     }
                     None // ignore UUIDs for now
                 })
