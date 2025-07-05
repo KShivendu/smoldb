@@ -91,22 +91,22 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_async_runtime = rt.handle().clone();
 
+    // Sharing the Arc<RwLock<HashMap<PeerId, Uri>>>
     let consensus_state = Arc::new(ConsensusState::dummy(args.p2p_url.clone(), args.peer_id));
+    let channel_service = ChannelService::new(consensus_state.peer_address_by_id.clone());
+
+    let toc = TableOfContent::load(channel_service);
+    let toc_arc = Arc::new(toc);
 
     let sender = Consensus::start(
         args.bootstrap.clone(),
         consensus_state.clone(),
+        toc_arc.clone(),
         consensus_async_runtime,
     )
     .expect("Failed to start consensus");
 
     let consensus_app_data = web::Data::from(Arc::new(ConsensusAppData::new(sender.clone())));
-
-    // Sharing the Arc<RwLock<HashMap<PeerId, Uri>>>
-    let channel_service = ChannelService::new(consensus_state.peer_address_by_id.clone());
-
-    let toc = TableOfContent::load(channel_service);
-    let toc_arc = Arc::new(toc);
 
     let dispatcher_app_data = web::Data::from(Arc::new(Dispatcher::from(
         toc_arc.clone(),
