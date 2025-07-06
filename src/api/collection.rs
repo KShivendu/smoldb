@@ -70,8 +70,7 @@ async fn get_collection(
         }
 
         Err(CollectionError::ServiceError(format!(
-            "Collection: {} doesn't exist",
-            collection_name
+            "Collection: {collection_name} doesn't exist",
         )))
     })
     .await
@@ -154,8 +153,7 @@ async fn get_collection_cluster_info(
         }
 
         Err(CollectionError::ServiceError(format!(
-            "Collection: {} doesn't exist",
-            collection_name
+            "Collection: {collection_name} doesn't exist",
         )))
     })
     .await
