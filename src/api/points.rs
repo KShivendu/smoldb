@@ -1,6 +1,9 @@
 use crate::{
-    api::collection::Dispatcher,
-    storage::segment::{Point, PointId},
+    api::{collection::Dispatcher, helpers},
+    storage::{
+        error::CollectionError,
+        segment::{Point, PointId},
+    },
 };
 use actix_web::{
     web::{self, Json},
@@ -17,30 +20,42 @@ pub enum PointsOperation {
     Upsert(UpsertPoints),
 }
 
+#[derive(serde::Serialize)]
+pub struct UpsertPointsResponse {
+    pub num_points: usize,
+}
+
 #[actix_web::put("/collections/{collection_name}/points")]
 async fn upsert_points(
     collection_name: web::Path<String>,
     operation: Json<UpsertPoints>,
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
-    let collection_name = collection_name.into_inner();
-    let operation = operation.into_inner();
+    helpers::time(async {
+        let collection_name = collection_name.into_inner();
+        let operation = operation.into_inner();
 
-    let num_points = operation.points.len();
+        let num_points = operation.points.len();
 
-    // ToDo: Push this to consensus instead of directly committing locally?
-    let result = dispatcher
-        .toc
-        .perform_points_op(&collection_name, PointsOperation::Upsert(operation))
-        .await;
+        // ToDo: Return Created() or BadRequest() in HttpResponse?
+        let result = dispatcher
+            .toc
+            .perform_points_op(&collection_name, PointsOperation::Upsert(operation))
+            .await;
 
-    if let Err(e) = result {
-        return actix_web::HttpResponse::BadRequest().body(format!(
-            "Failed to create collection '{collection_name}': {e}"
-        ));
-    }
+        if let Err(e) = result {
+            return Err(CollectionError::ServiceError(format!(
+                "Failed to upsert points in collection '{collection_name}': {e}"
+            )));
+        }
+        Ok(UpsertPointsResponse { num_points })
+    })
+    .await
+}
 
-    actix_web::HttpResponse::Created().body(format!("{num_points} points upserted successfully"))
+#[derive(serde::Serialize)]
+pub struct GetPointResponse {
+    pub point: Point,
 }
 
 #[actix_web::get("/collections/{collection_name}/points/{id}")]
@@ -48,26 +63,37 @@ async fn get_point(
     path: web::Path<(String, String)>,
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
-    let (collection_name, id) = path.into_inner();
+    helpers::time(async {
+        let (collection_name, id) = path.into_inner();
 
-    let point_id = match id.parse::<u64>() {
-        Ok(id) => PointId::Id(id),
-        Err(_) => PointId::Uuid(id.clone()),
-    };
+        let point_id = match id.parse::<u64>() {
+            Ok(id) => PointId::Id(id),
+            Err(_) => PointId::Uuid(id.clone()),
+        };
 
-    let result = dispatcher
-        .toc
-        .retrieve_points(&collection_name, Some(vec![point_id]))
-        .await;
+        let result = dispatcher
+            .toc
+            .retrieve_points(&collection_name, Some(vec![point_id]))
+            .await;
 
-    match result {
-        Ok(points) if points.is_empty() => actix_web::HttpResponse::NotFound().body(format!(
-            "Point with id '{id}' not found in collection '{collection_name}'"
-        )),
-        Ok(points) => actix_web::HttpResponse::Ok().json(&points[0]),
-        Err(e) => actix_web::HttpResponse::InternalServerError()
-            .body(format!("Error retrieving point with id '{id}': {e}")),
-    }
+        match result {
+            Ok(points) if points.is_empty() => Err(CollectionError::ServiceError(format!(
+                "Point with id '{id}' not found in collection '{collection_name}'"
+            ))),
+            Ok(points) => Ok(GetPointResponse {
+                point: points[0].clone(),
+            }),
+            Err(e) => Err(CollectionError::ServiceError(format!(
+                "Error retrieving point with id '{id}' in collection '{collection_name}': {e}"
+            ))),
+        }
+    })
+    .await
+}
+
+#[derive(serde::Serialize)]
+pub struct ListPointsResponse {
+    pub points: Vec<Point>,
 }
 
 #[actix_web::get("/collections/{collection_name}/points")]
@@ -75,19 +101,23 @@ async fn list_points(
     collection_name: web::Path<String>,
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
-    let collection_name = collection_name.into_inner();
-    let result = dispatcher.toc.retrieve_points(&collection_name, None).await;
-    match result {
-        Ok(points) => {
-            if points.is_empty() {
-                actix_web::HttpResponse::NotFound()
-                    .body(format!("No points found in collection '{collection_name}'"))
-            } else {
-                actix_web::HttpResponse::Ok().json(points)
+    helpers::time(async {
+        let collection_name = collection_name.into_inner();
+        let result = dispatcher.toc.retrieve_points(&collection_name, None).await;
+        match result {
+            Ok(points) => {
+                if points.is_empty() {
+                    Err(CollectionError::ServiceError(format!(
+                        "No points found in collection '{collection_name}'"
+                    )))
+                } else {
+                    Ok(ListPointsResponse { points })
+                }
             }
+            Err(e) => Err(CollectionError::ServiceError(format!(
+                "Error listing points in collection '{collection_name}': {e}"
+            ))),
         }
-        Err(e) => actix_web::HttpResponse::InternalServerError().body(format!(
-            "Error listing points in collection '{collection_name}': {e}"
-        )),
-    }
+    })
+    .await
 }

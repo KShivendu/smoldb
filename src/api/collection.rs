@@ -1,14 +1,15 @@
+use crate::api::helpers;
 use crate::consensus::{ConsensusState, PeerId, Persistent};
 use crate::storage::content_manager::{
     Collection, CollectionInfo, CollectionMetaOperation, TableOfContent,
 };
+use crate::storage::error::CollectionError;
 use crate::storage::shard::ShardId;
 use actix_web::{
     web::{self, Json},
     Responder,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::sync::Arc;
 
 // Router that decides if query should go through ToC or consensus
@@ -36,15 +37,18 @@ impl Dispatcher {
 
 #[actix_web::get("/collections")]
 async fn get_collections(dispatcher: web::Data<Dispatcher>) -> impl Responder {
-    let collections = dispatcher
-        .toc
-        .collections
-        .read()
-        .await
-        .keys()
-        .cloned()
-        .collect::<Vec<_>>();
-    actix_web::HttpResponse::Ok().json(collections)
+    helpers::time(async {
+        let collections = dispatcher
+            .toc
+            .collections
+            .read()
+            .await
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        Ok(collections)
+    })
+    .await
 }
 
 #[actix_web::get("/collections/{collection_name}")]
@@ -52,21 +56,25 @@ async fn get_collection(
     collection_name: web::Path<String>,
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
-    let collection_name = collection_name.into_inner();
+    helpers::time(async {
+        let collection_name = collection_name.into_inner();
 
-    if let Some(collection) = dispatcher
-        .toc
-        .collections
-        .read()
-        .await
-        .get(&collection_name)
-    {
-        return actix_web::HttpResponse::Ok().json(CollectionInfo::from(collection).await);
-    }
+        if let Some(collection) = dispatcher
+            .toc
+            .collections
+            .read()
+            .await
+            .get(&collection_name)
+        {
+            return Ok(CollectionInfo::from(collection).await);
+        }
 
-    actix_web::HttpResponse::Ok().json(json!({
-        "error": format!("Collection: {} doesn't exist", collection_name)
-    }))
+        Err(CollectionError::ServiceError(format!(
+            "Collection: {} doesn't exist",
+            collection_name
+        )))
+    })
+    .await
 }
 
 #[derive(Serialize)]
@@ -132,21 +140,25 @@ async fn get_collection_cluster_info(
     collection_name: web::Path<String>,
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
-    let collection_name = collection_name.into_inner();
+    helpers::time(async {
+        let collection_name = collection_name.into_inner();
 
-    if let Some(collection) = dispatcher
-        .toc
-        .collections
-        .read()
-        .await
-        .get(&collection_name)
-    {
-        return actix_web::HttpResponse::Ok().json(CollectionClusterInfo::from(collection).await);
-    }
+        if let Some(collection) = dispatcher
+            .toc
+            .collections
+            .read()
+            .await
+            .get(&collection_name)
+        {
+            return Ok(CollectionClusterInfo::from(collection).await);
+        }
 
-    actix_web::HttpResponse::Ok().json(json!({
-        "error": format!("Collection: {} doesn't exist", collection_name)
-    }))
+        Err(CollectionError::ServiceError(format!(
+            "Collection: {} doesn't exist",
+            collection_name
+        )))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -160,24 +172,23 @@ async fn create_collection(
     operation: Json<CreateCollection>,
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
-    let collection_name = collection_name.into_inner();
+    helpers::time(async {
+        let collection_name = collection_name.into_inner();
 
-    // ToDo: Push this to consensus instead of directly committing locally?
-    let result = dispatcher
-        .toc
-        .perform_collection_meta_op(CollectionMetaOperation::CreateCollection {
-            collection_name: collection_name.clone(),
-            params: operation.params.clone(),
-        })
-        .await;
+        // ToDo: Push this to consensus instead of directly committing locally?
+        let result = dispatcher
+            .toc
+            .perform_collection_meta_op(CollectionMetaOperation::CreateCollection {
+                collection_name: collection_name.clone(),
+                params: operation.params.clone(),
+            })
+            .await;
 
-    if let Err(e) = result {
-        return actix_web::HttpResponse::BadRequest().body(format!(
-            "Failed to create collection '{collection_name}': {e}"
-        ));
-    }
-
-    actix_web::HttpResponse::Created().body(format!(
-        "Collection '{collection_name}' created successfully"
-    ))
+        // ToDo: Return Created() and BadRequest() based on the result?
+        match result {
+            Ok(res) => Ok(res),
+            Err(e) => Err(CollectionError::StorageError(e)),
+        }
+    })
+    .await
 }
