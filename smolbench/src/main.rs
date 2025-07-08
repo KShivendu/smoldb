@@ -40,7 +40,7 @@ async fn upsert_points(
     batch_size: usize,
 ) -> Result<Vec<ApiSuccessResponse<Value>>, SmolBenchError> {
     let client = reqwest::Client::new();
-    let num_batches = (num_points + batch_size - 1) / batch_size;
+    let num_batches = num_points.div_ceil(batch_size);
 
     let mut results = Vec::with_capacity(num_batches);
 
@@ -91,7 +91,7 @@ async fn main() -> Result<(), SmolBenchError> {
     // ToDo: Avoid calling this once collection exists API is introduced?
     match create_collection(&args.uri, &args.collection_name).await {
         Ok(_) => println!("Collection created successfully."),
-        Err(e) => eprintln!("Ignoring error while creating collection: {}", e),
+        Err(e) => eprintln!("Ignoring error while creating collection: {e}"),
     }
 
     let _batch_responses = upsert_points(
