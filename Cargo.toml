@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["smolbench"]
+members = ["tools/smolbench"]
 
 [dependencies]
 # Consensus:
