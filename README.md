@@ -1,6 +1,6 @@
 # smoldb
 
-A smol distributed database implemented from scratch. It is heavily inspired by [Qdrant](https://github.com/qdrant/qdrant)'s design. It's mainly built with the goal of learning.
+A smol distributed database implemented from scratch. It is heavily inspired by [Qdrant](https://github.com/qdrant/qdrant)'s design.
 
 ### Usage:
 

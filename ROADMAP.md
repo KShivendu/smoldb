@@ -7,6 +7,6 @@
     - [ ] What should smoldb optimize for? Vectors, text, logs, columns, rows, in-memory operation, etc?
 
 - Distributed deployment:
-    - [ ] Introduce APIs for inter-node (p2p) communication
+    - [x] Introduce APIs for inter-node (p2p) communication
     - [ ] Working consensus for syncing collection/shard state using Raft + p2p gRPC APIs
     - [ ] Sync writes to other replicas
