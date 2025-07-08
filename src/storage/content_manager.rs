@@ -175,7 +175,7 @@ impl Collection {
                 .collect::<Vec<_>>();
 
             let _ = replica_set
-                .execute_cluster_read_operation(
+                .execute_cluster_operation(
                     |shard| {
                         let points_cloned = points.clone();
                         async move { shard.upsert_points(points_cloned).await }.boxed()
@@ -183,8 +183,6 @@ impl Collection {
                     local_only,
                 )
                 .await?;
-
-            // replica_set.local.insert_points(&points)?
         }
 
         Ok(())
@@ -209,7 +207,7 @@ impl Collection {
                 }
 
                 let replica_results = replica_set
-                    .execute_cluster_read_operation(
+                    .execute_cluster_operation(
                         |shard| {
                             let ids_cloned = ids.clone();
                             async move { shard.get_points(ids_cloned).await }.boxed()

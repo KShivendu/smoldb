@@ -201,15 +201,15 @@ impl ReplicaSet {
         }
     }
 
-    pub async fn execute_cluster_read_operation<Res, F>(
+    pub async fn execute_cluster_operation<Res, F>(
         &self,
-        read_operation: F,
+        operation: F,
         local_only: bool,
     ) -> CollectionResult<Vec<Res>>
     where
         F: Fn(&(dyn ShardOperationTrait + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
-        let local_result = read_operation(&self.local).await?;
+        let local_result = operation(&self.local).await?;
         let mut final_results = vec![local_result];
 
         if local_only {
@@ -217,7 +217,7 @@ impl ReplicaSet {
         }
 
         for remote in &self.remotes {
-            let operation_result = read_operation(remote).await;
+            let operation_result = operation(remote).await;
             match operation_result {
                 Ok(res) => final_results.push(res),
                 Err(e) => {
