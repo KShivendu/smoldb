@@ -1,7 +1,11 @@
+use std::time::Duration;
+
 use crate::error::SmolBenchError;
 use crate::types::{ApiResponse, ApiSuccessResponse, Point, PointId, Points};
 use http::Uri;
+use indicatif::ProgressStyle;
 use serde_json::{json, Value};
+use tokio::time::sleep;
 
 pub async fn create_collection(
     url: &Uri,
@@ -33,9 +37,16 @@ pub async fn upsert_points(
     collection_name: &str,
     num_points: usize,
     batch_size: usize,
+    delay: Option<usize>,
 ) -> Result<Vec<ApiSuccessResponse<Value>>, SmolBenchError> {
     let client = reqwest::Client::new();
     let num_batches = num_points.div_ceil(batch_size);
+
+    let pb = indicatif::ProgressBar::new(num_points as u64);
+    let progress_style = ProgressStyle::default_bar()
+        .template("{msg} [{elapsed_precise}] {wide_bar} [{per_sec:>3}] {pos}/{len} (eta:{eta})")
+        .expect("Failed to create progress style");
+    pb.set_style(progress_style);
 
     let mut results = Vec::with_capacity(num_batches);
 
@@ -72,6 +83,12 @@ pub async fn upsert_points(
             ApiResponse::Error(res) => {
                 return Err(SmolBenchError::CreateCollectionError(res.error));
             }
+        }
+
+        pb.inc(points.len() as u64);
+
+        if let Some(delay_ms) = delay {
+            sleep(Duration::from_millis(delay_ms as u64)).await;
         }
     }
 

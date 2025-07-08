@@ -50,6 +50,10 @@ pub struct Args {
     /// Check whether to query after upsert
     #[clap(short, long, default_value = "false")]
     pub query: bool,
+
+    /// Delay between requests (batches) in milliseconds
+    #[clap(short, long, default_value = None, value_parser = parse_number)]
+    pub delay: Option<usize>,
 }
 
 pub fn parse_args() -> Args {
