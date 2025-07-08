@@ -1,6 +1,5 @@
 use thiserror::Error;
 
-// Qdrant related errors
 #[derive(Error, Debug)]
 pub enum SmolBenchError {
     #[error("Failed to create collection: {0}")]
