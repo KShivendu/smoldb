@@ -27,6 +27,7 @@ async fn main() -> Result<(), SmolBenchError> {
         &args.collection_name,
         args.num_points,
         args.batch_size,
+        args.delay,
     )
     .await?;
 
