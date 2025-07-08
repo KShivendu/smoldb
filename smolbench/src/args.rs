@@ -47,9 +47,13 @@ pub struct Args {
     #[clap(short, long, default_value = "1000", value_parser = parse_number)]
     pub batch_size: usize,
 
+    /// Use if you don't want to upsert points by default
+    #[clap(long, default_value = "false")]
+    pub skip_upsert: bool,
+
     /// Check whether to query after upsert
-    #[clap(short, long, default_value = "false")]
-    pub query: bool,
+    #[clap(long, default_value = "false")]
+    pub skip_query: bool,
 
     /// Delay between requests (batches) in milliseconds
     #[clap(short, long, default_value = None, value_parser = parse_number)]
