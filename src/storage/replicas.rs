@@ -201,6 +201,8 @@ impl ReplicaSet {
         }
     }
 
+    /// Executes the operation on the local shard and then on all the remote shards.
+    /// If `local_only` is true, it only executes on the local shard.
     pub async fn execute_cluster_operation<Res, F>(
         &self,
         operation: F,
