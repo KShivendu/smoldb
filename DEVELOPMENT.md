@@ -17,6 +17,11 @@ grpcurl -plaintext -import-path src/proto -proto root_api.proto 0.0.0.0:9920 smo
 ```sh
 cargo run -p smolbench # upserts
 cargo run -p smolbench -- -n 100k --uri http://localhost:9001 -b 1k
+
+# terminal 1 (upsert):
+cargo run -p smolbench --  --skip-query -n 100M --delay 1000 -b 100
+# terminal 2 (search):
+watch -n1 'cargo run -p smolbench --  --skip-upsert -n 100M --delay 1000 -b 100'
 ```
 
 ### Criterion / flamegraph branch
