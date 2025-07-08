@@ -1,0 +1,16 @@
+[package]
+name = "smolbench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4.41"
+clap = { version = "4.5.38", features = ["derive"] }
+http = "1.3.1"
+reqwest = { version = "0.12.22", features = ["json", "stream"] }
+serde = { version = "~1.0", features = ["derive"] }
+serde_json = "~1.0"
+thiserror = "2.0.12"
+tokio = { version = "1.46.1", features = ["full"] }
+
+# smoldb = { path = "../smoldb" } # ToDo: If this works, I can directly import API response types
