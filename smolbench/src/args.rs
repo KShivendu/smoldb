@@ -48,7 +48,7 @@ pub struct Args {
     pub batch_size: usize,
 
     /// Check whether to query after upsert
-    #[clap(short, long, default_value = "true")]
+    #[clap(short, long, default_value = "false")]
     pub query: bool,
 }
 
