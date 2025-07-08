@@ -4,8 +4,8 @@ use crate::{
         Point as GrpcPoint, UpsertPointsRequest, UpsertPointsResponse,
     },
     storage::{
-        content_manager::TableOfContent,
         segment::{Point, PointId},
+        toc::TableOfContent,
     },
 };
 use std::sync::Arc;

@@ -3,7 +3,8 @@ use crate::{
         make_grpc_channel,
         p2p_grpc_schema::{raft_client::RaftClient, AddPeerToKnownMessage},
     },
-    storage::content_manager::TableOfContent,
+    storage::toc::TableOfContent,
+    types::PeerId,
 };
 use http::Uri;
 use raft::{
@@ -28,8 +29,6 @@ use std::{
 use tokio::{runtime::Handle, sync::RwLock, time::Instant};
 
 const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
-
-pub type PeerId = u64;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Persistent {

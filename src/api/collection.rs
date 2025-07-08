@@ -1,10 +1,9 @@
 use crate::api::helpers;
-use crate::consensus::{ConsensusState, PeerId, Persistent};
-use crate::storage::content_manager::{
-    Collection, CollectionInfo, CollectionMetaOperation, TableOfContent,
-};
+use crate::consensus::{ConsensusState, Persistent};
+use crate::storage::collection::{Collection, CollectionInfo};
 use crate::storage::error::CollectionError;
-use crate::storage::shard::ShardId;
+use crate::storage::toc::{CollectionMetaOperation, TableOfContent};
+use crate::types::{PeerId, ShardId};
 use actix_web::{
     web::{self, Json},
     Responder,
