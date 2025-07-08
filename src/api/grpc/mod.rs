@@ -1,5 +1,5 @@
 #[rustfmt::skip] // tonic uses `prettyplease` to format its output
-pub mod smoldb_p2p_grpc;
+pub mod p2p_grpc_schema;
 
 mod points_service;
 mod raft_service;
@@ -7,13 +7,13 @@ mod simple_service;
 
 use crate::{
     api::grpc::{
-        points_service::PointsInternalService,
-        raft_service::RaftService,
-        simple_service::SimpleService,
-        smoldb_p2p_grpc::{
+        p2p_grpc_schema::{
             points_internal_server::PointsInternalServer, raft_server::RaftServer,
             service_server::ServiceServer,
         },
+        points_service::PointsInternalService,
+        raft_service::RaftService,
+        simple_service::SimpleService,
     },
     consensus::{self, ConsensusState},
     storage::content_manager::TableOfContent,

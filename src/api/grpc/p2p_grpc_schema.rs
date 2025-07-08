@@ -191,11 +191,11 @@ pub mod service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/smoldb_p2p_grpc.Service/RootApi",
+                "/p2p_grpc_schema.Service/RootApi",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("smoldb_p2p_grpc.Service", "RootApi"));
+                .insert(GrpcMethod::new("p2p_grpc_schema.Service", "RootApi"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -306,10 +306,10 @@ pub mod raft_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/smoldb_p2p_grpc.Raft/Send",
+                "/p2p_grpc_schema.Raft/Send",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("smoldb_p2p_grpc.Raft", "Send"));
+            req.extensions_mut().insert(GrpcMethod::new("p2p_grpc_schema.Raft", "Send"));
             self.inner.unary(req, path, codec).await
         }
         /// Send to bootstrap peer
@@ -328,11 +328,11 @@ pub mod raft_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/smoldb_p2p_grpc.Raft/WhoIs",
+                "/p2p_grpc_schema.Raft/WhoIs",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("smoldb_p2p_grpc.Raft", "WhoIs"));
+                .insert(GrpcMethod::new("p2p_grpc_schema.Raft", "WhoIs"));
             self.inner.unary(req, path, codec).await
         }
         /// Send to bootstrap peer
@@ -352,11 +352,11 @@ pub mod raft_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/smoldb_p2p_grpc.Raft/AddPeerToKnown",
+                "/p2p_grpc_schema.Raft/AddPeerToKnown",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("smoldb_p2p_grpc.Raft", "AddPeerToKnown"));
+                .insert(GrpcMethod::new("p2p_grpc_schema.Raft", "AddPeerToKnown"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -469,11 +469,11 @@ pub mod points_internal_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/smoldb_p2p_grpc.PointsInternal/GetPoints",
+                "/p2p_grpc_schema.PointsInternal/GetPoints",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("smoldb_p2p_grpc.PointsInternal", "GetPoints"));
+                .insert(GrpcMethod::new("p2p_grpc_schema.PointsInternal", "GetPoints"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn upsert_points(
@@ -493,12 +493,12 @@ pub mod points_internal_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/smoldb_p2p_grpc.PointsInternal/UpsertPoints",
+                "/p2p_grpc_schema.PointsInternal/UpsertPoints",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
-                    GrpcMethod::new("smoldb_p2p_grpc.PointsInternal", "UpsertPoints"),
+                    GrpcMethod::new("p2p_grpc_schema.PointsInternal", "UpsertPoints"),
                 );
             self.inner.unary(req, path, codec).await
         }
@@ -599,7 +599,7 @@ pub mod service_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/smoldb_p2p_grpc.Service/RootApi" => {
+                "/p2p_grpc_schema.Service/RootApi" => {
                     #[allow(non_camel_case_types)]
                     struct RootApiSvc<T: Service>(pub Arc<T>);
                     impl<T: Service> tonic::server::UnaryService<super::RootApiRequest>
@@ -677,7 +677,7 @@ pub mod service_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "smoldb_p2p_grpc.Service";
+    pub const SERVICE_NAME: &str = "p2p_grpc_schema.Service";
     impl<T> tonic::server::NamedService for ServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
@@ -790,7 +790,7 @@ pub mod raft_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/smoldb_p2p_grpc.Raft/Send" => {
+                "/p2p_grpc_schema.Raft/Send" => {
                     #[allow(non_camel_case_types)]
                     struct SendSvc<T: Raft>(pub Arc<T>);
                     impl<T: Raft> tonic::server::UnaryService<super::RaftMessage>
@@ -833,7 +833,7 @@ pub mod raft_server {
                     };
                     Box::pin(fut)
                 }
-                "/smoldb_p2p_grpc.Raft/WhoIs" => {
+                "/p2p_grpc_schema.Raft/WhoIs" => {
                     #[allow(non_camel_case_types)]
                     struct WhoIsSvc<T: Raft>(pub Arc<T>);
                     impl<T: Raft> tonic::server::UnaryService<super::PeerId>
@@ -876,7 +876,7 @@ pub mod raft_server {
                     };
                     Box::pin(fut)
                 }
-                "/smoldb_p2p_grpc.Raft/AddPeerToKnown" => {
+                "/p2p_grpc_schema.Raft/AddPeerToKnown" => {
                     #[allow(non_camel_case_types)]
                     struct AddPeerToKnownSvc<T: Raft>(pub Arc<T>);
                     impl<
@@ -956,7 +956,7 @@ pub mod raft_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "smoldb_p2p_grpc.Raft";
+    pub const SERVICE_NAME: &str = "p2p_grpc_schema.Raft";
     impl<T> tonic::server::NamedService for RaftServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
@@ -1065,7 +1065,7 @@ pub mod points_internal_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/smoldb_p2p_grpc.PointsInternal/GetPoints" => {
+                "/p2p_grpc_schema.PointsInternal/GetPoints" => {
                     #[allow(non_camel_case_types)]
                     struct GetPointsSvc<T: PointsInternal>(pub Arc<T>);
                     impl<
@@ -1110,7 +1110,7 @@ pub mod points_internal_server {
                     };
                     Box::pin(fut)
                 }
-                "/smoldb_p2p_grpc.PointsInternal/UpsertPoints" => {
+                "/p2p_grpc_schema.PointsInternal/UpsertPoints" => {
                     #[allow(non_camel_case_types)]
                     struct UpsertPointsSvc<T: PointsInternal>(pub Arc<T>);
                     impl<
@@ -1190,7 +1190,7 @@ pub mod points_internal_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "smoldb_p2p_grpc.PointsInternal";
+    pub const SERVICE_NAME: &str = "p2p_grpc_schema.PointsInternal";
     impl<T> tonic::server::NamedService for PointsInternalServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }

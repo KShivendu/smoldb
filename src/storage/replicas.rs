@@ -1,5 +1,5 @@
 use crate::{
-    api::grpc::smoldb_p2p_grpc::{
+    api::grpc::p2p_grpc_schema::{
         points_internal_client::PointsInternalClient, GetPointsRequest, Point as PointGrpc,
         UpsertPointsRequest,
     },

@@ -1,5 +1,5 @@
 use crate::{
-    api::grpc::smoldb_p2p_grpc::{
+    api::grpc::p2p_grpc_schema::{
         raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
         RaftMessage as RaftMessageBytes, Uri,
     },

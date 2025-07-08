@@ -1,7 +1,7 @@
 use crate::{
     api::grpc::{
         make_grpc_channel,
-        smoldb_p2p_grpc::{raft_client::RaftClient, AddPeerToKnownMessage},
+        p2p_grpc_schema::{raft_client::RaftClient, AddPeerToKnownMessage},
     },
     storage::content_manager::TableOfContent,
 };
