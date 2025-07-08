@@ -100,18 +100,6 @@ impl LocalShard {
         })
     }
 
-    // pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {}
-
-    // pub fn get_points(&self, ids: Option<Vec<PointId>>) -> Result<Vec<Point>, StorageError> {
-    //     if let Some(segment) = self.segments.get(&0) {
-    //         segment.get_points(ids)
-    //     } else {
-    //         Err(StorageError::ServiceError(
-    //             "No segments available".to_string(),
-    //         ))
-    //     }
-    // }
-
     pub fn count_points(&self) -> usize {
         if let Some(segment) = self.segments.get(&0) {
             segment.count_points()
