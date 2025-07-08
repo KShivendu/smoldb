@@ -94,13 +94,27 @@ async fn main() -> Result<(), SmolBenchError> {
         Err(e) => eprintln!("Ignoring error while creating collection: {e}"),
     }
 
-    let _batch_responses = upsert_points(
+    let batch_responses = upsert_points(
         &args.uri,
         &args.collection_name,
         args.num_points,
         args.batch_size,
     )
     .await?;
+
+    let latencies = batch_responses
+        .iter()
+        .map(|res| res.time * 1000.0) // Convert s to ms
+        .map(|latency| latency as f64)
+        .collect::<Vec<_>>();
+
+    let avg_latency = latencies.iter().sum::<f64>() / latencies.len() as f64;
+    let min_latency = latencies.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max_latency = latencies.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+    println!("Average batch latency: {:.2} ms", avg_latency);
+    println!("Minimum batch latency: {:.2} ms", min_latency);
+    println!("Maximum batch latency: {:.2} ms", max_latency);
 
     println!(
         "Upserted {} points in batches of {} into collection '{}'",
