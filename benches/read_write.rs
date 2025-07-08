@@ -123,7 +123,7 @@ pub fn single_read(c: &mut Criterion) {
             payload: json!({ "msg": "Hello world" }),
         }];
 
-        collection.upsert_points(&points).await.unwrap();
+        collection.upsert_points(&points, true).await.unwrap();
 
         collection
     });
@@ -173,7 +173,7 @@ fn concurrent_read(c: &mut Criterion) {
         .await
         .unwrap();
 
-        collection.upsert_points(&points).await.unwrap();
+        collection.upsert_points(&points, true).await.unwrap();
 
         collection
     });
