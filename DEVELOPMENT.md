@@ -12,6 +12,15 @@ grpcurl -plaintext -import-path src/proto -proto root_api.proto 0.0.0.0:9920 smo
 
 ## Running benchmarks:
 
+### smolbench
+
+```sh
+cargo run -p smolbench # upserts
+cargo run -p smolbench -- -n 100k --uri http://localhost:9001 -b 1k
+```
+
+### Criterion / flamegraph branch
+
 ```bash
 cargo bench -- --list # List benches
 cargo bench # Run all benches
