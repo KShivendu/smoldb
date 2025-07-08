@@ -5,6 +5,7 @@
     - [x] Shards with hashring
     - [ ] Shard level WAL for durability and faster writes?
     - [ ] What should smoldb optimize for? Vectors, text, logs, columns, rows, in-memory operation, etc?
+    - [ ] RAM, Mmap, Disk (s3?) read/writes
 
 - Distributed deployment:
     - [x] Introduce APIs for inter-node (p2p) communication
