@@ -22,23 +22,25 @@ async fn main() -> Result<(), SmolBenchError> {
         Err(e) => eprintln!("Ignoring error while creating collection: {e}"),
     }
 
-    let batch_responses = upsert_points(
-        &args.uri,
-        &args.collection_name,
-        args.num_points,
-        args.batch_size,
-        args.delay,
-    )
-    .await?;
+    if !args.skip_upsert {
+        let batch_responses = upsert_points(
+            &args.uri,
+            &args.collection_name,
+            args.num_points,
+            args.batch_size,
+            args.delay,
+        )
+        .await?;
 
-    println!(
-        "Upserted {} points in batches of {} into collection '{}':",
-        args.num_points, args.batch_size, args.collection_name
-    );
+        println!(
+            "Upserted {} points in batches of {} into collection '{}':",
+            args.num_points, args.batch_size, args.collection_name
+        );
 
-    log_latencies(&batch_responses).await?;
+        log_latencies(&batch_responses).await?;
+    }
 
-    if args.query {
+    if !args.skip_query {
         let response = retrieve_points(&args.uri, &args.collection_name, None).await?;
         println!(
             "Retrieved {} points from collection '{}' in {}ms",
