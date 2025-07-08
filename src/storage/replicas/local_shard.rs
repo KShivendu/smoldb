@@ -1,14 +1,13 @@
-use tonic::async_trait;
-
-use crate::storage::{
-    error::{CollectionError, CollectionResult, StorageError},
-    segment::{Point, PointId, Segment},
-    shard_trait::ShardOperationTrait,
+use crate::{
+    storage::{
+        error::{CollectionError, CollectionResult, StorageError},
+        replicas::ShardOperationTrait,
+        segment::{Point, PointId, Segment},
+    },
+    types::{SegmentId, ShardId},
 };
 use std::{collections::HashMap, path::PathBuf};
-
-pub type SegmentId = u64;
-pub type ShardId = u32;
+use tonic::async_trait;
 
 const SEGMENTS_DIR: &str = "segments";
 

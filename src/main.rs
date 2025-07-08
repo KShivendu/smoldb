@@ -3,6 +3,7 @@ pub mod args;
 pub mod channel_service;
 pub mod consensus;
 pub mod storage;
+pub mod types;
 
 use crate::api::collection::get_collection_cluster_info;
 use crate::channel_service::ChannelService;
@@ -15,7 +16,7 @@ use crate::{
         points::{get_point, list_points, upsert_points},
     },
     consensus::Msg,
-    storage::content_manager::TableOfContent,
+    storage::toc::TableOfContent,
 };
 use actix_web::{
     middleware,

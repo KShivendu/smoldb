@@ -4,7 +4,7 @@ use crate::{
         RaftMessage as RaftMessageBytes, Uri,
     },
     consensus::{self, ConsensusState},
-    storage::content_manager::TableOfContent,
+    storage::toc::TableOfContent,
 };
 use prost_for_raft::Message as ProtocolBufferMessage; // this trait is required for .decode() to work
 use raft::eraftpb::Message as RaftMessageParsed;

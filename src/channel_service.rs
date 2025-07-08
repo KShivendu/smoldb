@@ -4,7 +4,7 @@ use http::Uri;
 use tokio::sync::RwLock;
 use tonic::transport::{Channel, Error as TonicError};
 
-use crate::{api::grpc::make_default_grpc_channel, consensus::PeerId};
+use crate::{api::grpc::make_default_grpc_channel, types::PeerId};
 
 /// Holds a pool of channels established for a set of URIs.
 /// Channel are shared by cloning them.

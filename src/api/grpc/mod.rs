@@ -16,7 +16,7 @@ use crate::{
         simple_service::SimpleService,
     },
     consensus::{self, ConsensusState},
-    storage::content_manager::TableOfContent,
+    storage::toc::TableOfContent,
 };
 use http::Uri;
 use std::{
