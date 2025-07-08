@@ -65,14 +65,16 @@ message Uri {
 
 service PointsInternal {
   rpc GetPoints (GetPointsRequest) returns (GetPointsResponse) {}
-  rpc Upsert (UpsertPointsInternal) returns (PointsOperationResponseInternal) {}
+  rpc UpsertPoints (UpsertPointsRequest) returns (UpsertPointsResponse) {}
 }
 
-message UpsertPointsInternal {
-  optional uint32 shard_id = 2;
+message UpsertPointsRequest {
+  string collection_name = 1;
+  repeated Point points = 2;
+  optional uint32 shard_id = 3;
 }
 
-message PointsOperationResponseInternal {
+message UpsertPointsResponse {
   string message = 1;
 }
 

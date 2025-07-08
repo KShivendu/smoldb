@@ -46,13 +46,17 @@ pub struct Uri {
     #[prost(string, tag = "1")]
     pub uri: ::prost::alloc::string::String,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct UpsertPointsInternal {
-    #[prost(uint32, optional, tag = "2")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpsertPointsRequest {
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub points: ::prost::alloc::vec::Vec<Point>,
+    #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PointsOperationResponseInternal {
+pub struct UpsertPointsResponse {
     #[prost(string, tag = "1")]
     pub message: ::prost::alloc::string::String,
 }
@@ -472,11 +476,11 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("smoldb_p2p_grpc.PointsInternal", "GetPoints"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn upsert(
+        pub async fn upsert_points(
             &mut self,
-            request: impl tonic::IntoRequest<super::UpsertPointsInternal>,
+            request: impl tonic::IntoRequest<super::UpsertPointsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Response<super::UpsertPointsResponse>,
             tonic::Status,
         > {
             self.inner
@@ -489,11 +493,13 @@ pub mod points_internal_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/smoldb_p2p_grpc.PointsInternal/Upsert",
+                "/smoldb_p2p_grpc.PointsInternal/UpsertPoints",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("smoldb_p2p_grpc.PointsInternal", "Upsert"));
+                .insert(
+                    GrpcMethod::new("smoldb_p2p_grpc.PointsInternal", "UpsertPoints"),
+                );
             self.inner.unary(req, path, codec).await
         }
     }
@@ -975,11 +981,11 @@ pub mod points_internal_server {
             tonic::Response<super::GetPointsResponse>,
             tonic::Status,
         >;
-        async fn upsert(
+        async fn upsert_points(
             &self,
-            request: tonic::Request<super::UpsertPointsInternal>,
+            request: tonic::Request<super::UpsertPointsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Response<super::UpsertPointsResponse>,
             tonic::Status,
         >;
     }
@@ -1104,25 +1110,25 @@ pub mod points_internal_server {
                     };
                     Box::pin(fut)
                 }
-                "/smoldb_p2p_grpc.PointsInternal/Upsert" => {
+                "/smoldb_p2p_grpc.PointsInternal/UpsertPoints" => {
                     #[allow(non_camel_case_types)]
-                    struct UpsertSvc<T: PointsInternal>(pub Arc<T>);
+                    struct UpsertPointsSvc<T: PointsInternal>(pub Arc<T>);
                     impl<
                         T: PointsInternal,
-                    > tonic::server::UnaryService<super::UpsertPointsInternal>
-                    for UpsertSvc<T> {
-                        type Response = super::PointsOperationResponseInternal;
+                    > tonic::server::UnaryService<super::UpsertPointsRequest>
+                    for UpsertPointsSvc<T> {
+                        type Response = super::UpsertPointsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::UpsertPointsInternal>,
+                            request: tonic::Request<super::UpsertPointsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PointsInternal>::upsert(&inner, request).await
+                                <T as PointsInternal>::upsert_points(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1133,7 +1139,7 @@ pub mod points_internal_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = UpsertSvc(inner);
+                        let method = UpsertPointsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

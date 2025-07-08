@@ -3,7 +3,7 @@ use tonic::async_trait;
 use crate::storage::{
     error::{CollectionError, CollectionResult, StorageError},
     segment::{Point, PointId, Segment},
-    shard_trait::{ShardOperationTrait, UpdateResult},
+    shard_trait::ShardOperationTrait,
 };
 use std::{collections::HashMap, path::PathBuf};
 
@@ -35,10 +35,16 @@ impl ShardOperationTrait for LocalShard {
         }
     }
 
-    async fn update(&self, _wait: bool) -> CollectionResult<UpdateResult> {
-        Ok(UpdateResult {
-            operation_id: Some(0),
-        })
+    async fn upsert_points(&self, points: Vec<Point>) -> CollectionResult<()> {
+        // ToDo: Select segment based on point id or some other criteria
+        if let Some(segment) = self.segments.get(&0) {
+            segment.insert_points(&points)?;
+            Ok(())
+        } else {
+            Err(CollectionError::ServiceError(
+                "No segments available".to_string(),
+            ))
+        }
     }
 }
 
@@ -94,27 +100,17 @@ impl LocalShard {
         })
     }
 
-    pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
-        // ToDo: Select segment based on point id or some other criteria
-        if let Some(segment) = self.segments.get(&0) {
-            segment.insert_points(points)?;
-            Ok(())
-        } else {
-            Err(StorageError::ServiceError(
-                "No segments available".to_string(),
-            ))
-        }
-    }
+    // pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {}
 
-    pub fn get_points(&self, ids: Option<Vec<PointId>>) -> Result<Vec<Point>, StorageError> {
-        if let Some(segment) = self.segments.get(&0) {
-            segment.get_points(ids)
-        } else {
-            Err(StorageError::ServiceError(
-                "No segments available".to_string(),
-            ))
-        }
-    }
+    // pub fn get_points(&self, ids: Option<Vec<PointId>>) -> Result<Vec<Point>, StorageError> {
+    //     if let Some(segment) = self.segments.get(&0) {
+    //         segment.get_points(ids)
+    //     } else {
+    //         Err(StorageError::ServiceError(
+    //             "No segments available".to_string(),
+    //         ))
+    //     }
+    // }
 
     pub fn count_points(&self) -> usize {
         if let Some(segment) = self.segments.get(&0) {
