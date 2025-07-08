@@ -38,7 +38,7 @@ pub fn single_write(c: &mut Criterion) {
 
     group.bench_function("single_write", |b| {
         b.to_async(&rt).iter(|| async {
-            collection.insert_points(&points).await.unwrap();
+            collection.upsert_points(&points, true).await.unwrap();
         })
     });
 }
@@ -85,7 +85,10 @@ pub fn concurrent_write(c: &mut Criterion) {
             for chunk in points.chunks(chunk_size) {
                 let collection_clone = collection_arc.clone();
                 let chunk_clone = chunk.to_vec();
-                collection_clone.insert_points(&chunk_clone).await.unwrap();
+                collection_clone
+                    .upsert_points(&chunk_clone, true)
+                    .await
+                    .unwrap();
             }
         })
     });
@@ -120,7 +123,7 @@ pub fn single_read(c: &mut Criterion) {
             payload: json!({ "msg": "Hello world" }),
         }];
 
-        collection.insert_points(&points).await.unwrap();
+        collection.upsert_points(&points, true).await.unwrap();
 
         collection
     });
@@ -170,7 +173,7 @@ fn concurrent_read(c: &mut Criterion) {
         .await
         .unwrap();
 
-        collection.insert_points(&points).await.unwrap();
+        collection.upsert_points(&points, true).await.unwrap();
 
         collection
     });

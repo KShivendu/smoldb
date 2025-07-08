@@ -1,6 +1,7 @@
 use crate::{
     api::grpc::smoldb_p2p_grpc::{
-        points_internal_client::PointsInternalClient, GetPointsRequest, UpsertPointsInternal,
+        points_internal_client::PointsInternalClient, GetPointsRequest, Point as PointGrpc,
+        UpsertPointsRequest,
     },
     channel_service::ChannelService,
     consensus::PeerId,
@@ -9,7 +10,7 @@ use crate::{
         error::{CollectionError, CollectionResult, StorageError},
         segment::{Point, PointId},
         shard::{LocalShard, ShardId},
-        shard_trait::{ShardOperationTrait, UpdateResult},
+        shard_trait::ShardOperationTrait,
     },
 };
 use futures::future::BoxFuture;
@@ -76,49 +77,23 @@ impl RemoteShard {
         })
     }
 
-    pub async fn upsert(&self, channel_service: ChannelService) -> Result<(), CollectionError> {
-        let uri = self.current_address(&channel_service).await?;
-
-        let channel = channel_service
-            .channel_pool
-            .get_or_create_channel(uri)
-            .await?;
-
-        let mut points_channel = PointsInternalClient::new(channel);
-
-        let res = points_channel
-            .upsert(tonic::Request::new(UpsertPointsInternal {
-                shard_id: Some(self.id),
-            }))
-            .await?
-            .into_inner();
-
-        println!("Response from remote shard {}: {:?}", self.id, res);
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl ShardOperationTrait for RemoteShard {
-    async fn get_points(&self, ids: Option<Vec<PointId>>) -> CollectionResult<Vec<Point>> {
-        // Placeholder for actual remote shard logic
-        // Err(CollectionError::ServiceError(
-        //     "Remote shard get_points not implemented".to_string(),
-        // ))
-
-        let mut channel_service = ChannelService::default(); // Replace with actual channel service instance
-
-        // let current_node_uri = http::Uri::from_str("http://localhost:50051").unwrap();
+    pub fn get_channel_service(&self) -> ChannelService {
+        let mut channel_service = ChannelService::default();
 
         let inner_map: HashMap<_, _> = HashMap::from_iter(vec![
-            // (self.peer_id, current_node_uri),
             (101, http::Uri::from_str("http://0.0.0.0:5001").unwrap()),
             (102, http::Uri::from_str("http://0.0.0.0:5002").unwrap()),
             (103, http::Uri::from_str("http://0.0.0.0:5003").unwrap()),
         ]);
         channel_service.id_to_address = Arc::new(RwLock::new(inner_map));
 
+        channel_service
+    }
+}
+
+#[async_trait]
+impl ShardOperationTrait for RemoteShard {
+    async fn get_points(&self, ids: Option<Vec<PointId>>) -> CollectionResult<Vec<Point>> {
         let return_all = ids.is_none();
         let ids = ids.unwrap_or_default();
 
@@ -132,6 +107,8 @@ impl ShardOperationTrait for RemoteShard {
                 }
             })
             .collect::<Vec<_>>();
+
+        let channel_service = self.get_channel_service();
 
         let get_points_response = self
             .with_points_client(channel_service, |mut client| {
@@ -166,11 +143,39 @@ impl ShardOperationTrait for RemoteShard {
         Ok(points)
     }
 
-    async fn update(&self, _wait: bool) -> CollectionResult<UpdateResult> {
-        Ok(UpdateResult {
-            // Placeholder for actual operation ID logic
-            operation_id: Some(0_u64),
-        })
+    async fn upsert_points(&self, points: Vec<Point>) -> CollectionResult<()> {
+        let channel_service = self.get_channel_service();
+
+        let _upsert_points_response = self
+            .with_points_client(channel_service, |mut client| {
+                let points = points.clone();
+                async move {
+                    client
+                        .upsert_points(Request::new(UpsertPointsRequest {
+                            collection_name: self.collection.clone(),
+                            shard_id: None,
+                            points: points
+                                .into_iter()
+                                .filter_map(|p| {
+                                    if let PointId::Id(p_id) = p.id {
+                                        // Only include points with PointId::Id
+                                        Some(PointGrpc {
+                                            id: p_id,
+                                            payload: p.payload.to_string(),
+                                        })
+                                    } else {
+                                        None // Skip UUIDs for now
+                                    }
+                                })
+                                .collect(),
+                        }))
+                        .await
+                }
+            })
+            .await?
+            .into_inner();
+
+        Ok(()) // Placeholder for actual remote shard logic
     }
 }
 
@@ -196,15 +201,17 @@ impl ReplicaSet {
         }
     }
 
-    pub async fn execute_cluster_read_operation<Res, F>(
+    /// Executes the operation on the local shard and then on all the remote shards.
+    /// If `local_only` is true, it only executes on the local shard.
+    pub async fn execute_cluster_operation<Res, F>(
         &self,
-        read_operation: F,
+        operation: F,
         local_only: bool,
     ) -> CollectionResult<Vec<Res>>
     where
         F: Fn(&(dyn ShardOperationTrait + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
-        let local_result = read_operation(&self.local).await?;
+        let local_result = operation(&self.local).await?;
         let mut final_results = vec![local_result];
 
         if local_only {
@@ -212,7 +219,7 @@ impl ReplicaSet {
         }
 
         for remote in &self.remotes {
-            let operation_result = read_operation(remote).await;
+            let operation_result = operation(remote).await;
             match operation_result {
                 Ok(res) => final_results.push(res),
                 Err(e) => {

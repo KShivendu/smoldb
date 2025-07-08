@@ -2,10 +2,11 @@ use crate::{
     api::points::PointsOperation,
     channel_service::ChannelService,
     storage::{
-        error::{CollectionError, StorageError},
+        error::{CollectionResult, StorageError},
         replicas::{ReplicaHolder, ReplicaSet},
         segment::{Point, PointId},
         shard::{LocalShard, ShardId},
+        shard_trait::ShardOperationTrait,
     },
 };
 use futures::FutureExt;
@@ -93,6 +94,8 @@ impl Collection {
             })
             .collect::<Result<HashMap<_, _>, StorageError>>()?;
 
+        // ToDo: Add remote shards to replica holder while creating a new collection?
+
         Ok(Collection {
             id,
             config,
@@ -151,7 +154,7 @@ impl Collection {
         })
     }
 
-    pub async fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
+    pub async fn upsert_points(&self, points: &[Point], local_only: bool) -> CollectionResult<()> {
         let shard_holder = &self.replica_holder.read().await;
 
         let points_map: HashMap<PointId, Point> = points
@@ -173,7 +176,15 @@ impl Collection {
                 .filter_map(|id| points_map.get(id).cloned())
                 .collect::<Vec<_>>();
 
-            replica_set.local.insert_points(&points)?
+            let _ = replica_set
+                .execute_cluster_operation(
+                    |shard| {
+                        let points_cloned = points.clone();
+                        async move { shard.upsert_points(points_cloned).await }.boxed()
+                    },
+                    local_only,
+                )
+                .await?;
         }
 
         Ok(())
@@ -184,7 +195,7 @@ impl Collection {
         ids: Option<Vec<PointId>>,
         shard_id: Option<ShardId>,
         local_only: bool,
-    ) -> Result<Vec<Point>, CollectionError> {
+    ) -> CollectionResult<Vec<Point>> {
         let replica_holder = self.replica_holder.read().await;
 
         let Some(ids) = ids else {
@@ -198,7 +209,7 @@ impl Collection {
                 }
 
                 let replica_results = replica_set
-                    .execute_cluster_read_operation(
+                    .execute_cluster_operation(
                         |shard| {
                             let ids_cloned = ids.clone();
                             async move { shard.get_points(ids_cloned).await }.boxed()
@@ -214,14 +225,14 @@ impl Collection {
 
         if let Some(shard_id) = shard_id {
             let replica_set = replica_holder.get_replica_set(shard_id).await?;
-            Ok(replica_set.local.get_points(Some(ids))?)
+            Ok(replica_set.local.get_points(Some(ids)).await?)
         } else {
             let mut points = vec![];
 
             for (shard_id, shard_point_ids) in replica_holder.select_shards(&ids)? {
                 let replica_set = replica_holder.get_replica_set(shard_id).await?;
 
-                let collected_points = replica_set.local.get_points(Some(shard_point_ids))?;
+                let collected_points = replica_set.local.get_points(Some(shard_point_ids)).await?;
                 points.extend(collected_points);
             }
 
@@ -368,7 +379,7 @@ impl TableOfContent {
         match operation {
             PointsOperation::Upsert(upsert_points) => {
                 collection
-                    .insert_points(&upsert_points.points)
+                    .upsert_points(&upsert_points.points, false)
                     .await
                     .map_err(|e| {
                         StorageError::ServiceError(format!(

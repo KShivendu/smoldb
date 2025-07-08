@@ -13,5 +13,5 @@ pub struct UpdateResult {
 #[async_trait]
 pub trait ShardOperationTrait {
     async fn get_points(&self, ids: Option<Vec<PointId>>) -> CollectionResult<Vec<Point>>;
-    async fn update(&self, wait: bool) -> CollectionResult<UpdateResult>;
+    async fn upsert_points(&self, points: Vec<Point>) -> CollectionResult<()>;
 }
