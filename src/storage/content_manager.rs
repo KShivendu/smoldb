@@ -94,6 +94,8 @@ impl Collection {
             })
             .collect::<Result<HashMap<_, _>, StorageError>>()?;
 
+        // ToDo: Add remote shards to replica holder while creating a new collection?
+
         Ok(Collection {
             id,
             config,
