@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum SmolBenchError {
     #[error("Failed to create collection: {0}")]
     CreateCollectionError(String),
+    #[error("Failed to create collection: {0}")]
+    RetrievePointsError(String),
     #[error("Request error: {0}")]
     RequestError(#[from] reqwest::Error),
     #[error("JSON parsing error: {0}")]

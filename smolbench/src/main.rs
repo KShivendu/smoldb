@@ -2,8 +2,12 @@ pub mod apis;
 pub mod args;
 pub mod error;
 pub mod types;
+pub mod utils;
 
-use crate::apis::{create_collection, upsert_points};
+use crate::{
+    apis::{create_collection, retrieve_points, upsert_points},
+    utils::log_latencies,
+};
 use args::parse_args;
 use error::SmolBenchError;
 
@@ -26,24 +30,22 @@ async fn main() -> Result<(), SmolBenchError> {
     )
     .await?;
 
-    let latencies = batch_responses
-        .iter()
-        .map(|res| res.time * 1000.0) // Convert s to ms
-        .map(|latency| latency as f64)
-        .collect::<Vec<_>>();
-
-    let avg_latency = latencies.iter().sum::<f64>() / latencies.len() as f64;
-    let min_latency = latencies.iter().cloned().fold(f64::INFINITY, f64::min);
-    let max_latency = latencies.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-
-    println!("Avg batch server latency: {:.2} ms", avg_latency);
-    println!("Min batch server latency: {:.2} ms", min_latency);
-    println!("Max batch server latency: {:.2} ms", max_latency);
-
     println!(
-        "Upserted {} points in batches of {} into collection '{}'",
+        "Upserted {} points in batches of {} into collection '{}':",
         args.num_points, args.batch_size, args.collection_name
     );
+
+    log_latencies(&batch_responses).await?;
+
+    if args.query {
+        let response = retrieve_points(&args.uri, &args.collection_name, None).await?;
+        println!(
+            "Retrieved {} points from collection '{}' in {}ms",
+            response.result.points.len(),
+            args.collection_name,
+            response.time * 1000.0 // Convert seconds to milliseconds
+        );
+    }
 
     Ok(())
 }

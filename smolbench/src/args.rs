@@ -36,7 +36,7 @@ pub struct Args {
     pub uri: Uri,
 
     /// Name of the collection
-    #[clap(short, long, default_value = "test")]
+    #[clap(short, long, default_value = "benchmark")]
     pub collection_name: String,
 
     /// Number of points to upload
@@ -46,6 +46,10 @@ pub struct Args {
     /// Batch size for upsert operations
     #[clap(short, long, default_value = "1000", value_parser = parse_number)]
     pub batch_size: usize,
+
+    /// Check whether to query after upsert
+    #[clap(short, long, default_value = "true")]
+    pub query: bool,
 }
 
 pub fn parse_args() -> Args {
@@ -64,7 +68,7 @@ mod tests {
         assert_eq!(parse_number("1B").unwrap(), 1_000_000_000);
 
         // Error cases:
-        assert!(parse_number("1kB").is_err());
+        assert!(parse_number("1K").is_err());
         assert!(parse_number("1b").is_err());
     }
 }

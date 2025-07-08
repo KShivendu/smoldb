@@ -1,5 +1,5 @@
 use crate::error::SmolBenchError;
-use crate::types::{ApiResponse, ApiSuccessResponse, Point};
+use crate::types::{ApiResponse, ApiSuccessResponse, Point, PointId, Points};
 use http::Uri;
 use serde_json::{json, Value};
 
@@ -76,4 +76,26 @@ pub async fn upsert_points(
     }
 
     Ok(results)
+}
+
+/// Scroll through all points in a collection by pagination?
+/// ToDo: Implement pagination logic in smoldb APIs
+pub async fn retrieve_points(
+    url: &Uri,
+    collection_name: &str,
+    _ids: Option<Vec<PointId>>, // ToDo: Use this parameter to filter points
+) -> Result<ApiSuccessResponse<Points>, SmolBenchError> {
+    let client = reqwest::Client::new();
+
+    let res = client
+        .get(format!("{url}/collections/{collection_name}/points"))
+        .send()
+        .await?;
+
+    let body: ApiResponse<Points> = res.json().await?;
+
+    match body {
+        ApiResponse::Success(body) => Ok(body),
+        ApiResponse::Error(res) => Err(SmolBenchError::RetrievePointsError(res.error)),
+    }
 }
