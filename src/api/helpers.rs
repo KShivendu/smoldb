@@ -40,7 +40,7 @@ where
                 time: instant.elapsed().as_secs_f64(),
             };
 
-            actix_web::HttpResponse::Ok().json(res)
+            actix_web::HttpResponse::InternalServerError().json(res)
         }
     }
 }
