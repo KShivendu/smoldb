@@ -2,7 +2,7 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [main]
   pull_request:
     types: [labeled]
   workflow_dispatch:
@@ -39,7 +39,7 @@ jobs:
           smoldot/smoldb
         tags: |
           type=raw,value=${{ steps.extract_build_info.outputs.tag }}
-          type=raw,value=latest
+          ${{ github.ref_name == 'main' && 'type=raw,value=latest' || '' }}
 
     - name: Build and push
       uses: docker/build-push-action@v5
