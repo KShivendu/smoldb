@@ -4,8 +4,12 @@ A smol distributed database implemented from scratch. It is heavily inspired by 
 
 ### Usage:
 
-```
-cargo run
+```sh
+# Run with Docker
+docker pull smoldot/smoldb
+
+# Or compile locally:
+cargo run -r
 ```
 
 ```bash
