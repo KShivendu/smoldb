@@ -10,7 +10,7 @@ use tokio::time::sleep;
 pub async fn create_collection(
     url: &Uri,
     collection_name: &str,
-) -> Result<ApiSuccessResponse<Value>, SmolBenchError> {
+) -> Result<ApiSuccessResponse<bool>, SmolBenchError> {
     let client = reqwest::Client::new();
 
     let res = client
@@ -21,7 +21,7 @@ pub async fn create_collection(
         .send()
         .await?;
 
-    let body: ApiResponse<Value> = res.json().await?;
+    let body: ApiResponse<bool> = res.json().await?;
 
     match body {
         ApiResponse::Success(body) => {
