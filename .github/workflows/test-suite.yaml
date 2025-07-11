@@ -28,6 +28,8 @@ jobs:
           else
             tests/unit.sh
           fi
+      - name: Run smolbench tests
+        run: ./tests/smolbench.sh
       - name: Upload Unit Test Coverage
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4

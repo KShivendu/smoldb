@@ -14,4 +14,7 @@ serde_json = "~1.0"
 thiserror = "2.0.12"
 tokio = { version = "1.46.1", features = ["full"] }
 
+[dev-dependencies]
+temp-dir = "0.1.16"
+
 # smoldb = { path = "../smoldb" } # ToDo: If this works, I can directly import API response types
