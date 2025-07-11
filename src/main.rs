@@ -5,6 +5,7 @@ pub mod consensus;
 pub mod storage;
 pub mod types;
 
+use crate::api::collection::delete_collection;
 use crate::api::collection::get_collection_cluster_info;
 use crate::channel_service::ChannelService;
 use crate::consensus::Consensus;
@@ -47,6 +48,7 @@ async fn start_http_server(
             .service(get_collections)
             .service(get_collection_cluster_info)
             .service(get_collection)
+            .service(delete_collection)
             .service(create_collection)
             .service(upsert_points)
             .service(get_point)

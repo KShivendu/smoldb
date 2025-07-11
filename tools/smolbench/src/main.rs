@@ -8,7 +8,7 @@ pub mod types;
 pub mod utils;
 
 use crate::{
-    apis::{create_collection, retrieve_points, upsert_points},
+    apis::{create_collection, delete_collection, get_collection, retrieve_points, upsert_points},
     utils::log_latencies,
 };
 use args::parse_args;
@@ -19,10 +19,38 @@ async fn main() -> Result<(), SmolBenchError> {
     let args = parse_args();
     // println!("Parsed arguments: {:?}", &args);
 
-    // ToDo: Avoid calling this once collection exists API is introduced?
-    match create_collection(&args.uri, &args.collection_name).await {
-        Ok(_) => println!("Collection created successfully."),
-        Err(e) => eprintln!("Ignoring error while creating collection: {e}"),
+    if !args.skip_create {
+        let exists = get_collection(&args.uri, &args.collection_name)
+            .await
+            .is_ok();
+
+        if exists {
+            if args.skip_if_exists {
+                println!(
+                    "Collection '{}' already exists, skipping creation",
+                    args.collection_name
+                );
+            } else {
+                println!(
+                    "Collection '{}' already exists, deleting it and creating a new one",
+                    args.collection_name
+                );
+                delete_collection(&args.uri, &args.collection_name).await?;
+                match create_collection(&args.uri, &args.collection_name).await {
+                    Ok(_) => println!("Collection created successfully."),
+                    Err(e) => return Err(SmolBenchError::CreateCollectionError(e.to_string()))?,
+                }
+            }
+        } else {
+            println!(
+                "Collection '{}' does not exist, creating it",
+                args.collection_name
+            );
+            match create_collection(&args.uri, &args.collection_name).await {
+                Ok(_) => println!("Collection created successfully."),
+                Err(e) => return Err(SmolBenchError::CreateCollectionError(e.to_string()))?,
+            }
+        }
     }
 
     if !args.skip_upsert {

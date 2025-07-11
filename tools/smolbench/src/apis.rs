@@ -1,10 +1,9 @@
-use std::time::Duration;
-
 use crate::error::SmolBenchError;
 use crate::types::{ApiResponse, ApiSuccessResponse, Point, PointId, Points};
 use http::Uri;
 use indicatif::ProgressStyle;
 use serde_json::{json, Value};
+use std::time::Duration;
 use tokio::time::sleep;
 
 pub async fn create_collection(
@@ -24,11 +23,46 @@ pub async fn create_collection(
     let body: ApiResponse<bool> = res.json().await?;
 
     match body {
-        ApiResponse::Success(body) => {
-            dbg!(&body.result);
-            Ok(body)
-        }
+        ApiResponse::Success(body) => Ok(body),
         ApiResponse::Error(res) => Err(SmolBenchError::CreateCollectionError(res.error)),
+    }
+}
+
+pub async fn get_collection(
+    url: &Uri,
+    collection_name: &str,
+) -> Result<ApiSuccessResponse<Value>, SmolBenchError> {
+    let client = reqwest::Client::new();
+
+    let res = client
+        .get(format!("{url}/collections/{collection_name}"))
+        .send()
+        .await?;
+
+    let body: ApiResponse<Value> = res.json().await?;
+
+    match body {
+        ApiResponse::Success(body) => Ok(body),
+        ApiResponse::Error(res) => Err(SmolBenchError::RetrievePointsError(res.error)),
+    }
+}
+
+pub async fn delete_collection(url: &Uri, collection_name: &str) -> Result<(), SmolBenchError> {
+    let client = reqwest::Client::new();
+
+    let res = client
+        .delete(format!("{url}/collections/{collection_name}"))
+        .send()
+        .await?;
+
+    if res.status().is_success() {
+        Ok(())
+    } else {
+        let body: ApiResponse<Value> = res.json().await?;
+        match body {
+            ApiResponse::Success(_) => Ok(()),
+            ApiResponse::Error(res) => Err(SmolBenchError::DeleteCollectionError(res.error)),
+        }
     }
 }
 
