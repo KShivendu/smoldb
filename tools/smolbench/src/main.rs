@@ -69,7 +69,7 @@ async fn main() -> Result<(), SmolBenchError> {
             args.num_points, args.batch_size, args.collection_name
         );
 
-        log_latencies(&batch_responses, "upsert").await?;
+        log_latencies(&batch_responses, args.p9, "server-side batched upsert").await?;
     }
 
     if !args.skip_query {
@@ -85,7 +85,7 @@ async fn main() -> Result<(), SmolBenchError> {
             args.collection_name,
         );
 
-        log_latencies(&responses, "retrieve").await?;
+        log_latencies(&responses, args.p9, "server-side retrieve").await?;
     }
 
     Ok(())
