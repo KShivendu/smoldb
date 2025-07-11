@@ -129,6 +129,34 @@ pub async fn upsert_points(
     Ok(results)
 }
 
+/// Retrieve points by their IDs
+pub async fn retrieve_point(
+    url: &Uri,
+    collection_name: &str,
+    ids: Vec<u64>,
+) -> Result<Vec<ApiSuccessResponse<Value>>, SmolBenchError> {
+    let client = reqwest::Client::new();
+    let mut results = Vec::with_capacity(ids.len());
+
+    for id in ids {
+        let res = client
+            .get(format!("{url}/collections/{collection_name}/points/{id}"))
+            .send()
+            .await?;
+
+        let body: ApiResponse<Value> = res.json().await?;
+
+        match body {
+            ApiResponse::Success(body) => {
+                results.push(body);
+            }
+            ApiResponse::Error(res) => Err(SmolBenchError::RetrievePointsError(res.error))?,
+        }
+    }
+
+    Ok(results)
+}
+
 /// Scroll through all points in a collection by pagination?
 /// ToDo: Implement pagination logic in smoldb APIs
 pub async fn retrieve_points(

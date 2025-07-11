@@ -2,6 +2,7 @@ use crate::{error::SmolBenchError, types::ApiSuccessResponse};
 
 pub async fn log_latencies<T>(
     batch_responses: &[ApiSuccessResponse<T>],
+    for_what: &str,
 ) -> Result<(), SmolBenchError> {
     let latencies = batch_responses
         .iter()
@@ -13,9 +14,9 @@ pub async fn log_latencies<T>(
     let min_latency = latencies.iter().cloned().fold(f64::INFINITY, f64::min);
     let max_latency = latencies.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
-    println!("Avg batch server upsert latency: {:.2} ms", avg_latency);
-    println!("Min batch server upsert latency: {:.2} ms", min_latency);
-    println!("Max batch server upsert latency: {:.2} ms", max_latency);
+    println!("Avg batch server {for_what} latency: {avg_latency:.2} ms");
+    println!("Min batch server {for_what} latency: {min_latency:.2} ms");
+    println!("Max batch server {for_what} latency: {max_latency:.2} ms");
 
     Ok(())
 }

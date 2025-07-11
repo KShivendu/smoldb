@@ -8,7 +8,7 @@ pub mod types;
 pub mod utils;
 
 use crate::{
-    apis::{create_collection, delete_collection, get_collection, retrieve_points, upsert_points},
+    apis::{create_collection, delete_collection, get_collection, retrieve_point, upsert_points},
     utils::log_latencies,
 };
 use args::parse_args;
@@ -68,17 +68,20 @@ async fn main() -> Result<(), SmolBenchError> {
             args.num_points, args.batch_size, args.collection_name
         );
 
-        log_latencies(&batch_responses).await?;
+        log_latencies(&batch_responses, "upsert").await?;
     }
 
     if !args.skip_query {
-        let response = retrieve_points(&args.uri, &args.collection_name, None).await?;
+        let max_id = args.num_points.min(1000) as u64;
+        let ids = (0..max_id).collect::<Vec<_>>();
+        let responses = retrieve_point(&args.uri, &args.collection_name, ids).await?;
         println!(
-            "Retrieved {} points from collection '{}' in {}ms",
-            response.result.points.len(),
+            "Retrieved {} points from collection '{}':",
+            responses.len(),
             args.collection_name,
-            response.time * 1000.0 // Convert seconds to milliseconds
         );
+
+        log_latencies(&responses, "retrieve").await?;
     }
 
     Ok(())
