@@ -13,6 +13,7 @@ use crate::{
 };
 use args::parse_args;
 use error::SmolBenchError;
+use rand::Rng;
 
 #[tokio::main]
 async fn main() -> Result<(), SmolBenchError> {
@@ -72,8 +73,11 @@ async fn main() -> Result<(), SmolBenchError> {
     }
 
     if !args.skip_query {
-        let max_id = args.num_points.min(1000) as u64;
-        let ids = (0..max_id).collect::<Vec<_>>();
+        let num_queries = args.num_points.min(1000) as u64;
+        let mut rnd = rand::rng();
+        let ids = (0..num_queries)
+            .map(|_| rnd.random::<u64>() % args.num_points as u64) // Assume that IDs in the range [0, num_points) have been upserted
+            .collect::<Vec<_>>();
         let responses = retrieve_point(&args.uri, &args.collection_name, ids).await?;
         println!(
             "Retrieved {} points from collection '{}':",
