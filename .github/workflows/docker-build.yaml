@@ -4,15 +4,23 @@ on:
   push:
     branches: [ main, dev ]
   pull_request:
-    branches: [ main ]
+    types: [labeled]
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build and Push Docker Image
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.action == 'labeled' && contains(github.event.label.name, 'docker-build'))
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+
+    - name: Extract build info
+      id: extract_build_info
+      run: |
+        echo "tag=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+        echo "commit_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -23,12 +31,26 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+    - name: Set Docker metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          smoldot/smoldb
+        tags: |
+          type=raw,value=${{ steps.extract_build_info.outputs.tag }}
+          type=raw,value=latest
+
     - name: Build and push
       uses: docker/build-push-action@v5
       with:
         context: .
-        platforms: linux/amd64,linux/arm64
         push: true
-        tags: |
-          smoldot/smoldb:${{ github.ref_name }}
-          ${{ github.ref_name == 'main' && 'smoldot/smoldb:latest' || '' }}
+        sbom: true
+        provenance: true
+        platforms: linux/amd64,linux/arm64
+        labels: ${{ steps.meta.outputs.labels }}
+        tags: ${{ steps.meta.outputs.tags }}
+        build-args: |
+          VERSION=${{ steps.extract_build_info.outputs.tag }}
+          BUILD=${{ steps.extract_build_info.outputs.commit_short }}
