@@ -1,4 +1,5 @@
 use actix_web::HttpResponse;
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 use tokio::time::Instant;
 
@@ -6,13 +7,13 @@ use crate::storage::error::CollectionResult;
 
 type ResponseTime = f64;
 
-#[derive(serde::Serialize)]
-pub struct ApiResponse<T> {
+#[derive(Serialize, Deserialize)]
+pub struct ApiSuccessResponse<T> {
     pub result: T,
     pub time: ResponseTime,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ApiErrorResponse {
     pub error: String,
     pub time: ResponseTime,
@@ -27,7 +28,7 @@ where
     let instant = Instant::now();
     match future.await {
         Ok(r) => {
-            let res = ApiResponse {
+            let res = ApiSuccessResponse {
                 result: r,
                 time: instant.elapsed().as_secs_f64(),
             };
@@ -43,4 +44,11 @@ where
             actix_web::HttpResponse::InternalServerError().json(res)
         }
     }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+pub enum ApiResponse<T> {
+    Success(ApiSuccessResponse<T>),
+    Error(ApiErrorResponse),
 }

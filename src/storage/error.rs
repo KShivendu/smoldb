@@ -18,6 +18,8 @@ pub enum CollectionError {
     ServiceError(String),
     #[error("Storage error: {0}")]
     StorageError(#[from] StorageError),
+    #[error("Json parsing error: {0}")]
+    JsonParseError(#[from] serde_path_to_error::Error<serde_json::Error>),
 }
 
 pub type CollectionResult<T> = Result<T, CollectionError>;
