@@ -75,6 +75,31 @@ async fn get_collection(
     .await
 }
 
+#[actix_web::delete("/collections/{collection_name}")]
+async fn delete_collection(
+    collection_name: web::Path<String>,
+    dispatcher: web::Data<Dispatcher>,
+) -> impl Responder {
+    helpers::time(async {
+        let collection_name = collection_name.into_inner();
+
+        let res = dispatcher
+            .toc
+            .perform_collection_meta_op(CollectionMetaOperation::DeleteCollection {
+                collection_name: collection_name.clone(),
+            })
+            .await;
+
+        match res {
+            Ok(_) => Ok(format!(
+                "Collection '{collection_name}' deleted successfully."
+            )),
+            Err(e) => Err(CollectionError::StorageError(e)),
+        }
+    })
+    .await
+}
+
 #[derive(Serialize)]
 pub struct CollectionClusterLocalShard {
     pub shard_id: ShardId,

@@ -28,6 +28,9 @@ pub enum CollectionMetaOperation {
         collection_name: String,
         params: String,
     },
+    DeleteCollection {
+        collection_name: String,
+    },
 }
 
 impl TableOfContent {
@@ -116,6 +119,21 @@ impl TableOfContent {
                     }
                     write_collections.insert(collection_name, collection);
                 }
+                Ok(true)
+            }
+            CollectionMetaOperation::DeleteCollection { collection_name } => {
+                println!("Deleting collection {collection_name}");
+                let mut write_collections = self.collections.write().await;
+
+                // ToDo: Will the order of removing from hashmap vs deleting the directory matter?
+                if let Some(collection) = write_collections.remove(&collection_name) {
+                    collection.delete()?;
+                } else {
+                    return Err(StorageError::BadInput(format!(
+                        "Collection with name '{collection_name}' does not exist"
+                    )));
+                }
+
                 Ok(true)
             }
         }

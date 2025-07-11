@@ -47,6 +47,14 @@ pub struct Args {
     #[clap(short, long, default_value = "1000", value_parser = parse_number)]
     pub batch_size: usize,
 
+    /// Skip collection creation
+    #[clap(long, default_value = "false")]
+    pub skip_create: bool,
+
+    /// Skip collection creation if it already exists
+    #[clap(long, default_value = "false")]
+    pub skip_if_exists: bool,
+
     /// Use if you don't want to upsert points by default
     #[clap(long, default_value = "false")]
     pub skip_upsert: bool,

@@ -66,6 +66,21 @@ impl Collection {
         })
     }
 
+    pub fn delete(&self) -> Result<(), StorageError> {
+        let collection_path = self.path.clone();
+        if collection_path.exists() {
+            std::fs::remove_dir_all(&collection_path).map_err(|e| {
+                StorageError::ServiceError(format!("Failed to delete collection: {e}"))
+            })?;
+        } else {
+            return Err(StorageError::BadInput(
+                "Collection directory does not exist".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn load(id: CollectionName, path: &Path) -> Result<Self, StorageError> {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         if !config_path.exists() {
