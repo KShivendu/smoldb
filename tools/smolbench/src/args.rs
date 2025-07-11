@@ -63,6 +63,11 @@ pub struct Args {
     #[clap(long, default_value = "false")]
     pub skip_query: bool,
 
+    /// Number of 9 digits to show in p99* results
+    /// Defaults to 3, i.e. shows only p99
+    #[clap(long, long, default_value_t = 2, value_parser = parse_number)]
+    pub p9: usize,
+
     /// Delay between requests (batches) in milliseconds
     #[clap(short, long, default_value = None, value_parser = parse_number)]
     pub delay: Option<usize>,
