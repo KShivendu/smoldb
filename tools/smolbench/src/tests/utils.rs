@@ -2,12 +2,23 @@ use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
-use tokio::time::sleep;
+
+const MAX_PEER_WAIT: Duration = Duration::from_secs(10);
 
 fn get_smoldb_exec() -> PathBuf {
     let smolbench_dir = std::env::current_dir().expect("Failed to get current directory");
     let smoldb_dir = smolbench_dir.parent().unwrap().parent().unwrap();
     smoldb_dir.join("target").join("debug").join("smoldb")
+}
+
+async fn wait_peer_start(uri: &str) {
+    let client = reqwest::Client::new();
+    let start = std::time::Instant::now();
+    while let Err(_) = client.get(uri).send().await {
+        if start.elapsed() > MAX_PEER_WAIT {
+            panic!("Smoldb peer did not start within the expected time");
+        }
+    }
 }
 
 pub async fn start_peer(
@@ -61,7 +72,7 @@ pub async fn start_peer(
         .spawn()
         .expect("Failed to start Smoldb peer");
 
-    sleep(Duration::from_secs(3)).await; // Wait for the peer to start
+    wait_peer_start(&http_url).await;
 
     println!("Started Smoldb peer at {http_url} in {peer_dir:?}");
 
