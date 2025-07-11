@@ -8,8 +8,8 @@ on:
 
 
 jobs:
-  unit-tests:
-    name: Rust Unit Tests
+  rust-tests:
+    name: Rust Tests
     runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: full
@@ -40,7 +40,7 @@ jobs:
   upload-coverage:
     name: Upload Code Coverage
     runs-on: ubuntu-latest
-    needs: [unit-tests]
+    needs: [rust-tests]
     # Only generate/upload coverage on pushing to branch, not on PRs
     if: github.event_name == 'push'
     steps:
