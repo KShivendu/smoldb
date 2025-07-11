@@ -158,9 +158,9 @@ async fn get_collection_cluster_info(
     .await
 }
 
-#[derive(Deserialize)]
-struct CreateCollection {
-    params: String,
+#[derive(Serialize, Deserialize)]
+pub struct CreateCollection {
+    pub params: String,
 }
 
 #[actix_web::put("/collections/{collection_name}")]

@@ -76,6 +76,8 @@ impl ConsensusState {
     }
 }
 
+/// Holds raft consensus state and handles bootstrapping,
+/// adding peers, and running the consensus loop.
 pub struct Consensus {
     raft_node: RawNode<MemStorage>,
     receiver: Receiver<Msg>,
