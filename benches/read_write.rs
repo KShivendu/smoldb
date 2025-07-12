@@ -38,7 +38,10 @@ pub fn single_write(c: &mut Criterion) {
 
     group.bench_function("single_write", |b| {
         b.to_async(&rt).iter(|| async {
-            collection.upsert_points(&points, true).await.unwrap();
+            collection
+                .upsert_points(points.to_vec(), true)
+                .await
+                .unwrap();
         })
     });
 }
@@ -84,9 +87,8 @@ pub fn concurrent_write(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             for chunk in points.chunks(chunk_size) {
                 let collection_clone = collection_arc.clone();
-                let chunk_clone = chunk.to_vec();
                 collection_clone
-                    .upsert_points(&chunk_clone, true)
+                    .upsert_points(chunk.to_vec(), true)
                     .await
                     .unwrap();
             }
@@ -123,7 +125,10 @@ pub fn single_read(c: &mut Criterion) {
             payload: json!({ "msg": "Hello world" }),
         }];
 
-        collection.upsert_points(&points, true).await.unwrap();
+        collection
+            .upsert_points(points.to_vec(), true)
+            .await
+            .unwrap();
 
         collection
     });
@@ -162,6 +167,8 @@ fn concurrent_read(c: &mut Criterion) {
         })
         .collect();
 
+    let point_ids = points.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
+
     let collection = rt.block_on(async {
         let collection = Collection::init(
             "test_collection".to_string(),
@@ -173,12 +180,10 @@ fn concurrent_read(c: &mut Criterion) {
         .await
         .unwrap();
 
-        collection.upsert_points(&points, true).await.unwrap();
+        collection.upsert_points(points, true).await.unwrap();
 
         collection
     });
-
-    let point_ids = points.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
 
     group.bench_function("concurrent_read", |b| {
         b.to_async(&rt).iter(|| async {

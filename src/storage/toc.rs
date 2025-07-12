@@ -153,7 +153,7 @@ impl TableOfContent {
         match operation {
             PointsOperation::Upsert(upsert_points) => {
                 collection
-                    .upsert_points(&upsert_points.points, false)
+                    .upsert_points(upsert_points.points, false)
                     .await
                     .map_err(|e| {
                         StorageError::ServiceError(format!(
