@@ -94,7 +94,7 @@ impl PointsInternal for PointsInternalService {
             })
             .collect::<Vec<_>>();
 
-        collection.upsert_points(&points, true).await.map_err(|e| {
+        collection.upsert_points(points, true).await.map_err(|e| {
             tonic::Status::internal(format!(
                 "Failed to upsert points in collection '{collection_name}': {e}"
             ))

@@ -1,6 +1,6 @@
 use crate::{
     storage::{
-        error::{CollectionResult, StorageError},
+        error::{CollectionError, CollectionResult, StorageError},
         replicas::{local_shard::LocalShard, ReplicaHolder, ReplicaSet, ShardOperationTrait},
         segment::{Point, PointId},
     },
@@ -9,7 +9,7 @@ use crate::{
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{btree_map::Entry, BTreeMap, HashMap},
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
@@ -17,6 +17,8 @@ use std::{
 use tokio::sync::RwLock;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
+
+pub const DEFAULT_CONSISTENCY_FACTOR: usize = 2;
 
 pub type CollectionName = String;
 
@@ -131,15 +133,22 @@ impl Collection {
         })
     }
 
-    pub async fn upsert_points(&self, points: &[Point], local_only: bool) -> CollectionResult<()> {
+    /// Upserts points into the collection.
+    ///
+    /// This is not cancel safe at the moment.
+    pub async fn upsert_points(
+        &self,
+        points: Vec<Point>,
+        local_only: bool,
+    ) -> CollectionResult<()> {
         let shard_holder = &self.replica_holder.read().await;
 
-        let points_map: HashMap<PointId, Point> = points
-            .iter()
-            .map(|point| (point.id.clone(), point.clone()))
-            .collect();
-
         let point_ids: Vec<_> = points.iter().map(|point| point.id.clone()).collect();
+
+        let points_map: HashMap<PointId, Point> = points
+            .into_iter()
+            .map(|point| (point.id.clone(), point))
+            .collect();
 
         // ToDo: Run this operation concurrently for each shard
         for (shard_id, shard_point_ids) in shard_holder.select_shards(&point_ids)? {
@@ -153,7 +162,7 @@ impl Collection {
                 .filter_map(|id| points_map.get(id).cloned())
                 .collect::<Vec<_>>();
 
-            let _ = replica_set
+            let results = replica_set
                 .execute_cluster_operation(
                     |shard| {
                         let points_cloned = points.clone();
@@ -161,7 +170,32 @@ impl Collection {
                     },
                     local_only,
                 )
-                .await?;
+                .await;
+
+            let total_success = results.iter().filter(|r| r.is_ok()).count();
+
+            let (local_result, _remote_results) = results.split_first().unwrap();
+            if let Err(e) = local_result {
+                return Err(CollectionError::ServiceError(format!(
+                    "Failed to upsert points in local shard {shard_id}: {e}"
+                )));
+            }
+
+            // ToDo: Both should have collection level config
+            let write_consistency_factor = DEFAULT_CONSISTENCY_FACTOR;
+            let num_replicas = replica_set.num_replicas();
+
+            let min_desired_success = if local_only {
+                1
+            } else {
+                num_replicas.min(write_consistency_factor)
+            };
+
+            if total_success < min_desired_success {
+                return Err(CollectionError::ServiceError(format!(
+                    "Failed to upsert points in shard {shard_id}: only {total_success} out of {num_replicas} replicas succeeded"
+                )));
+            }
         }
 
         Ok(())
@@ -177,7 +211,7 @@ impl Collection {
 
         let Some(ids) = ids else {
             // If no ids are provided, return all points from all shards
-            let mut all_points = vec![];
+            let mut all_points = BTreeMap::new();
             for (current_shard_id, replica_set) in replica_holder.shards.iter() {
                 if let Some(desired_shard) = shard_id {
                     if *current_shard_id != desired_shard {
@@ -193,11 +227,18 @@ impl Collection {
                         },
                         local_only,
                     )
-                    .await?;
+                    .await
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()?;
 
-                all_points.extend(replica_results.into_iter().flatten());
+                for point in replica_results.into_iter().flatten() {
+                    // We only insert if the point is not already present so that local shard takes precedence
+                    if let Entry::Vacant(e) = all_points.entry(point.id.clone()) {
+                        e.insert(point);
+                    }
+                }
             }
-            return Ok(all_points);
+            return Ok(all_points.into_values().collect());
         };
 
         if let Some(shard_id) = shard_id {

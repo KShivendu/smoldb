@@ -47,38 +47,43 @@ impl ReplicaSet {
         }
     }
 
+    pub fn num_replicas(&self) -> usize {
+        self.remotes.len() + 1 // +1 for the local shard
+    }
+
     /// Executes the operation on the local shard and then on all the remote shards.
     /// If `local_only` is true, it only executes on the local shard.
     pub async fn execute_cluster_operation<Res, F>(
         &self,
         operation: F,
         local_only: bool,
-    ) -> CollectionResult<Vec<Res>>
+    ) -> Vec<CollectionResult<Res>>
     where
         F: Fn(&(dyn ShardOperationTrait + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
-        let local_result = operation(&self.local).await?;
+        let local_result = operation(&self.local).await;
         let mut final_results = vec![local_result];
 
         if local_only {
-            return Ok(final_results);
+            return final_results;
         }
 
         for remote in &self.remotes {
             let operation_result = operation(remote).await;
             match operation_result {
-                Ok(res) => final_results.push(res),
+                Ok(res) => final_results.push(Ok(res)),
                 Err(e) => {
                     // Ignore errors from remote shards, but log them
                     println!(
                         "Error executing operation on remote shard {}/{}: {}",
                         remote.peer_id, remote.id, e
                     );
+                    final_results.push(Err(e));
                 }
             }
         }
 
-        Ok(final_results)
+        final_results
     }
 }
 

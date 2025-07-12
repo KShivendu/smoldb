@@ -38,16 +38,11 @@ async fn upsert_points(
         let num_points = operation.points.len();
 
         // ToDo: Return Created() or BadRequest() in HttpResponse?
-        let result = dispatcher
+        let _result = dispatcher
             .toc
             .perform_points_op(&collection_name, PointsOperation::Upsert(operation))
-            .await;
+            .await?;
 
-        if let Err(e) = result {
-            return Err(CollectionError::ServiceError(format!(
-                "Failed to upsert points in collection '{collection_name}': {e}"
-            )));
-        }
         Ok(UpsertPointsResponse { num_points })
     })
     .await
