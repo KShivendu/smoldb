@@ -6,7 +6,7 @@ A smol distributed database implemented from scratch. It is heavily inspired by 
 
 ```sh
 # Run with Docker
-docker pull ghcr.io/kshivendu/smoldb
+docker run -p 9900:9900 ghcr.io/kshivendu/smoldb
 
 # Or compile locally:
 cargo run -r
