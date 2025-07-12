@@ -9,5 +9,6 @@
 
 - Distributed deployment:
     - [x] Introduce APIs for inter-node (p2p) communication
+    - [x] Read/write from/to remote shards
     - [ ] Working consensus for syncing collection/shard state using Raft + p2p gRPC APIs
     - [ ] Sync missed writes to other replicas
