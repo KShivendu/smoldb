@@ -1,7 +1,8 @@
 use crate::api::helpers;
-use crate::consensus::{ConsensusState, Persistent};
+use crate::consensus::{ConsensusOperation, Persistent};
+use crate::consensus_manager::ConsensusManager;
 use crate::storage::collection::{Collection, CollectionInfo};
-use crate::storage::error::CollectionError;
+use crate::storage::error::{CollectionError, CollectionResult, ConsensusError};
 use crate::storage::toc::{CollectionMetaOperation, TableOfContent};
 use crate::types::{PeerId, ShardId};
 use actix_web::{
@@ -10,27 +11,39 @@ use actix_web::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-
 // Router that decides if query should go through ToC or consensus
 pub struct Dispatcher {
     pub toc: Arc<TableOfContent>,
-    pub consensus_state: Option<Arc<ConsensusState>>,
+    pub consensus_manager: Option<ConsensusManager>,
 }
 
 impl Dispatcher {
-    pub fn from(toc: Arc<TableOfContent>, consensus_state: Option<Arc<ConsensusState>>) -> Self {
+    pub fn from(toc: Arc<TableOfContent>, consensus_manager: Option<ConsensusManager>) -> Self {
         Dispatcher {
             toc,
-            consensus_state,
+            consensus_manager,
         }
     }
 
     pub async fn get_cluster_info(&self) -> Option<Persistent> {
-        if let Some(consensus_state) = &self.consensus_state {
-            Some(consensus_state.persistent.read().await.clone())
+        if let Some(consensus_state) = &self.consensus_manager {
+            Some(consensus_state.get_state().persistent.read().await.clone())
         } else {
             None
         }
+    }
+
+    pub fn get_consensus_manager(&self) -> CollectionResult<&ConsensusManager> {
+        Ok(self
+            .consensus_manager
+            .as_ref()
+            .ok_or(ConsensusError::NotEnabled())?)
+    }
+
+    // Send a consensus operation to the consensus manager
+    pub async fn send_operation(&self, operation: ConsensusOperation) -> CollectionResult<()> {
+        let consensus_manager = self.get_consensus_manager()?;
+        Ok(consensus_manager.submit_consensus_op(operation).await?)
     }
 }
 
