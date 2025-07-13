@@ -9,15 +9,25 @@ pub enum StorageError {
 }
 
 #[derive(Error, Debug)]
+pub enum ConsensusError {
+    #[error("Consensus is not enabled")]
+    NotEnabled(),
+    #[error("Service error: {0}")]
+    ServiceError(String),
+}
+
+#[derive(Error, Debug)]
 pub enum CollectionError {
     #[error("Tonic transport error: {0}")]
     TonicTransportError(#[from] tonic::transport::Error),
     #[error("Tonic error: {0}")]
-    TonicStatusError(#[from] tonic::Status),
+    TonicStatusError(#[from] Box<tonic::Status>), // tonic::Status is 176B and bloats the error size. so we box it
     #[error("Service error: {0}")]
     ServiceError(String),
     #[error("Storage error: {0}")]
     StorageError(#[from] StorageError),
+    #[error("Consensus error: {0}")]
+    ConsensusError(#[from] ConsensusError),
     #[error("Json parsing error: {0}")]
     JsonParseError(#[from] serde_path_to_error::Error<serde_json::Error>),
 }

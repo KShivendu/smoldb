@@ -2,6 +2,7 @@ pub mod api;
 pub mod args;
 pub mod channel_service;
 pub mod consensus;
+pub mod consensus_manager;
 pub mod storage;
 pub mod types;
 
@@ -10,9 +11,10 @@ use crate::api::collection::get_collection_cluster_info;
 use crate::channel_service::ChannelService;
 use crate::consensus::Consensus;
 use crate::consensus::ConsensusState;
+use crate::consensus_manager::ConsensusManager;
 use crate::{
     api::{
-        cluster::{add_peer, get_cluster, ConsensusAppData},
+        cluster::{add_peer, get_cluster},
         collection::{create_collection, get_collection, get_collections, Dispatcher},
         points::{get_point, list_points, upsert_points},
     },
@@ -30,11 +32,7 @@ use http::Uri;
 use std::sync::{mpsc::Sender, Arc};
 
 // Function to start the Actix Web server
-async fn start_http_server(
-    url: Uri,
-    consensus_app_data: Data<ConsensusAppData>,
-    dispatcher_app_data: Data<Dispatcher>,
-) -> std::io::Result<()> {
+async fn start_http_server(url: Uri, dispatcher_app_data: Data<Dispatcher>) -> std::io::Result<()> {
     println!("Starting Actix Web server on {url}");
 
     let (host, port) = (url.host().unwrap(), url.port_u16().unwrap());
@@ -53,7 +51,6 @@ async fn start_http_server(
             .service(upsert_points)
             .service(get_point)
             .service(list_points)
-            .app_data(consensus_app_data.clone())
             .app_data(dispatcher_app_data.clone())
     })
     .bind((host, port))?
@@ -109,19 +106,21 @@ async fn main() -> std::io::Result<()> {
     )
     .expect("Failed to start consensus");
 
-    let consensus_app_data = web::Data::from(Arc::new(ConsensusAppData::new(sender.clone())));
+    let consensus_manager = ConsensusManager::new(
+        toc_arc.clone(),
+        consensus_state.clone(),
+        Some(sender.clone()),
+    );
 
     let dispatcher_app_data = web::Data::from(Arc::new(Dispatcher::from(
         toc_arc.clone(),
-        Some(consensus_state.clone()),
+        Some(consensus_manager),
     )));
 
     let rt_http = rt.handle().clone();
     let http_handle = std::thread::spawn(move || {
         rt_http.block_on(async {
-            if let Err(e) =
-                start_http_server(args.url, consensus_app_data, dispatcher_app_data).await
-            {
+            if let Err(e) = start_http_server(args.url, dispatcher_app_data).await {
                 eprintln!("HTTP Server error: {e}");
             }
         });
