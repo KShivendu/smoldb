@@ -41,6 +41,8 @@ tonic-build = "0.13.1"
 
 [dev-dependencies]
 criterion = { version = "0.6.0", features = ["async_tokio", "html_reports"] }
+protobuf = "2.28.0"
+regex = "1.11.1"
 rusty-hook = "0.11.2"
 
 [features]

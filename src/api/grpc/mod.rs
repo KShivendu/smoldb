@@ -15,7 +15,7 @@ use crate::{
         raft_service::RaftService,
         simple_service::SimpleService,
     },
-    consensus::{self, ConsensusState},
+    consensus::{self, manager::ConsensusManager},
     storage::toc::TableOfContent,
 };
 use http::Uri;
@@ -66,7 +66,7 @@ pub async fn init(
     grpc_port: u16,
     toc: Arc<TableOfContent>,
     sender: Sender<consensus::Msg>,
-    consensus_state: Option<Arc<ConsensusState>>,
+    consensus_state: Arc<ConsensusManager>,
 ) -> std::io::Result<()> {
     let mut server = Server::builder();
     let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));

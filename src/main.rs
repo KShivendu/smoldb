@@ -2,38 +2,33 @@ pub mod api;
 pub mod args;
 pub mod channel_service;
 pub mod consensus;
-pub mod consensus_manager;
 pub mod storage;
 pub mod types;
 
 use crate::api::collection::delete_collection;
 use crate::api::collection::get_collection_cluster_info;
 use crate::channel_service::ChannelService;
-use crate::consensus::Consensus;
-use crate::consensus::ConsensusState;
-use crate::consensus_manager::ConsensusManager;
+use crate::consensus::{manager::ConsensusManager, Consensus, ConsensusState};
 use crate::{
     api::{
-        cluster::{add_peer, get_cluster},
+        cluster::get_cluster,
         collection::{create_collection, get_collection, get_collections, Dispatcher},
         points::{get_point, list_points, upsert_points},
     },
     consensus::Msg,
     storage::toc::TableOfContent,
 };
-use actix_web::{
-    middleware,
-    web::{self, Data},
-    App, HttpServer,
-};
+use actix_web::{middleware, web::Data, App, HttpServer};
 use api::service::index;
 use args::parse_args;
 use http::Uri;
 use std::sync::{mpsc::Sender, Arc};
 
 // Function to start the Actix Web server
-async fn start_http_server(url: Uri, dispatcher_app_data: Data<Dispatcher>) -> std::io::Result<()> {
+async fn start_http_server(url: Uri, dispatcher: Dispatcher) -> std::io::Result<()> {
     println!("Starting Actix Web server on {url}");
+
+    let dispatcher_app_data = Data::new(dispatcher);
 
     let (host, port) = (url.host().unwrap(), url.port_u16().unwrap());
 
@@ -42,7 +37,6 @@ async fn start_http_server(url: Uri, dispatcher_app_data: Data<Dispatcher>) -> s
             .wrap(middleware::NormalizePath::trim())
             .service(index)
             .service(get_cluster)
-            .service(add_peer)
             .service(get_collections)
             .service(get_collection_cluster_info)
             .service(get_collection)
@@ -63,14 +57,14 @@ async fn start_p2p_server(
     p2p_uri: Uri,
     toc: Arc<TableOfContent>,
     msg_sender: Sender<Msg>,
-    consensus_state: Option<Arc<ConsensusState>>,
+    consensus_manager: Arc<ConsensusManager>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let p2p_host = p2p_uri.host().unwrap().to_string();
     let p2p_port = p2p_uri.port_u16().unwrap();
 
     println!("Starting internal gRPC server on {p2p_host}:{p2p_port}");
 
-    if let Err(e) = api::grpc::init(p2p_host, p2p_port, toc, msg_sender, consensus_state).await {
+    if let Err(e) = api::grpc::init(p2p_host, p2p_port, toc, msg_sender, consensus_manager).await {
         eprintln!("Failed to start gRPC server: {e}");
     }
 
@@ -106,21 +100,17 @@ async fn main() -> std::io::Result<()> {
     )
     .expect("Failed to start consensus");
 
-    let consensus_manager = ConsensusManager::new(
-        toc_arc.clone(),
-        consensus_state.clone(),
-        Some(sender.clone()),
-    );
+    let consensus_manager =
+        ConsensusManager::new(toc_arc.clone(), consensus_state.clone(), sender.clone());
 
-    let dispatcher_app_data = web::Data::from(Arc::new(Dispatcher::from(
-        toc_arc.clone(),
-        Some(consensus_manager),
-    )));
+    let consensus_manager_arc = Arc::new(consensus_manager);
+
+    let dispatcher = Dispatcher::from(toc_arc.clone(), Some(consensus_manager_arc.clone()));
 
     let rt_http = rt.handle().clone();
     let http_handle = std::thread::spawn(move || {
         rt_http.block_on(async {
-            if let Err(e) = start_http_server(args.url, dispatcher_app_data).await {
+            if let Err(e) = start_http_server(args.url, dispatcher).await {
                 eprintln!("HTTP Server error: {e}");
             }
         });
@@ -132,7 +122,7 @@ async fn main() -> std::io::Result<()> {
     let p2p_handle = std::thread::spawn(move || {
         rt_p2p.block_on(async {
             if let Err(e) =
-                start_p2p_server(args.p2p_url, toc_arc, sender_to_move, Some(consensus_state)).await
+                start_p2p_server(args.p2p_url, toc_arc, sender_to_move, consensus_manager_arc).await
             {
                 eprintln!("gRPC Server error: {e}");
             }

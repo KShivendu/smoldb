@@ -1,9 +1,9 @@
 use crate::{
     api::grpc::p2p_grpc_schema::{
-        raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
+        raft_server::Raft, AddPeerToKnownMessage, AllPeers, PeerId,
         RaftMessage as RaftMessageBytes, Uri,
     },
-    consensus::{self, ConsensusState},
+    consensus::{self, manager::ConsensusManager},
     storage::toc::TableOfContent,
 };
 use prost_for_raft::Message as ProtocolBufferMessage; // this trait is required for .decode() to work
@@ -14,19 +14,20 @@ use tonic::{Request, Response, Status};
 pub struct RaftService {
     sender: Sender<consensus::Msg>,
     toc: Arc<TableOfContent>,
-    consensus_state: Option<Arc<ConsensusState>>,
+    consensus_manager: Arc<ConsensusManager>,
+    // consensus_state: Option<Arc<ConsensusState>>,
 }
 
 impl RaftService {
     pub fn new(
         sender: Sender<consensus::Msg>,
         toc: Arc<TableOfContent>,
-        consensus_state: Option<Arc<ConsensusState>>,
+        consensus_manager: Arc<ConsensusManager>,
     ) -> Self {
         RaftService {
             sender,
             toc,
-            consensus_state,
+            consensus_manager,
         }
     }
 }
@@ -59,56 +60,31 @@ impl Raft for RaftService {
         Ok(Response::new(uri))
     }
 
+    /// Cancel safety??
     async fn add_peer_to_known(
         &self,
         request: Request<AddPeerToKnownMessage>,
     ) -> Result<Response<AllPeers>, Status> {
         // Here you would implement the logic to add a peer to the known peers list.
         // For now, we return an empty AllPeers response.
-        let request = request.into_inner();
+        let AddPeerToKnownMessage {
+            id: peer_id,
+            uri: peer_uri,
+            port: _,
+        } = request.into_inner();
 
-        let consensus_state = self
-            .consensus_state
-            .as_ref()
-            .ok_or_else(|| Status::internal("Consensus state is not available in RaftService"))?;
+        let uri = peer_uri.map(|u| u.parse::<http::Uri>().unwrap()).unwrap();
 
-        let uri = request
-            .uri
-            .map(|u| u.parse::<http::Uri>().unwrap())
-            .unwrap();
+        // let consensus_state = self
+        //     .consensus_manager
+        //     .enabled_or_error()
+        //     .map_err(|e| Status::internal(format!("Consensus is not enabled: {e}")));
 
-        consensus_state
-            .add_peer(request.id, uri)
+        let all_peers = self
+            .consensus_manager
+            .add_peer(peer_id, uri)
             .await
             .map_err(|e| Status::internal(format!("Failed to add peer: {e}")))?;
-
-        let collections_guard = self.toc.collections.write().await;
-        for (collection_name, collection) in collections_guard.iter() {
-            let mut replica_holder_guard = collection.replica_holder.write().await;
-            replica_holder_guard
-                .add_remote_shards(request.id, collection_name.clone())
-                .await
-                .map_err(|e| {
-                    Status::internal(format!(
-                        "Failed to add remote shards for collection '{collection_name}': {e}",
-                    ))
-                })?;
-        }
-
-        let persistent = consensus_state.persistent.read().await.clone();
-
-        let all_peers = persistent
-            .peers
-            .into_iter()
-            .map(|(id, uri)| Peer { id, uri })
-            .collect();
-
-        let this_peer_id = persistent.peer_id;
-
-        let all_peers = AllPeers {
-            all_peers,
-            first_peer_id: this_peer_id,
-        };
 
         Ok(Response::new(all_peers))
     }

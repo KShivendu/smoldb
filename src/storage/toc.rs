@@ -23,7 +23,8 @@ pub struct TableOfContent {
 
 pub type Collections = HashMap<CollectionName, Collection>;
 
-pub enum CollectionMetaOperation {
+#[derive(Debug, Clone)]
+pub enum CollectionOperation {
     CreateCollection {
         collection_name: String,
         params: String,
@@ -96,10 +97,10 @@ impl TableOfContent {
 
     pub async fn perform_collection_meta_op(
         &self,
-        operation: CollectionMetaOperation,
-    ) -> Result<bool, StorageError> {
+        operation: CollectionOperation,
+    ) -> Result<(), StorageError> {
         match operation {
-            CollectionMetaOperation::CreateCollection {
+            CollectionOperation::CreateCollection {
                 collection_name,
                 params,
             } => {
@@ -119,9 +120,9 @@ impl TableOfContent {
                     }
                     write_collections.insert(collection_name, collection);
                 }
-                Ok(true)
+                Ok(())
             }
-            CollectionMetaOperation::DeleteCollection { collection_name } => {
+            CollectionOperation::DeleteCollection { collection_name } => {
                 println!("Deleting collection {collection_name}");
                 let mut write_collections = self.collections.write().await;
 
@@ -134,7 +135,7 @@ impl TableOfContent {
                     )));
                 }
 
-                Ok(true)
+                Ok(())
             }
         }
     }

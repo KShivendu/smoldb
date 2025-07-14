@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 use tokio::time::Instant;
 
-use crate::storage::error::CollectionResult;
+use crate::storage::error::{CollectionError, CollectionResult, StorageError};
 
 type ResponseTime = f64;
 
@@ -41,7 +41,11 @@ where
                 time: instant.elapsed().as_secs_f64(),
             };
 
-            actix_web::HttpResponse::InternalServerError().json(res)
+            if let CollectionError::StorageError(StorageError::BadInput(_)) = e {
+                actix_web::HttpResponse::BadRequest().json(res)
+            } else {
+                actix_web::HttpResponse::InternalServerError().json(res)
+            }
         }
     }
 }

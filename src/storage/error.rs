@@ -32,4 +32,11 @@ pub enum CollectionError {
     JsonParseError(#[from] serde_path_to_error::Error<serde_json::Error>),
 }
 
+// Need special implementation for tonic::Status to wrap into Box
+impl From<tonic::Status> for CollectionError {
+    fn from(status: tonic::Status) -> Self {
+        CollectionError::TonicStatusError(Box::new(status))
+    }
+}
+
 pub type CollectionResult<T> = Result<T, CollectionError>;
