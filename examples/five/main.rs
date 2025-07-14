@@ -19,11 +19,11 @@ use raft::{prelude::*, StateRole};
 use regex::Regex;
 
 use slog::{error, info, o};
+const NUM_NODES: u32 = 2;
 
 fn main() {
     let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!("tag" => format!("[{}]", 1)));
 
-    const NUM_NODES: u32 = 5;
     // Create 5 mailboxes to send/receive messages. Every node holds a `Receiver` to receive
     // messages from others, and uses the respective `Sender` to send messages to others.
     let (mut tx_vec, mut rx_vec) = (Vec::new(), Vec::new());
@@ -43,7 +43,9 @@ fn main() {
     let mut handles = Vec::new();
     for (i, rx) in rx_vec.into_iter().enumerate() {
         // A map[peer_id -> sender]. In the example we create 5 nodes, with ids in [1, 5].
-        let mailboxes = (1..6u64).zip(tx_vec.iter().cloned()).collect();
+        let mailboxes = (1..=(NUM_NODES as u64))
+            .zip(tx_vec.iter().cloned())
+            .collect();
         let mut node = match i {
             // Peer 1 is the leader.
             0 => Node::create_raft_leader(1, rx, mailboxes, &logger),
@@ -118,10 +120,10 @@ fn main() {
     add_all_followers(proposals.as_ref()); // otherwise, it will commit directly.
 
     // Put 100 key-value pairs.
-    let num_messages: u16 = 14;
+    let num_messages: u16 = 5;
     info!(
         logger,
-        "We get a 5 nodes Raft cluster now, now propose {num_messages} proposals"
+        "We get a {NUM_NODES} nodes Raft cluster now, now propose {num_messages} proposals"
     );
     (0..num_messages)
         .filter(|i| {
@@ -247,6 +249,8 @@ fn on_ready(
     if !raft_group.has_ready() {
         return;
     }
+    println!("====> Processing ready state for node {node_idx}...");
+
     // println!("Raft node on {node_idx} has ready state, processing...");
     let store = raft_group.raft.raft_log.store.clone();
 
@@ -345,6 +349,8 @@ fn on_ready(
         handle_messages(ready.take_persisted_messages());
     }
 
+    println!("<==== Finished processing ready state for node {node_idx}...");
+
     // Call `RawNode::advance` interface to update position flags in the raft.
     let mut light_rd = raft_group.advance(ready);
     // Update commit index.
@@ -435,7 +441,7 @@ fn propose(raft_group: &mut RawNode<MemStorage>, proposal: &mut Proposal) {
 
 // Proposes some conf change for peers [2, 5].
 fn add_all_followers(proposals: &Mutex<VecDeque<Proposal>>) {
-    for i in 2..6u64 {
+    for i in 2..=(NUM_NODES as u64) {
         let mut conf_change = ConfChange::default();
         conf_change.node_id = i;
         conf_change.set_change_type(ConfChangeType::AddNode);

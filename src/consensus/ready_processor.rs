@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-
-use raft::prelude::{Entry, EntryType};
-
 use crate::consensus::Consensus;
+use protobuf::Message as PbMessage;
+use raft::prelude::{ConfChange, Entry, EntryType};
+use std::collections::HashMap;
 
 impl Consensus {
     /// Tries to process raft's ready state. Should be called on each tick.
@@ -15,12 +14,13 @@ impl Consensus {
                 return;
             }
 
-            println!("Raft node is ready, processing ready state output...");
+            println!("=====> Raft node is ready, processing ready state output...");
 
             let store = self.raft_node.raft.raft_log.store.clone();
 
             // The Raft is ready, we can do something now.
             let mut ready = self.raft_node.ready();
+            // self.raft_node.raft.leader_id
 
             // ToDo: Consensus snapshots
 
@@ -72,14 +72,14 @@ impl Consensus {
             // Advance the apply index.
             self.raft_node.advance_apply();
 
-            println!("Raft node processed a ready state.");
+            println!("<====== Raft node processed a ready state.");
         }
     }
 
     /// ToDo: This function should actually apply the committed entries to the state machine.
     ///
     /// However it currently pushes forwards ones to other peers via gRPC
-    fn handle_committed_entries(&self, entries: Vec<Entry>, last_apply_index: &mut u64) {
+    fn handle_committed_entries(&mut self, entries: Vec<Entry>, last_apply_index: &mut u64) {
         println!("Handling committed entries");
 
         for entry in entries {
@@ -103,14 +103,27 @@ impl Consensus {
 
     fn handle_role_change(&self, new_role: raft::StateRole) {
         println!("Raft node role changed to: {new_role:?}");
+
+        // let p = self.consensus_state.persistent.write().await;
+        // p.raft_info.role = format!("{new_role:?}");
     }
 
     fn handle_normal(&self, entry: Entry) {
         println!("Handle normal entry: {entry:?}");
     }
 
-    fn handle_conf_change(&self, entry: Entry) {
+    fn handle_conf_change(&mut self, entry: Entry) {
         println!("Handle conf change entry: {entry:?}");
+
+        let mut cc = ConfChange::default();
+        PbMessage::merge_from_bytes(&mut cc, &entry.data).unwrap();
+        let cs = self.raft_node.apply_conf_change(&cc).unwrap();
+        self.raft_node.raft.store().wl().set_conf_state(cs);
+
+        // ToDo: Extract peer id and push to local state
+        // for data in entry.data {
+        //     println!("Conf change data: {data:?}");
+        // }
     }
 
     fn handle_conf_change_v2(&self, entry: Entry) {

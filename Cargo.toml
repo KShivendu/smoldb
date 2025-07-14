@@ -34,6 +34,7 @@ tempfile = "3.20.0"
 thiserror = "2.0.12"
 tokio = { version = "1.45.1", features = ["full"] }
 rand = "0.9.1"
+protobuf = "2.28.0"
 futures = "0.3.31"
 
 [build-dependencies]
@@ -41,7 +42,6 @@ tonic-build = "0.13.1"
 
 [dev-dependencies]
 criterion = { version = "0.6.0", features = ["async_tokio", "html_reports"] }
-protobuf = "2.28.0"
 regex = "1.11.1"
 rusty-hook = "0.11.2"
 

@@ -76,11 +76,6 @@ impl Raft for RaftService {
 
         let uri = peer_uri.map(|u| u.parse::<http::Uri>().unwrap()).unwrap();
 
-        // let consensus_state = self
-        //     .consensus_manager
-        //     .enabled_or_error()
-        //     .map_err(|e| Status::internal(format!("Consensus is not enabled: {e}")));
-
         let all_peers = self
             .consensus_manager
             .add_peer(peer_id, uri)
