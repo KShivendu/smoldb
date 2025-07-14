@@ -36,7 +36,7 @@ impl Consensus {
     }
 
     async fn send_message(&mut self, message: RaftMessage) -> CollectionResult<()> {
-        println!("Sending message to other peers {:?}", message);
+        println!("Sending message to other peers {message:?}");
         let remotes = vec![101, 102, 103]; // Example peer IDs
 
         let bytes = <RaftMessage as RaftMessageTrait>::encode_to_vec(&message);

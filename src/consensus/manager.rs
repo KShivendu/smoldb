@@ -61,7 +61,7 @@ impl ConsensusManager {
 
         {
             let mut conf_change = ConfChange::default();
-            conf_change.node_id = peer_id;
+            conf_change.set_node_id(peer_id);
             conf_change.set_change_type(ConfChangeType::AddNode);
 
             let id = 99; // ToDo: Replace with actual logic to generate a unique ID
@@ -69,7 +69,7 @@ impl ConsensusManager {
             let _res = self.sender.send(Msg::Propose {
                 id,
                 operation: ConsensusOperation::AddPeer {
-                    peer_id: peer_id,
+                    peer_id,
                     uri: uri.to_string(),
                 },
                 callback: Box::new(move || {
@@ -119,7 +119,7 @@ impl ConsensusManager {
         sender
             .send(Msg::Propose {
                 id,
-                operation: operation,
+                operation,
                 callback: Box::new(move || {
                     println!("Callback executed operation with ID {id}");
                 }),

@@ -252,14 +252,12 @@ impl Consensus {
 
                             if let ConsensusOperation::AddPeer { peer_id, uri } = operation {
                                 let mut conf_change = ConfChange::default();
-                                conf_change.node_id = peer_id;
+                                conf_change.set_node_id(peer_id);
                                 conf_change.set_change_type(ConfChangeType::AddNode);
 
                                 raft_node
                                     .propose_conf_change(uri.to_string().into_bytes(), conf_change)
-                                    .expect(&format!(
-                                        "Failed to propose conf change to add peer {peer_id}"
-                                    ));
+                                    .expect("Failed to propose conf change to add peer");
 
                                 // let mut change = ConfChangeV2::default();
 

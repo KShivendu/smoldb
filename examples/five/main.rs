@@ -115,7 +115,7 @@ fn main() {
     }
 
     // Propose some conf changes so that followers can be initialized.
-    // add_all_followers(proposals.as_ref());
+    add_all_followers(proposals.as_ref()); // otherwise, it will commit directly.
 
     // Put 100 key-value pairs.
     let num_messages: u16 = 14;
@@ -412,10 +412,10 @@ impl Proposal {
 }
 
 fn propose(raft_group: &mut RawNode<MemStorage>, proposal: &mut Proposal) {
-    println!("Leader is proposing: {:?}", proposal);
+    println!("Leader is proposing: {proposal:?}");
     let last_index1 = raft_group.raft.raft_log.last_index() + 1;
     if let Some((ref key, ref value)) = proposal.normal {
-        let data = format!("put {} {}", key, value).into_bytes();
+        let data = format!("put {key} {value}").into_bytes();
         let _ = raft_group.propose(vec![], data);
     } else if let Some(ref cc) = proposal.conf_change {
         let _ = raft_group.propose_conf_change(vec![], cc.clone());

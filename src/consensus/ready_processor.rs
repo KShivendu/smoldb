@@ -102,7 +102,7 @@ impl Consensus {
     }
 
     fn handle_role_change(&self, new_role: raft::StateRole) {
-        println!("Raft node role changed to: {:?}", new_role);
+        println!("Raft node role changed to: {new_role:?}");
     }
 
     fn handle_normal(&self, entry: Entry) {

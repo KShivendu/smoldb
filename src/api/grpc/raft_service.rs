@@ -13,6 +13,7 @@ use tonic::{Request, Response, Status};
 
 pub struct RaftService {
     sender: Sender<consensus::Msg>,
+    #[allow(dead_code)] // ToDo: Not used. remove?
     toc: Arc<TableOfContent>,
     consensus_manager: Arc<ConsensusManager>,
     // consensus_state: Option<Arc<ConsensusState>>,
