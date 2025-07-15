@@ -20,6 +20,7 @@ use regex::Regex;
 
 use slog::{error, info, o};
 const NUM_NODES: u32 = 2;
+const NUM_MESSAGES: u16 = 1;
 
 fn main() {
     let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!("tag" => format!("[{}]", 1)));
@@ -119,13 +120,12 @@ fn main() {
     // Propose some conf changes so that followers can be initialized.
     add_all_followers(proposals.as_ref()); // otherwise, it will commit directly.
 
-    // Put 100 key-value pairs.
-    let num_messages: u16 = 5;
+    // Put key-value pairs.
     info!(
         logger,
-        "We get a {NUM_NODES} nodes Raft cluster now, now propose {num_messages} proposals"
+        "We get a {NUM_NODES} nodes Raft cluster now, now propose {NUM_MESSAGES} proposals"
     );
-    (0..num_messages)
+    (0..NUM_MESSAGES)
         .filter(|i| {
             let (proposal, rx) = Proposal::normal(*i, "hello, world".to_owned());
             proposals.lock().unwrap().push_back(proposal);
@@ -135,7 +135,7 @@ fn main() {
         })
         .count();
 
-    info!(logger, "Propose {num_messages} proposals success!");
+    info!(logger, "Proposed {NUM_MESSAGES} proposals successfully!");
 
     // Send terminate signals
     for _ in 0..NUM_NODES {
