@@ -1,5 +1,7 @@
 pub mod broker;
+pub mod debuggables;
 pub mod manager;
+pub mod raft_storage;
 pub mod ready_processor;
 
 use crate::{
@@ -7,13 +9,13 @@ use crate::{
         make_grpc_channel,
         p2p_grpc_schema::{raft_client::RaftClient, AddPeerToKnownMessage},
     },
+    consensus::raft_storage::RaftStorage,
     storage::toc::{CollectionOperation, TableOfContent},
     types::PeerId,
 };
 use http::Uri;
 use raft::{
-    prelude::{ConfChange, ConfChangeType, Message},
-    storage::MemStorage,
+    prelude::{ConfChange, ConfChangeType, Message, MessageType},
     Config, RawNode,
 };
 use rand::Rng;
@@ -28,12 +30,13 @@ use std::{
         Arc,
     },
     thread::{self},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{runtime::Handle, sync::RwLock};
 
 const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
-
+const RAFT_ELECTION_TICK_MS: usize = 10;
+const RAFT_HEARTBEAT_TICK_MS: usize = 3;
 #[derive(Debug, Clone, Serialize)]
 pub struct Persistent {
     pub peer_id: PeerId,
@@ -83,7 +86,8 @@ impl ConsensusState {
 /// Holds raft consensus state and handles bootstrapping,
 /// adding peers, and running the consensus loop.
 pub struct Consensus {
-    pub raft_node: RawNode<MemStorage>,
+    pub peer_id: PeerId,
+    pub raft_node: RawNode<RaftStorage>,
     pub receiver: Receiver<Msg>,
     pub runtime: Handle,
     // Probably don't keep it here since it mixes up abstraction levels
@@ -151,12 +155,22 @@ impl Consensus {
 
     /// Initialize consensus and run in loop with a dedicated thread.
     pub fn start(
+        peer_id: PeerId,
         bootstrap_uri: Option<Uri>,
         consensus_state: Arc<ConsensusState>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
     ) -> Result<Sender<Msg>, Box<dyn Error>> {
-        let (mut consensus, sender) = Self::new(runtime, toc)?;
+        let (mut consensus, sender) = Self::new(peer_id, runtime, toc)?;
+
+        // if bootstrap_uri.is_none() {
+        //     // For now, assuming that this is the leader and creating an intial before we even start the consensus loop:
+        //     let mut s = Snapshot::default();
+        //     s.mut_metadata().index = 1;
+        //     s.mut_metadata().term = 1;
+        //     s.mut_metadata().mut_conf_state().voters = vec![1];
+        //     consensus.raft_node.store().wl().apply_snapshot(s).expect("Should be able to apply initial snapshot");
+        // }
 
         // Start a thread for consensus
         // Note: we don't need to preserve the thread handle,
@@ -195,21 +209,43 @@ impl Consensus {
 
     /// Create a new Consensus instance with a Raft node, sender, and receiver.
     fn new(
+        peer_id: PeerId,
         runtime: Handle,
         toc: Arc<TableOfContent>,
     ) -> Result<(Self, Sender<Msg>), Box<dyn Error>> {
-        let storage = MemStorage::new_with_conf_state((vec![1], vec![]));
+        // let storage = MemStorage::default();
+
+        let storage = RaftStorage::new(peer_id);
         let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!());
 
         let config = Config {
-            id: 1, // The unique ID for the Raft node
+            id: peer_id,
+            election_tick: RAFT_ELECTION_TICK_MS,
+            heartbeat_tick: RAFT_HEARTBEAT_TICK_MS,
             ..Default::default()
         };
         let raft = RawNode::new(&config, storage, &logger)?;
 
+        if peer_id == 101 {
+            // raft.store().wl().storag
+            // let mut s = Snapshot::default();
+            // s.mut_metadata().index = 2;
+            // s.mut_metadata().term = 1;
+            // s.mut_metadata().mut_conf_state().voters = vec![peer_id];
+            // raft.store()
+            //     .wl()
+            //     .apply_snapshot(s)
+            //     .expect("Should be able to apply initial snapshot");
+        } else {
+            // For followers, they'll apply this snapshot when they receive it from the leader
+        }
+
+        println!("Created Raft node with ID: {peer_id}");
+
         let (sender, receiver) = channel::<Msg>();
 
         let consensus = Consensus {
+            peer_id,
             raft_node: raft,
             receiver,
             runtime,
@@ -226,76 +262,116 @@ impl Consensus {
     /// 2. If a message is received, pass it to the Raft node struct using .step() (internal raft messages) or .propose() (user defined messages)
     /// 3. If the Raft node is ready, call `on_ready()` to process the ready state (describes changes to the Raft state for other components like log, storage, and network layer).
     async fn run_loop(&mut self) -> Result<(), Box<dyn Error>> {
+        // Tick the raft node per 100ms. So use an `Instant` to trace it.
+        let mut t = Instant::now();
+
         loop {
             let Self {
                 raft_node,
                 receiver: local_receiver,
                 runtime: _,
+                peer_id: _,
                 toc: _,
             } = self;
 
             let mut callbacks = HashMap::new();
 
+            let mut is_heartbeat = false;
+            // let _last_index_before = raft_node.raft.raft_log.last_index() + 1;
+            // println!("Last index before processing: {_last_index_before}");
+
             // Wait for messages from the local receiver channel
-            match local_receiver.recv_timeout(RAFT_TICK_INTERVAL) {
-                Ok(msg) => {
-                    match msg {
-                        Msg::Propose {
-                            id,
-                            operation,
-                            callback,
-                        } => {
-                            println!(
-                                "Received proposal with ID: {id} and operation: {operation:?}"
-                            );
-                            callbacks.insert(id, callback);
+            loop {
+                match local_receiver.recv_timeout(RAFT_TICK_INTERVAL) {
+                    Ok(msg) => {
+                        match msg {
+                            Msg::Propose {
+                                id,
+                                operation,
+                                callback,
+                            } => {
+                                println!(
+                                    "Received proposal with ID: {id} and operation: {operation:?}"
+                                );
+                                callbacks.insert(id, callback);
 
-                            if let ConsensusOperation::AddPeer { peer_id, uri } = operation {
-                                let mut conf_change = ConfChange::default();
-                                conf_change.set_node_id(peer_id);
-                                conf_change.set_change_type(ConfChangeType::AddNode);
+                                if let ConsensusOperation::AddPeer { peer_id, uri } = operation {
+                                    let mut conf_change = ConfChange::default();
+                                    conf_change.set_node_id(peer_id);
+                                    conf_change.set_change_type(ConfChangeType::AddNode);
 
-                                raft_node
-                                    .propose_conf_change(uri.to_string().into_bytes(), conf_change)
-                                    .expect("Failed to propose conf change to add peer");
+                                    raft_node
+                                        .propose_conf_change(
+                                            uri.to_string().into_bytes(),
+                                            conf_change,
+                                        )
+                                        .expect("Failed to propose conf change to add peer");
 
-                                // let mut change = ConfChangeV2::default();
+                                    // let mut change = ConfChangeV2::default();
 
-                                // change.set_changes(vec![raft_proto::new_conf_change_single(
-                                //     peer_id,
-                                //     ConfChangeType::AddLearnerNode,
-                                // )]);
-                                // raft_node
-                                //     .propose_conf_change(uri.to_string().into_bytes(), change)
-                                //     .unwrap();
+                                    // change.set_changes(vec![raft_proto::new_conf_change_single(
+                                    //     peer_id,
+                                    //     ConfChangeType::AddLearnerNode,
+                                    // )]);
+                                    // raft_node
+                                    //     .propose_conf_change(uri.to_string().into_bytes(), change)
+                                    //     .unwrap();
+                                } else {
+                                    // Propose the operation to the Raft node log
+                                    let msg_str = format!("{operation:?}");
+                                    let msg_bytes = msg_str.into_bytes();
+                                    raft_node.propose(vec![], msg_bytes).unwrap();
+                                }
                             }
+                            Msg::Raft(message) => {
+                                // println!("Received internal raft message: {message:?}");
+                                // Advance the state machine
 
-                            // Propose the operation to the Raft node log
-                            raft_node.propose(vec![], vec![id]).unwrap();
-                        }
-                        Msg::Raft(message) => {
-                            println!("Received Raft message: {message:?}");
-                            // Advance the state machine
-                            raft_node.step(*message)?;
+                                let msg_type = message.get_msg_type();
+
+                                if msg_type == MessageType::MsgHeartbeat {
+                                    is_heartbeat = true;
+                                }
+
+                                if msg_type == MessageType::MsgAppendResponse {
+                                    if message.get_reject() {
+                                        println!(
+                                            "Received rejected append response from peer: {}",
+                                            message.get_from()
+                                        );
+                                    } else {
+                                        println!(
+                                            "Received successful append response from peer: {}",
+                                            message.get_from()
+                                        );
+                                    }
+                                }
+
+                                raft_node.step(*message)?;
+                            }
                         }
                     }
-
-                    if !raft_node.has_ready() {
-                        eprintln!("Got a message but Raft node is not ready, skipping...");
-                        continue; // No ready state, continue to the next iteration
+                    Err(RecvTimeoutError::Timeout) => {
+                        // Timeout occurred, we can tick the Raft node
+                        break;
                     }
-
-                    self.on_ready(&mut callbacks).await;
-                }
-                Err(RecvTimeoutError::Timeout) => {
-                    // Timeout occurred, we can tick the Raft node
-                    raft_node.tick();
-                }
-                Err(RecvTimeoutError::Disconnected) => {
-                    println!("Receiver disconnected, exiting loop.");
-                    return Ok(());
+                    Err(RecvTimeoutError::Disconnected) => {
+                        return Err("Receiver disconnected, exiting consensus loop".into());
+                    }
                 }
             }
+
+            if t.elapsed() >= RAFT_TICK_INTERVAL {
+                // Tick the raft.
+                raft_node.tick();
+                t = Instant::now();
+            }
+
+            if !raft_node.has_ready() {
+                continue; // No ready state to processing ticking, continue to the next iteration
+            }
+
+            self.on_ready(&mut callbacks, !is_heartbeat).await;
         }
     }
 }

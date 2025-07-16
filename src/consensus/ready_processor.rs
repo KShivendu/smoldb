@@ -1,6 +1,6 @@
-use crate::consensus::Consensus;
+use crate::consensus::{debuggables::DebuggableReady, Consensus};
 use protobuf::Message as PbMessage;
-use raft::prelude::{ConfChange, Entry, EntryType};
+use raft::prelude::{ConfChange, Entry, EntryType, Snapshot};
 use std::collections::HashMap;
 
 impl Consensus {
@@ -8,26 +8,59 @@ impl Consensus {
     ///
     /// [`raft::Ready`] is the outstanding work that the application needs to handle.
     /// [`raft::LightReady`] that has the committed entries and messages but no commit index.
-    pub async fn on_ready(&mut self, _cbs: &mut HashMap<u8, Box<dyn Fn() + Send>>) {
+    pub async fn on_ready(
+        &mut self,
+        _cbs: &mut HashMap<u8, Box<dyn Fn() + Send>>,
+        with_logging: bool,
+    ) {
         loop {
             if !self.raft_node.has_ready() {
                 return;
             }
 
-            println!("=====> Raft node is ready, processing ready state output...");
-
             let store = self.raft_node.raft.raft_log.store.clone();
+
+            // {
+            //     let state = self.raft_node.raft.hard_state();
+            //     if with_logging {
+            //         println!("Raft hard state is {state:?}");
+            //     }
+
+            //     let current_state = store.rl();
+
+            //     if with_logging {
+            //         println!("Current state is {:?}", current_state.hard_state());
+            //     }
+            // }
 
             // The Raft is ready, we can do something now.
             let mut ready = self.raft_node.ready();
             // self.raft_node.raft.leader_id
 
+            if with_logging {
+                let debuggable_ready = DebuggableReady::from(&ready);
+                debuggable_ready.log("\n\n\n=====> Raft node is ready, processing ready state");
+            }
+
             // ToDo: Consensus snapshots
 
             if !ready.messages().is_empty() {
                 // Send messages to other peers.
-                println!("Found messages");
+                // if with_logging {
+                //     println!("Got messages to send");
+                // }
                 self.send_messages(ready.take_messages()).await;
+            }
+
+            // Apply snapshot if it exists.
+            if *ready.snapshot() != Snapshot::default() {
+                println!("Found a snapshot in ready state: {:?}", ready.snapshot());
+                let s = ready.snapshot().clone();
+                if let Err(e) = store.apply_snapshot(s) {
+                    println!("Failed to apply snapshot: {e}. should retry or panic");
+                } else {
+                    println!("Successfully applied snapshot: {:?}", ready.snapshot());
+                }
             }
 
             let mut last_apply_index = 0;
@@ -35,13 +68,15 @@ impl Consensus {
 
             if !ready.entries().is_empty() {
                 // Append entries to the Raft log.
-                store.wl().append(ready.entries()).unwrap();
+                store.append_entries(ready.entries()).unwrap();
             }
 
             if let Some(updated_hs) = ready.hs() {
-                println!("Changing hard state: {updated_hs:?}");
+                if with_logging {
+                    println!("Raft hard state changed to: {updated_hs:?}");
+                }
                 // Raft HardState changed, and we need to persist it.
-                store.wl().set_hardstate(updated_hs.clone());
+                store.set_hardstate(updated_hs.clone());
             }
 
             let role_change = ready.ss().map(|ss| ss.raft_state);
@@ -52,7 +87,9 @@ impl Consensus {
 
             if !ready.persisted_messages().is_empty() {
                 // Send out the persisted messages come from the node.
-                println!("Found persisted messages");
+                if with_logging {
+                    println!("Persisted messages: {:?}", ready.persisted_messages());
+                }
                 self.send_messages(ready.take_persisted_messages()).await;
             }
 
@@ -60,7 +97,7 @@ impl Consensus {
             let mut light_ready = self.raft_node.advance(ready);
             // Update commit index.
             if let Some(commit) = light_ready.commit_index() {
-                store.wl().mut_hard_state().set_commit(commit);
+                store.set_hardstate_commit(commit);
             }
             // Send out the messages to other peers.
             self.send_messages(light_ready.take_messages()).await;
@@ -72,7 +109,10 @@ impl Consensus {
             // Advance the apply index.
             self.raft_node.advance_apply();
 
-            println!("<====== Raft node processed a ready state.");
+            if with_logging {
+                // println!("<====== Raft node processed a ready state.");
+                // println!("Last apply index: {last_apply_index}");
+            }
         }
     }
 
@@ -80,7 +120,9 @@ impl Consensus {
     ///
     /// However it currently pushes forwards ones to other peers via gRPC
     fn handle_committed_entries(&mut self, entries: Vec<Entry>, last_apply_index: &mut u64) {
-        println!("Handling committed entries");
+        // println!("Handling {} committed entries", entries.len());
+
+        // let x=  self.raft_node.raft.request_snapshot();
 
         for entry in entries {
             // Mostly, you need to save the last apply index to resume applying
@@ -88,7 +130,7 @@ impl Consensus {
             *last_apply_index = entry.index;
 
             if entry.data.is_empty() {
-                // Empty entry, when the peer becomes Leader it will send an empty entry.
+                println!("Empty entry found. This means a new leader was elected.");
                 continue;
             }
 
@@ -109,7 +151,14 @@ impl Consensus {
     }
 
     fn handle_normal(&self, entry: Entry) {
-        println!("Handle normal entry: {entry:?}");
+        // For normal proposals, extract the key-value pair and then
+        // insert them into the kv engine.
+
+        let data = str::from_utf8(&entry.data)
+            .expect("Entry data should be valid UTF-8")
+            .to_string();
+
+        println!("Handled Normal entry data: {data}");
     }
 
     fn handle_conf_change(&mut self, entry: Entry) {
@@ -118,7 +167,7 @@ impl Consensus {
         let mut cc = ConfChange::default();
         PbMessage::merge_from_bytes(&mut cc, &entry.data).unwrap();
         let cs = self.raft_node.apply_conf_change(&cc).unwrap();
-        self.raft_node.raft.store().wl().set_conf_state(cs);
+        self.raft_node.raft.store().set_conf_state(cs);
 
         // ToDo: Extract peer id and push to local state
         // for data in entry.data {
@@ -126,7 +175,7 @@ impl Consensus {
         // }
     }
 
-    fn handle_conf_change_v2(&self, entry: Entry) {
-        println!("Handle conf change v2 entry: {entry:?}");
+    fn handle_conf_change_v2(&self, _entry: Entry) {
+        unimplemented!("Not implemented yet for conf change v2");
     }
 }

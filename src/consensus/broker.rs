@@ -1,4 +1,5 @@
 use crate::api::grpc::p2p_grpc_schema::RaftMessage as GrpcRaftMessage;
+use crate::consensus::debuggables::DebuggableMessage;
 use crate::{
     api::grpc::{make_default_grpc_channel, p2p_grpc_schema::raft_client::RaftClient},
     consensus::Consensus,
@@ -36,13 +37,21 @@ impl Consensus {
     }
 
     async fn send_message(&mut self, message: RaftMessage) -> CollectionResult<()> {
-        println!("Sending message to other peers {message:?}");
+        let debuggable_msg = DebuggableMessage::from(message.clone());
+        debuggable_msg.log("Sending msg to others:");
         let remotes = vec![101, 102, 103]; // Example peer IDs
+
+        // println!("LEADER IS = {:?}", self.raft_node.raft.leader_id);
 
         let bytes = <RaftMessage as RaftMessageTrait>::encode_to_vec(&message);
         let req = GrpcRaftMessage { message: bytes };
 
         for peer_id in remotes {
+            if peer_id != message.to {
+                // Skip sending message others
+                continue;
+            }
+
             if let Ok(mut client) = get_raft_client(peer_id).await {
                 // ToDo: Ignoring errors for now. But should be propagated
                 let _ = client.send(Request::new(req.clone())).await;

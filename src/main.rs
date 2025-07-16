@@ -92,7 +92,10 @@ async fn main() -> std::io::Result<()> {
     let toc = TableOfContent::load(channel_service);
     let toc_arc = Arc::new(toc);
 
+    let peer_id = consensus_state.persistent.read().await.peer_id;
+
     let sender = Consensus::start(
+        peer_id,
         args.bootstrap.clone(),
         consensus_state.clone(),
         toc_arc.clone(),

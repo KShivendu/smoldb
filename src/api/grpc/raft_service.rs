@@ -3,7 +3,7 @@ use crate::{
         raft_server::Raft, AddPeerToKnownMessage, AllPeers, PeerId,
         RaftMessage as RaftMessageBytes, Uri,
     },
-    consensus::{self, manager::ConsensusManager},
+    consensus::{self, debuggables::DebuggableMessage, manager::ConsensusManager},
     storage::toc::TableOfContent,
 };
 use prost_for_raft::Message as ProtocolBufferMessage; // this trait is required for .decode() to work
@@ -42,6 +42,9 @@ impl Raft for RaftService {
         let message_bytes = &request.get_mut().message[..];
         let message = <RaftMessageParsed>::decode(message_bytes)
             .map_err(|e| Status::internal(format!("Failed to decode Raft message: {e}")))?;
+
+        let debuggable_msg = DebuggableMessage::from(message.clone());
+        debuggable_msg.log("P2P gRPC received Raft message");
 
         self.sender
             .send(consensus::Msg::Raft(Box::new(message)))

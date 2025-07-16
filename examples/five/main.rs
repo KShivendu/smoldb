@@ -41,6 +41,24 @@ impl From<&Entry> for DebuggableEntry {
     }
 }
 
+#[derive(Debug)]
+#[allow(dead_code)]
+struct DebuggableReady {
+    messages: Vec<Message>,
+    committed_entries: Vec<Entry>,
+    snapshot: Snapshot,
+}
+
+impl From<&raft::Ready> for DebuggableReady {
+    fn from(ready: &raft::Ready) -> Self {
+        DebuggableReady {
+            messages: ready.messages().to_vec(),
+            committed_entries: ready.committed_entries().to_vec(),
+            snapshot: ready.snapshot().clone(),
+        }
+    }
+}
+
 fn main() {
     let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!("tag" => format!("[{}]", 1)));
 
@@ -172,6 +190,7 @@ enum Signal {
     Terminate,
 }
 
+/// Check if the receiver has received a terminate signal or disconnected.
 fn check_signals(receiver: &Arc<Mutex<mpsc::Receiver<Signal>>>) -> bool {
     match receiver.lock().unwrap().try_recv() {
         Ok(Signal::Terminate) => true,
@@ -277,12 +296,14 @@ fn on_ready(
     // Get the `Ready` with `RawNode::ready` interface.
     let mut ready = raft_group.ready();
 
+    // println!("Ready state for {node_idx} is {ready:?}");
+
     let handle_messages = |msgs: Vec<Message>| {
         for msg in msgs {
             let to = msg.to;
             let debuggable_entries = msg
                 .get_entries()
-                .into_iter()
+                .iter()
                 .map(DebuggableEntry::from)
                 .collect::<Vec<_>>();
 
@@ -375,8 +396,6 @@ fn on_ready(
         handle_messages(ready.take_persisted_messages());
     }
 
-    println!("<==== Finished processing ready state for node {node_idx}...");
-
     // Call `RawNode::advance` interface to update position flags in the raft.
     let mut light_rd = raft_group.advance(ready);
     // Update commit index.
@@ -389,6 +408,8 @@ fn on_ready(
     handle_committed_entries(raft_group, light_rd.take_committed_entries());
     // Advance the apply index.
     raft_group.advance_apply();
+
+    println!("<==== Finished processing ready + light-ready state for node {node_idx}...");
 }
 
 fn example_config() -> Config {
