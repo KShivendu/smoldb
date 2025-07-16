@@ -13,14 +13,32 @@ use std::time::{Duration, Instant};
 use std::{str, thread};
 
 use protobuf::Message as PbMessage;
-// use prost::Message as MessageTrait;
 use raft::storage::MemStorage;
 use raft::{prelude::*, StateRole};
 use regex::Regex;
 
 use slog::{error, info, o};
+
 const NUM_NODES: u32 = 2;
-const NUM_MESSAGES: u16 = 1;
+const NUM_MESSAGES: u16 = 0;
+
+#[derive(Debug)]
+struct DebuggableEntry {
+    index: u64,
+    term: u64,
+    data: String,
+}
+
+impl From<&Entry> for DebuggableEntry {
+    fn from(entry: &Entry) -> Self {
+        let data = str::from_utf8(&entry.data).unwrap_or("Invalid UTF-8");
+        DebuggableEntry {
+            index: entry.index,
+            term: entry.term,
+            data: data.to_string(),
+        }
+    }
+}
 
 fn main() {
     let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!("tag" => format!("[{}]", 1)));
@@ -260,11 +278,17 @@ fn on_ready(
     let handle_messages = |msgs: Vec<Message>| {
         for msg in msgs {
             let to = msg.to;
+            let debuggable_entries = msg
+                .get_entries()
+                .into_iter()
+                .map(DebuggableEntry::from)
+                .collect::<Vec<_>>();
+
             println!(
-                "Node {node_idx} sending message to {to}: {:?} : {:?}",
-                msg.get_msg_type(),
-                msg.entries
+                "Sending {node_idx} -> {to}: {:?}: {debuggable_entries:?}",
+                msg.get_msg_type()
             );
+
             if mailboxes[&to].send(msg).is_err() {
                 error!(
                     logger,
@@ -443,8 +467,9 @@ fn propose(raft_group: &mut RawNode<MemStorage>, proposal: &mut Proposal) {
 fn add_all_followers(proposals: &Mutex<VecDeque<Proposal>>) {
     for i in 2..=(NUM_NODES as u64) {
         let mut conf_change = ConfChange::default();
-        conf_change.node_id = i;
+        conf_change.set_node_id(i);
         conf_change.set_change_type(ConfChangeType::AddNode);
+
         loop {
             let (proposal, rx) = Proposal::conf_change(&conf_change);
             proposals.lock().unwrap().push_back(proposal);
