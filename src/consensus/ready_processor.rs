@@ -1,4 +1,7 @@
-use crate::consensus::{debuggables::DebuggableReady, Consensus};
+use crate::consensus::{
+    debuggables::{DebuggableEntry, DebuggableReady},
+    Consensus,
+};
 use protobuf::Message as PbMessage;
 use raft::prelude::{ConfChange, Entry, EntryType, Snapshot};
 use std::collections::HashMap;
@@ -162,7 +165,8 @@ impl Consensus {
     }
 
     fn handle_conf_change(&mut self, entry: Entry) {
-        println!("Handle conf change entry: {entry:?}");
+        let debuggable_entry = DebuggableEntry::from(&entry);
+        debuggable_entry.log("Handling conf change entry:");
 
         let mut cc = ConfChange::default();
         PbMessage::merge_from_bytes(&mut cc, &entry.data).unwrap();

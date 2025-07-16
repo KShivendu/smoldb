@@ -333,20 +333,6 @@ impl Consensus {
                                     is_heartbeat = true;
                                 }
 
-                                if msg_type == MessageType::MsgAppendResponse {
-                                    if message.get_reject() {
-                                        println!(
-                                            "Received rejected append response from peer: {}",
-                                            message.get_from()
-                                        );
-                                    } else {
-                                        println!(
-                                            "Received successful append response from peer: {}",
-                                            message.get_from()
-                                        );
-                                    }
-                                }
-
                                 raft_node.step(*message)?;
                             }
                         }
