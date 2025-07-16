@@ -60,7 +60,7 @@ impl Storage for RaftStorage {
         let debuggable_res = res.as_ref().map(|entries| {
             entries
                 .iter()
-                .map(|e| DebuggableEntry::from(e))
+                .map(DebuggableEntry::from)
                 .collect::<Vec<_>>()
         });
 
@@ -78,15 +78,13 @@ impl Storage for RaftStorage {
     }
 
     fn first_index(&self) -> RaftResult<u64> {
-        let res = self.mem_storage.first_index();
+        self.mem_storage.first_index()
         // println!("STORAGE: First index requested - {res:?}");
-        res
     }
 
     fn last_index(&self) -> RaftResult<u64> {
-        let res = self.mem_storage.last_index();
+        self.mem_storage.last_index()
         // println!("STORAGE: Last index requested - {res:?}");
-        res
     }
 
     fn snapshot(&self, request_index: u64, to: u64) -> RaftResult<Snapshot> {
