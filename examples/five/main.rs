@@ -20,9 +20,10 @@ use regex::Regex;
 use slog::{error, info, o};
 
 const NUM_NODES: u32 = 2;
-const NUM_MESSAGES: u16 = 0;
+const NUM_MESSAGES: u16 = 1;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct DebuggableEntry {
     index: u64,
     term: u64,
@@ -81,6 +82,11 @@ fn main() {
         let logger = logger.clone();
         // Here we spawn the node on a new thread and keep a handle so we can join on them later.
         let handle = thread::spawn(move || loop {
+            // Check control signals from the main thread.
+            if check_signals(&rx_stop_clone) {
+                return;
+            };
+
             thread::sleep(Duration::from_millis(10));
             loop {
                 // Step raft messages.
@@ -126,11 +132,6 @@ fn main() {
                 &proposals,
                 &logger,
             );
-
-            // Check control signals from the main thread.
-            if check_signals(&rx_stop_clone) {
-                return;
-            };
         });
         handles.push(handle);
     }
@@ -145,6 +146,7 @@ fn main() {
     );
     (0..NUM_MESSAGES)
         .filter(|i| {
+            println!("Proposing message {i}");
             let (proposal, rx) = Proposal::normal(*i, "hello, world".to_owned());
             proposals.lock().unwrap().push_back(proposal);
             // After we got a response from `rx`, we can assume the put succeeded and following
@@ -443,7 +445,7 @@ impl Proposal {
 
 fn propose(raft_group: &mut RawNode<MemStorage>, proposal: &mut Proposal) {
     println!("Leader is proposing: {proposal:?}");
-    let last_index1 = raft_group.raft.raft_log.last_index() + 1;
+    let last_index_before = raft_group.raft.raft_log.last_index() + 1;
     if let Some((ref key, ref value)) = proposal.normal {
         let data = format!("put {key} {value}").into_bytes();
         let _ = raft_group.propose(vec![], data);
@@ -454,12 +456,14 @@ fn propose(raft_group: &mut RawNode<MemStorage>, proposal: &mut Proposal) {
         unimplemented!();
     }
 
-    let last_index2 = raft_group.raft.raft_log.last_index() + 1;
-    if last_index2 == last_index1 {
+    let last_index_after = raft_group.raft.raft_log.last_index() + 1;
+    if last_index_after == last_index_before {
         // Propose failed, don't forget to respond to the client.
         proposal.propose_success.send(false).unwrap();
     } else {
-        proposal.proposed = last_index1;
+        // Qn: Why don't we use .send(true) here?
+        // A: Because we need to wait for the `on_ready` to handle the committed
+        proposal.proposed = last_index_before;
     }
 }
 
