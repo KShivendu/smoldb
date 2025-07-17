@@ -1,4 +1,4 @@
-use crate::{consensus::debuggables::DebuggableEntry, types::PeerId};
+use crate::types::PeerId;
 use raft::{
     prelude::{Entry, Snapshot},
     storage::MemStorage,
@@ -23,6 +23,7 @@ impl RaftStorage {
         self.mem_storage.wl().apply_snapshot(snapshot)
     }
 
+    /// Append entries to the Raft log.
     pub fn append_entries(&self, entries: &[Entry]) -> RaftResult<()> {
         self.mem_storage.wl().append(entries)
     }
@@ -42,9 +43,7 @@ impl RaftStorage {
 
 impl Storage for RaftStorage {
     fn initial_state(&self) -> RaftResult<RaftState> {
-        let res = self.mem_storage.initial_state();
-        println!("STORAGE: Initial state requested - {res:?}");
-        res
+        self.mem_storage.initial_state()
     }
 
     fn entries(
@@ -55,41 +54,22 @@ impl Storage for RaftStorage {
         context: GetEntriesContext,
     ) -> RaftResult<Vec<Entry>> {
         let max_size: Option<u64> = max_size.into();
-        let res = self.mem_storage.entries(low, high, max_size, context);
-
-        let debuggable_res = res.as_ref().map(|entries| {
-            entries
-                .iter()
-                .map(DebuggableEntry::from)
-                .collect::<Vec<_>>()
-        });
-
-        println!(
-            "STORAGE: Entries requested from index: {low} to {high} with max size: {:?} - {debuggable_res:?}",
-            max_size.clone(),
-        );
-        res
+        self.mem_storage.entries(low, high, max_size, context)
     }
 
     fn term(&self, idx: u64) -> RaftResult<u64> {
-        let res = self.mem_storage.term(idx);
-        println!("STORAGE: Term requested for index: {idx} - {res:?}");
-        res
+        self.mem_storage.term(idx)
     }
 
     fn first_index(&self) -> RaftResult<u64> {
         self.mem_storage.first_index()
-        // println!("STORAGE: First index requested - {res:?}");
     }
 
     fn last_index(&self) -> RaftResult<u64> {
         self.mem_storage.last_index()
-        // println!("STORAGE: Last index requested - {res:?}");
     }
 
     fn snapshot(&self, request_index: u64, to: u64) -> RaftResult<Snapshot> {
-        let res = self.mem_storage.snapshot(request_index, to);
-        println!("STORAGE: Snapshot requested from index: {request_index}, to: {to} - {res:?}");
-        res
+        self.mem_storage.snapshot(request_index, to)
     }
 }

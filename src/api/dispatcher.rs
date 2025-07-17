@@ -1,6 +1,7 @@
 use http::Uri;
 
 use crate::consensus::manager::ConsensusManager;
+use crate::consensus::utils::add_peer_to_toc_and_consensus_state;
 use crate::consensus::{ConsensusOperation, Msg};
 use crate::storage::error::{CollectionResult, ConsensusError};
 use crate::storage::toc::{CollectionOperation, TableOfContent};
@@ -86,29 +87,14 @@ impl Dispatcher {
         });
 
         // Update local consensus state
-        let (this_peer_id, updated_peers) = consensus
-            .state
-            .add_peer(peer_id, uri.clone())
-            .await
-            .map_err(|e| {
-                ConsensusError::ServiceError(format!("Failed to add peer to local state: {e}"))
-            })?;
-
-        {
-            let collections_guard = self.toc.collections.write().await;
-            for (collection_name, collection) in collections_guard.iter() {
-                let mut replica_holder_guard = collection.replica_holder.write().await;
-
-                replica_holder_guard
-                    .add_remote_shards(peer_id, collection_name.clone())
-                    .await
-                    .map_err(|e| {
-                        ConsensusError::ServiceError(format!(
-                            "Failed to add remote shards for collection '{collection_name}': {e}",
-                        ))
-                    })?;
-            }
-        }
+        let (this_peer_id, updated_peers) =
+            add_peer_to_toc_and_consensus_state(&consensus.state, &self.toc, peer_id, uri)
+                .await
+                .map_err(|e| {
+                    ConsensusError::ServiceError(format!(
+                        "Failed to add new peer to local states and collections: {e}"
+                    ))
+                })?;
 
         Ok((this_peer_id, updated_peers))
     }

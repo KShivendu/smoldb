@@ -3,19 +3,20 @@ pub mod debuggables;
 pub mod manager;
 pub mod raft_storage;
 pub mod ready_processor;
+pub mod utils;
 
 use crate::{
     api::grpc::{
         make_grpc_channel,
         p2p_grpc_schema::{raft_client::RaftClient, AddPeerToKnownMessage},
     },
-    consensus::raft_storage::RaftStorage,
+    consensus::{raft_storage::RaftStorage, utils::add_peer_to_toc_and_consensus_state},
     storage::toc::{CollectionOperation, TableOfContent},
     types::PeerId,
 };
 use http::Uri;
 use raft::{
-    prelude::{ConfChange, ConfChangeType, Entry, Message, MessageType},
+    prelude::{ConfChange, ConfChangeType, Entry, Message},
     Config, RawNode,
 };
 use rand::Rng;
@@ -58,7 +59,7 @@ pub struct ConsensusState {
 pub struct ConsensusRaftInfo {
     pub term: u64,
     pub commit: u64,
-    pub pending_operations: u64,
+    // ToDo: Introduce pending_operations field
     pub role: String, // "leader", "follower", etc.
     pub leader: PeerId,
 }
@@ -76,7 +77,6 @@ impl ConsensusState {
             raft_info: ConsensusRaftInfo {
                 term: 0,
                 commit: 0,
-                pending_operations: 0,
                 role: "".to_string(),
                 leader: 0,
             },
@@ -149,24 +149,20 @@ impl Consensus {
             .await?
             .into_inner();
 
-        println!("Adding all received peers: {all_peers:?}");
+        println!("Adding peers from bootstrap: {all_peers:?}");
         for peer in all_peers.all_peers {
             // Add peer to local state
             if peer.id == peer_id {
                 continue; // Skip adding self
             }
 
-            consensus_state
-                .add_peer(peer.id, peer.uri.parse::<Uri>()?)
-                .await?;
-
-            let collections = self.toc.collections.read().await;
-            for (collection_name, collection) in collections.iter() {
-                let mut replica_holder = collection.replica_holder.write().await;
-                replica_holder
-                    .add_remote_shards(peer.id, collection_name.clone())
-                    .await?;
-            }
+            add_peer_to_toc_and_consensus_state(
+                &consensus_state,
+                &self.toc,
+                peer.id,
+                peer.uri.parse::<Uri>()?,
+            )
+            .await?;
         }
 
         // local_state.set_first_voter(all_peeers.first_peer_id);
@@ -280,10 +276,6 @@ impl Consensus {
 
             let mut callbacks = HashMap::new();
 
-            let mut is_heartbeat = false;
-            // let _last_index_before = raft_node.raft.raft_log.last_index() + 1;
-            // println!("Last index before processing: {_last_index_before}");
-
             // Wait for messages from the local receiver channel
             loop {
                 match local_receiver.recv_timeout(RAFT_TICK_INTERVAL) {
@@ -299,9 +291,11 @@ impl Consensus {
                                 );
                                 callbacks.insert(id, callback);
 
-                                if let ConsensusOperation::AddPeer { peer_id, uri } = operation {
+                                // If add peer, first propose a conf change to the Raft node
+                                if let ConsensusOperation::AddPeer { peer_id, uri } = &operation {
+                                    // ToDo: Use ConfChangeV2 instead
                                     let mut conf_change = ConfChange::default();
-                                    conf_change.set_node_id(peer_id);
+                                    conf_change.set_node_id(*peer_id);
                                     conf_change.set_change_type(ConfChangeType::AddNode);
 
                                     raft_node
@@ -310,32 +304,14 @@ impl Consensus {
                                             conf_change,
                                         )
                                         .expect("Failed to propose conf change to add peer");
-
-                                    // let mut change = ConfChangeV2::default();
-
-                                    // change.set_changes(vec![raft_proto::new_conf_change_single(
-                                    //     peer_id,
-                                    //     ConfChangeType::AddLearnerNode,
-                                    // )]);
-                                    // raft_node
-                                    //     .propose_conf_change(uri.to_string().into_bytes(), change)
-                                    //     .unwrap();
-                                } else {
-                                    // Propose the operation to the Raft node log
-                                    let msg_bytes = operation.into_bytes();
-                                    raft_node.propose(vec![], msg_bytes).unwrap();
                                 }
+
+                                // Propose the operation to the Raft node log
+                                let msg_bytes = operation.into_bytes();
+                                raft_node.propose(vec![], msg_bytes).unwrap();
                             }
                             Msg::Raft(message) => {
-                                // println!("Received internal raft message: {message:?}");
                                 // Advance the state machine
-
-                                let msg_type = message.get_msg_type();
-
-                                if msg_type == MessageType::MsgHeartbeat {
-                                    is_heartbeat = true;
-                                }
-
                                 raft_node.step(*message)?;
                             }
                         }
@@ -360,12 +336,12 @@ impl Consensus {
                 continue; // No ready state to processing ticking, continue to the next iteration
             }
 
-            self.on_ready(&mut callbacks, !is_heartbeat).await;
+            self.on_ready(&mut callbacks).await;
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum ConsensusOperation {
     AddPeer { peer_id: PeerId, uri: String },
     UpdateData(u64),
@@ -374,28 +350,16 @@ pub enum ConsensusOperation {
 
 impl ConsensusOperation {
     pub fn into_bytes(&self) -> Vec<u8> {
-        let msg_str = format!("{self:?}");
+        let msg_str = serde_json::to_string(self).expect("Failed to serialize ConsensusOperation");
         msg_str.into_bytes()
     }
 
-    // ToDo: Return Self
-    pub fn from_entry(entry: &Entry) -> Result<String, Box<dyn Error>> {
-        let operation = Self::from_bytes(&entry.data)?;
+    pub fn from_entry(entry: &Entry) -> Result<Self, Box<dyn Error>> {
+        let msg_str = String::from_utf8(entry.data.to_vec())
+            .map_err(|e| format!("Failed to convert bytes to string: {e}"))?;
+        let operation: ConsensusOperation = serde_json::from_str(&msg_str)
+            .map_err(|e| format!("Failed to deserialize ConsensusOperation: {e}"))?;
         Ok(operation)
-    }
-
-    // ToDo: Return Self
-    pub fn from_bytes(bytes: &[u8]) -> Result<String, Box<dyn Error>> {
-        let msg_str = String::from_utf8(bytes.to_vec())?;
-        // match msg_str.as_str() {
-        //     "AddPeer" => Ok(ConsensusOperation::AddPeer {
-        //         peer_id: 0,         // ToDo: Parse actual peer_id from bytes
-        //         uri: String::new(), // ToDo: Parse actual uri from bytes
-        //     }),
-        //     "UpdateData" => Ok(ConsensusOperation::UpdateData(0)), // ToDo: Parse actual data from bytes
-        //     _ => Err("Unknown operation".into()),
-        // }
-        Ok(msg_str)
     }
 }
 

@@ -1,20 +1,49 @@
-use raft::prelude::{Entry, Snapshot};
+use prost_for_raft::Message;
+use raft::prelude::{ConfChange, ConfChangeV2, Entry, EntryType, Snapshot};
+
+use crate::consensus::ConsensusOperation;
 
 #[derive(Debug, serde::Serialize)]
-#[allow(dead_code)]
 pub struct DebuggableEntry {
     index: u64,
     term: u64,
     data: String,
+    context: String,
 }
 
 impl From<&Entry> for DebuggableEntry {
     fn from(entry: &Entry) -> Self {
-        let data = str::from_utf8(&entry.data).unwrap_or("Invalid UTF-8");
+        let context = str::from_utf8(&entry.context).unwrap_or("Invalid UTF-8");
+
+        let data = match entry.get_entry_type() {
+            EntryType::EntryNormal => {
+                let data = ConsensusOperation::from_entry(entry)
+                    .map(|e| format!("{e:?}"))
+                    .unwrap_or("Entry data should be decodable".to_string());
+
+                data
+            }
+            EntryType::EntryConfChange => {
+                let data = ConfChange::decode(&*entry.data)
+                    .map(|cc| format!("{cc:?}"))
+                    .unwrap_or("Entry data should be decodable".to_string());
+
+                data
+            }
+            EntryType::EntryConfChangeV2 => {
+                let data = ConfChangeV2::decode(&*entry.data)
+                    .map(|cc| format!("{cc:?}"))
+                    .unwrap_or("Entry data should be decodable".to_string());
+
+                data
+            }
+        };
+
         DebuggableEntry {
             index: entry.index,
             term: entry.term,
-            data: data.to_string(),
+            data,
+            context: context.to_string(),
         }
     }
 }

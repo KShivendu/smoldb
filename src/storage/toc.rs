@@ -23,7 +23,7 @@ pub struct TableOfContent {
 
 pub type Collections = HashMap<CollectionName, Collection>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum CollectionOperation {
     CreateCollection {
         collection_name: String,
