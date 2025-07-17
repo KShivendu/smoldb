@@ -20,7 +20,6 @@ use raft::{
 };
 use rand::Rng;
 use serde::Serialize;
-use serde_json::Value;
 use slog::{o, Drain};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -37,12 +36,13 @@ use tokio::{runtime::Handle, sync::RwLock};
 const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
 const RAFT_ELECTION_TICK_MS: usize = 10;
 const RAFT_HEARTBEAT_TICK_MS: usize = 3;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Persistent {
     pub peer_id: PeerId,
     // Using instead of HashMap to keep peers sorted (consistent) across the nodes
     pub peers: BTreeMap<PeerId, String>,
-    pub raft_info: Value,
+    pub raft_info: ConsensusRaftInfo,
 }
 
 #[derive(Debug)]
@@ -50,6 +50,15 @@ pub struct ConsensusState {
     // ToDo: Replace with parking_lot::RwLock?
     pub persistent: RwLock<Persistent>,
     pub peer_address_by_id: Arc<RwLock<HashMap<PeerId, Uri>>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConsensusRaftInfo {
+    pub term: u64,
+    pub commit_index: u64,
+    pub last_applied: u64,
+    pub role: String, // "leader", "follower", etc.
+    pub leader: PeerId,
 }
 
 impl ConsensusState {
@@ -61,13 +70,13 @@ impl ConsensusState {
         let p = Persistent {
             peer_id,
             peers: BTreeMap::from([(peer_id, p2p_uri.to_string())]),
-            raft_info: serde_json::json!({
-                "term": 1,
-                "commit_index": 1,
-                "last_applied": 1,
-                "role": "leader",
-                "leader": 1
-            }),
+            raft_info: ConsensusRaftInfo {
+                term: 1,
+                commit_index: 1,
+                last_applied: 1,
+                role: "leader".to_string(),
+                leader: 1,
+            },
         };
         ConsensusState {
             persistent: RwLock::new(p),
