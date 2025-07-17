@@ -100,9 +100,7 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_manager = ConsensusManager::new(consensus_state.clone(), sender);
 
-    let consensus_manager_arc = Arc::new(consensus_manager);
-
-    let dispatcher = Dispatcher::from(toc_arc, Some(consensus_manager_arc.clone()));
+    let dispatcher = Dispatcher::from(toc_arc, Some(Arc::new(consensus_manager)));
     let dispatcher_arc = Arc::new(dispatcher);
 
     let rt_http = rt.handle().clone();

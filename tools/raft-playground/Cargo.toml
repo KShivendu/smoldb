@@ -1,0 +1,13 @@
+[package]
+name = "raft-playground"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+protobuf = "2.28.0"
+raft = { version = "0.7.0", features = [
+    "prost-codec",
+], default-features = false }
+regex = "1.11.1"
+slog = "2.7.0"
+slog-stdlog = "4.1.1"

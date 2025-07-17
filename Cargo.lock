@@ -2154,6 +2154,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "raft-playground"
+version = "0.1.0"
+dependencies = [
+ "protobuf",
+ "raft",
+ "regex",
+ "slog",
+ "slog-stdlog",
+]
+
+[[package]]
 name = "raft-proto"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2667,7 +2678,6 @@ dependencies = [
  "protobuf",
  "raft",
  "rand 0.9.1",
- "regex",
  "rusty-hook",
  "serde",
  "serde_json",
