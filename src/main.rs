@@ -5,18 +5,18 @@ pub mod consensus;
 pub mod storage;
 pub mod types;
 
-use crate::api::collection::delete_collection;
-use crate::api::collection::get_collection_cluster_info;
+use crate::api::{
+    cluster::get_cluster,
+    collection::{
+        create_collection, delete_collection, get_collection, get_collection_cluster_info,
+        get_collections,
+    },
+    dispatcher::Dispatcher,
+    points::{get_point, list_points, upsert_points},
+};
 use crate::channel_service::ChannelService;
 use crate::consensus::{manager::ConsensusManager, Consensus, ConsensusState};
-use crate::{
-    api::{
-        cluster::get_cluster,
-        collection::{create_collection, get_collection, get_collections, Dispatcher},
-        points::{get_point, list_points, upsert_points},
-    },
-    storage::toc::TableOfContent,
-};
+use crate::storage::toc::TableOfContent;
 use actix_web::{middleware, web::Data, App, HttpServer};
 use api::service::index;
 use args::parse_args;
