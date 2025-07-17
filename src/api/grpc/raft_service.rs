@@ -16,7 +16,6 @@ pub struct RaftService {
     #[allow(dead_code)] // ToDo: Not used. remove?
     toc: Arc<TableOfContent>,
     consensus_manager: Arc<ConsensusManager>,
-    // consensus_state: Option<Arc<ConsensusState>>,
 }
 
 impl RaftService {

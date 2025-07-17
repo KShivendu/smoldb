@@ -1,9 +1,12 @@
 use crate::consensus::{
     debuggables::{DebuggableEntry, DebuggableReady},
-    Consensus,
+    Consensus, ConsensusOperation,
 };
 use protobuf::Message as PbMessage;
-use raft::prelude::{ConfChange, Entry, EntryType, Snapshot};
+use raft::{
+    prelude::{ConfChange, Entry, EntryType, Snapshot},
+    SoftState,
+};
 use std::collections::HashMap;
 
 impl Consensus {
@@ -23,22 +26,8 @@ impl Consensus {
 
             let store = self.raft_node.raft.raft_log.store.clone();
 
-            // {
-            //     let state = self.raft_node.raft.hard_state();
-            //     if with_logging {
-            //         println!("Raft hard state is {state:?}");
-            //     }
-
-            //     let current_state = store.rl();
-
-            //     if with_logging {
-            //         println!("Current state is {:?}", current_state.hard_state());
-            //     }
-            // }
-
             // The Raft is ready, we can do something now.
             let mut ready = self.raft_node.ready();
-            // self.raft_node.raft.leader_id
 
             if with_logging {
                 let debuggable_ready = DebuggableReady::from(&ready);
@@ -48,10 +37,6 @@ impl Consensus {
             // ToDo: Consensus snapshots
 
             if !ready.messages().is_empty() {
-                // Send messages to other peers.
-                // if with_logging {
-                //     println!("Got messages to send");
-                // }
                 self.send_messages(ready.take_messages()).await;
             }
 
@@ -66,7 +51,7 @@ impl Consensus {
                 }
             }
 
-            let mut last_apply_index = 0;
+            let mut last_apply_index = 0; // ToDo: Should be stored globally in a state?
             self.handle_committed_entries(ready.take_committed_entries(), &mut last_apply_index);
 
             if !ready.entries().is_empty() {
@@ -79,13 +64,11 @@ impl Consensus {
                     println!("Raft hard state changed to: {updated_hs:?}");
                 }
                 // Raft HardState changed, and we need to persist it.
-                store.set_hardstate(updated_hs.clone());
+                self.handle_hard_state_change(updated_hs);
             }
 
-            let role_change = ready.ss().map(|ss| ss.raft_state);
-
-            if let Some(new_role) = role_change {
-                self.handle_role_change(new_role);
+            if let Some(ss_change) = ready.ss() {
+                self.handle_soft_state_change(ss_change);
             }
 
             if !ready.persisted_messages().is_empty() {
@@ -100,7 +83,7 @@ impl Consensus {
             let mut light_ready = self.raft_node.advance(ready);
             // Update commit index.
             if let Some(commit) = light_ready.commit_index() {
-                store.set_hardstate_commit(commit);
+                self.handle_hard_state_commit_change(commit);
             }
             // Send out the messages to other peers.
             self.send_messages(light_ready.take_messages()).await;
@@ -125,8 +108,6 @@ impl Consensus {
     fn handle_committed_entries(&mut self, entries: Vec<Entry>, last_apply_index: &mut u64) {
         // println!("Handling {} committed entries", entries.len());
 
-        // let x=  self.raft_node.raft.request_snapshot();
-
         for entry in entries {
             // Mostly, you need to save the last apply index to resume applying
             // after restart. Here we just ignore this because we use a Memory storage.
@@ -139,28 +120,64 @@ impl Consensus {
 
             match entry.get_entry_type() {
                 EntryType::EntryNormal => self.handle_normal(entry),
-                // It's recommended to always use `EntryType::EntryConfChangeV2.
                 EntryType::EntryConfChange => self.handle_conf_change(entry),
                 EntryType::EntryConfChangeV2 => self.handle_conf_change_v2(entry),
             }
         }
     }
 
-    fn handle_role_change(&self, new_role: raft::StateRole) {
-        println!("Raft node role changed to: {new_role:?}");
+    /// Handle soft state change.
+    fn handle_soft_state_change(&self, new_soft_state: &SoftState) {
+        println!("Raft node role changed to: {new_soft_state:?}");
+        let new_role = format!("{:?}", new_soft_state.raft_state);
+        let new_leader = new_soft_state.leader_id;
 
-        // let p = self.consensus_state.persistent.write().await;
-        // p.raft_info.role = format!("{new_role:?}");
+        // Update consensus state with new role
+        let extra_runtime = self.runtime.clone();
+        let consensus_state = self.consensus_state.clone();
+        extra_runtime.spawn(async move {
+            let mut consensus_state = consensus_state.persistent.write().await;
+            consensus_state.raft_info.role = new_role;
+            consensus_state.raft_info.leader = new_leader;
+        });
+    }
+
+    fn handle_hard_state_change(&self, new_hard_state: &raft::eraftpb::HardState) {
+        println!("Raft hard state changed to: {new_hard_state:?}");
+
+        // Update consensus state with new hard state
+        let hs = new_hard_state.clone();
+        let extra_runtime = self.runtime.clone();
+        let consensus_state = self.consensus_state.clone();
+        extra_runtime.spawn(async move {
+            let mut consensus_state = consensus_state.persistent.write().await;
+            consensus_state.raft_info.term = hs.term;
+            consensus_state.raft_info.commit = hs.commit;
+            // consensus_state.raft_info.last_applied = ; // ToDo??
+        });
+
+        self.raft_node.store().set_hardstate(new_hard_state.clone());
+    }
+
+    fn handle_hard_state_commit_change(&self, commit: u64) {
+        println!("Raft hard state commit changed to: {commit}");
+
+        // Update consensus state with new commit index
+        let extra_runtime = self.runtime.clone();
+        let consensus_state = self.consensus_state.clone();
+        extra_runtime.spawn(async move {
+            let mut consensus_state = consensus_state.persistent.write().await;
+            consensus_state.raft_info.commit = commit;
+        });
+
+        self.raft_node.store().set_hardstate_commit(commit);
     }
 
     fn handle_normal(&self, entry: Entry) {
         // For normal proposals, extract the key-value pair and then
         // insert them into the kv engine.
 
-        let data = str::from_utf8(&entry.data)
-            .expect("Entry data should be valid UTF-8")
-            .to_string();
-
+        let data = ConsensusOperation::from_entry(&entry).expect("Entry data should be decodable");
         println!("Handled Normal entry data: {data}");
     }
 

@@ -15,7 +15,7 @@ use crate::{
 };
 use http::Uri;
 use raft::{
-    prelude::{ConfChange, ConfChangeType, Message, MessageType},
+    prelude::{ConfChange, ConfChangeType, Entry, Message, MessageType},
     Config, RawNode,
 };
 use rand::Rng;
@@ -55,14 +55,14 @@ pub struct ConsensusState {
 #[derive(Debug, Clone, Serialize)]
 pub struct ConsensusRaftInfo {
     pub term: u64,
-    pub commit_index: u64,
-    pub last_applied: u64,
+    pub commit: u64,
+    pub pending_operations: u64,
     pub role: String, // "leader", "follower", etc.
     pub leader: PeerId,
 }
 
 impl ConsensusState {
-    pub fn dummy(p2p_uri: http::Uri, default_peer_id: Option<PeerId>) -> Self {
+    pub fn new(p2p_uri: http::Uri, default_peer_id: Option<PeerId>) -> Self {
         let mut rng = rand::rng();
         // Do not generate too big peer ID, to avoid problems with serialization
         let peer_id = default_peer_id.unwrap_or_else(|| rng.random::<PeerId>() % (1 << 53));
@@ -71,11 +71,11 @@ impl ConsensusState {
             peer_id,
             peers: BTreeMap::from([(peer_id, p2p_uri.to_string())]),
             raft_info: ConsensusRaftInfo {
-                term: 1,
-                commit_index: 1,
-                last_applied: 1,
-                role: "leader".to_string(),
-                leader: 1,
+                term: 0,
+                commit: 0,
+                pending_operations: 0,
+                role: "".to_string(),
+                leader: 0,
             },
         };
         ConsensusState {
@@ -84,11 +84,20 @@ impl ConsensusState {
         }
     }
 
-    pub async fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), Box<dyn Error>> {
+    pub async fn add_peer(
+        &self,
+        peer_id: PeerId,
+        uri: Uri,
+    ) -> Result<(PeerId, Vec<(PeerId, String)>), Box<dyn Error>> {
         // Add a new peer to the consensus state
         let mut persistent = self.persistent.write().await;
         persistent.peers.insert(peer_id, uri.to_string());
-        Ok(())
+
+        // ToDo: Should return leader peer ID instead of current peer ID
+        let leader_peer_id = persistent.peer_id;
+        let latest_peers = persistent.peers.clone().into_iter().collect();
+
+        Ok((leader_peer_id, latest_peers))
     }
 }
 
@@ -101,6 +110,7 @@ pub struct Consensus {
     pub runtime: Handle,
     // Probably don't keep it here since it mixes up abstraction levels
     pub toc: Arc<TableOfContent>,
+    pub consensus_state: Arc<ConsensusState>,
 }
 
 impl Consensus {
@@ -170,16 +180,9 @@ impl Consensus {
         toc: Arc<TableOfContent>,
         runtime: Handle,
     ) -> Result<Sender<Msg>, Box<dyn Error>> {
-        let (mut consensus, sender) = Self::new(peer_id, runtime, toc)?;
+        let (mut consensus, sender) = Self::new(peer_id, runtime, consensus_state.clone(), toc)?;
 
-        // if bootstrap_uri.is_none() {
-        //     // For now, assuming that this is the leader and creating an intial before we even start the consensus loop:
-        //     let mut s = Snapshot::default();
-        //     s.mut_metadata().index = 1;
-        //     s.mut_metadata().term = 1;
-        //     s.mut_metadata().mut_conf_state().voters = vec![1];
-        //     consensus.raft_node.store().wl().apply_snapshot(s).expect("Should be able to apply initial snapshot");
-        // }
+        // ToDo: Send initial snapshot to new followers to speed up consensus
 
         // Start a thread for consensus
         // Note: we don't need to preserve the thread handle,
@@ -220,6 +223,7 @@ impl Consensus {
     fn new(
         peer_id: PeerId,
         runtime: Handle,
+        consensus_state: Arc<ConsensusState>,
         toc: Arc<TableOfContent>,
     ) -> Result<(Self, Sender<Msg>), Box<dyn Error>> {
         // let storage = MemStorage::default();
@@ -235,20 +239,6 @@ impl Consensus {
         };
         let raft = RawNode::new(&config, storage, &logger)?;
 
-        if peer_id == 101 {
-            // raft.store().wl().storag
-            // let mut s = Snapshot::default();
-            // s.mut_metadata().index = 2;
-            // s.mut_metadata().term = 1;
-            // s.mut_metadata().mut_conf_state().voters = vec![peer_id];
-            // raft.store()
-            //     .wl()
-            //     .apply_snapshot(s)
-            //     .expect("Should be able to apply initial snapshot");
-        } else {
-            // For followers, they'll apply this snapshot when they receive it from the leader
-        }
-
         println!("Created Raft node with ID: {peer_id}");
 
         let (sender, receiver) = channel::<Msg>();
@@ -259,6 +249,7 @@ impl Consensus {
             receiver,
             runtime,
             toc,
+            consensus_state,
         };
 
         Ok((consensus, sender))
@@ -281,6 +272,7 @@ impl Consensus {
                 runtime: _,
                 peer_id: _,
                 toc: _,
+                consensus_state: _,
             } = self;
 
             let mut callbacks = HashMap::new();
@@ -327,8 +319,7 @@ impl Consensus {
                                     //     .unwrap();
                                 } else {
                                     // Propose the operation to the Raft node log
-                                    let msg_str = format!("{operation:?}");
-                                    let msg_bytes = msg_str.into_bytes();
+                                    let msg_bytes = operation.into_bytes();
                                     raft_node.propose(vec![], msg_bytes).unwrap();
                                 }
                             }
@@ -376,6 +367,33 @@ pub enum ConsensusOperation {
     AddPeer { peer_id: PeerId, uri: String },
     UpdateData(u64),
     CollectionOp(CollectionOperation),
+}
+
+impl ConsensusOperation {
+    pub fn into_bytes(&self) -> Vec<u8> {
+        let msg_str = format!("{self:?}");
+        msg_str.into_bytes()
+    }
+
+    // ToDo: Return Self
+    pub fn from_entry(entry: &Entry) -> Result<String, Box<dyn Error>> {
+        let operation = Self::from_bytes(&entry.data)?;
+        Ok(operation)
+    }
+
+    // ToDo: Return Self
+    pub fn from_bytes(bytes: &[u8]) -> Result<String, Box<dyn Error>> {
+        let msg_str = String::from_utf8(bytes.to_vec())?;
+        // match msg_str.as_str() {
+        //     "AddPeer" => Ok(ConsensusOperation::AddPeer {
+        //         peer_id: 0,         // ToDo: Parse actual peer_id from bytes
+        //         uri: String::new(), // ToDo: Parse actual uri from bytes
+        //     }),
+        //     "UpdateData" => Ok(ConsensusOperation::UpdateData(0)), // ToDo: Parse actual data from bytes
+        //     _ => Err("Unknown operation".into()),
+        // }
+        Ok(msg_str)
+    }
 }
 
 pub enum Msg {

@@ -19,6 +19,14 @@ impl From<&Entry> for DebuggableEntry {
     }
 }
 
+impl DebuggableEntry {
+    pub fn log(&self, prefix: &str) {
+        let debuggable_entry =
+            serde_json::to_string(self).expect("Failed to serialize entry to JSON");
+        println!("{prefix}: {debuggable_entry}");
+    }
+}
+
 #[derive(Debug, serde::Serialize)]
 pub struct DebuggableHardState {
     term: u64,
@@ -107,9 +115,10 @@ impl DebuggableReady {
             && self.snapshot.is_none()
             && self.persisted_messages.is_empty();
 
-        let are_heartbeats = self.msgs_to_send.iter().all(|msg| {
-            msg.msg_type == "MsgHeartbeat" || msg.msg_type == "MsgHeartbeatResponse"
-        });
+        let are_heartbeats = self
+            .msgs_to_send
+            .iter()
+            .all(|msg| msg.msg_type == "MsgHeartbeat" || msg.msg_type == "MsgHeartbeatResponse");
 
         if all_non_msg_to_send_empty && are_heartbeats {
             // No messages to log, return early
