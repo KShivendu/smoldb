@@ -95,7 +95,7 @@ impl TableOfContent {
         Ok(path)
     }
 
-    pub async fn perform_collection_meta_op(
+    pub async fn perform_collection_op(
         &self,
         operation: CollectionOperation,
     ) -> Result<(), StorageError> {

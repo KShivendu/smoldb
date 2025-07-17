@@ -33,6 +33,8 @@ use std::{
 };
 use tokio::{runtime::Handle, sync::RwLock};
 
+type ProposalId = u64;
+
 const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
 const RAFT_ELECTION_TICK_MS: usize = 10;
 const RAFT_HEARTBEAT_TICK_MS: usize = 3;
@@ -62,6 +64,7 @@ pub struct ConsensusRaftInfo {
 }
 
 impl ConsensusState {
+    /// Create a new ConsensusState with a given p2p URI and optional default peer ID.
     pub fn new(p2p_uri: http::Uri, default_peer_id: Option<PeerId>) -> Self {
         let mut rng = rand::rng();
         // Do not generate too big peer ID, to avoid problems with serialization
@@ -399,7 +402,7 @@ impl ConsensusOperation {
 pub enum Msg {
     // Custom messages for consensus operations
     Propose {
-        id: u8,
+        id: ProposalId,
         operation: ConsensusOperation,
         callback: Box<dyn Fn() + Send>,
     },

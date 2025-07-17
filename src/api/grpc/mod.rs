@@ -6,7 +6,7 @@ mod raft_service;
 mod simple_service;
 
 use crate::api::{
-    collection::Dispatcher,
+    dispatcher::Dispatcher,
     grpc::{
         p2p_grpc_schema::{
             points_internal_server::PointsInternalServer, raft_server::RaftServer,
@@ -72,14 +72,14 @@ pub async fn init(
 
     let (sender, toc, consensus_manager) = (
         dispatcher
-            .consensus_manager
+            .consensus
             .as_ref()
             .map(|c| c.get_sender())
             .unwrap()
             .unwrap()
             .clone(),
         dispatcher.toc.clone(),
-        dispatcher.consensus_manager.clone().unwrap(),
+        dispatcher.consensus.clone().unwrap(),
     );
 
     let raft_service = RaftServer::new(RaftService::new(sender, toc, consensus_manager));

@@ -1,6 +1,6 @@
 use crate::consensus::{
     debuggables::{DebuggableEntry, DebuggableReady},
-    Consensus, ConsensusOperation,
+    Consensus, ConsensusOperation, ProposalId,
 };
 use protobuf::Message as PbMessage;
 use raft::{
@@ -16,7 +16,7 @@ impl Consensus {
     /// [`raft::LightReady`] that has the committed entries and messages but no commit index.
     pub async fn on_ready(
         &mut self,
-        _cbs: &mut HashMap<u8, Box<dyn Fn() + Send>>,
+        _cbs: &mut HashMap<ProposalId, Box<dyn Fn() + Send>>,
         with_logging: bool,
     ) {
         loop {

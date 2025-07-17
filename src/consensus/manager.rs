@@ -1,11 +1,10 @@
 use crate::{
     api::grpc::p2p_grpc_schema::{AllPeers, Peer},
-    consensus::{ConsensusOperation, ConsensusState, Msg},
+    consensus::{ConsensusOperation, ConsensusState, Msg, Persistent},
     storage::{error::ConsensusError, toc::TableOfContent},
     types::PeerId,
 };
 use http::Uri;
-use raft::{SoftState, StateRole};
 use rand::Rng;
 use std::sync::{mpsc::Sender, Arc};
 
@@ -13,35 +12,19 @@ pub struct ConsensusManager {
     toc: Arc<TableOfContent>,
     state: Arc<ConsensusState>,
     sender: Sender<Msg>,
-
-    // Stores data about leader ID and Raft node role
-    role_meta: Option<SoftState>,
 }
 
 impl ConsensusManager {
     pub fn new(toc: Arc<TableOfContent>, state: Arc<ConsensusState>, sender: Sender<Msg>) -> Self {
-        ConsensusManager {
-            toc,
-            state,
-            sender,
-            role_meta: None,
-        }
-    }
-
-    pub fn get_leader(&self) -> Option<PeerId> {
-        self.role_meta.as_ref().map(|meta| meta.leader_id)
-    }
-
-    pub fn get_role(&self) -> Option<StateRole> {
-        self.role_meta.as_ref().map(|meta| meta.raft_state)
-    }
-
-    pub fn get_toc(&self) -> &Arc<TableOfContent> {
-        &self.toc
+        ConsensusManager { toc, state, sender }
     }
 
     pub fn get_state(&self) -> &Arc<ConsensusState> {
         &self.state
+    }
+
+    pub async fn get_cluster_info(&self) -> Persistent {
+        self.state.persistent.read().await.clone()
     }
 
     pub fn get_sender(&self) -> Result<&Sender<Msg>, ConsensusError> {
@@ -117,7 +100,7 @@ impl ConsensusManager {
         operation: ConsensusOperation,
     ) -> Result<(), ConsensusError> {
         let mut rng = rand::rng();
-        let id = rng.random::<u8>();
+        let id = rng.random();
 
         let sender = self.get_sender()?;
         sender

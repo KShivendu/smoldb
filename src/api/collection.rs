@@ -1,73 +1,14 @@
+use crate::api::dispatcher::Dispatcher;
 use crate::api::helpers;
-use crate::consensus::manager::ConsensusManager;
-use crate::consensus::{ConsensusOperation, Persistent};
 use crate::storage::collection::{Collection, CollectionInfo};
-use crate::storage::error::{CollectionError, CollectionResult, ConsensusError};
-use crate::storage::toc::{CollectionOperation, TableOfContent};
+use crate::storage::error::CollectionError;
+use crate::storage::toc::CollectionOperation;
 use crate::types::{PeerId, ShardId};
 use actix_web::{
     web::{self, Json},
     Responder,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-// Router that decides if query should go through ToC or consensus
-pub struct Dispatcher {
-    pub toc: Arc<TableOfContent>,
-    pub consensus_manager: Option<Arc<ConsensusManager>>,
-}
-
-impl Dispatcher {
-    pub fn from(
-        toc: Arc<TableOfContent>,
-        consensus_manager: Option<Arc<ConsensusManager>>,
-    ) -> Self {
-        Dispatcher {
-            toc,
-            consensus_manager,
-        }
-    }
-
-    pub async fn get_cluster_info(&self) -> Option<Persistent> {
-        if let Some(consensus_state) = &self.consensus_manager {
-            Some(consensus_state.get_state().persistent.read().await.clone())
-        } else {
-            None
-        }
-    }
-
-    pub fn get_consensus_manager(&self) -> CollectionResult<&ConsensusManager> {
-        Ok(self
-            .consensus_manager
-            .as_ref()
-            .ok_or(ConsensusError::NotEnabled())?)
-    }
-
-    pub async fn submit_collection_op(
-        &self,
-        operation: CollectionOperation,
-    ) -> CollectionResult<()> {
-        let Some(consensus_manager) = &self.consensus_manager else {
-            // Do locally only if consensus is not enabled
-            self.toc.perform_collection_meta_op(operation).await?;
-            return Ok(());
-        };
-
-        // ToDo: Await consensus operations before committing locally
-        consensus_manager
-            .propose_consensus_op(ConsensusOperation::CollectionOp(operation.clone()))
-            .await?;
-        self.toc.perform_collection_meta_op(operation).await?;
-
-        Ok(())
-    }
-
-    // Send a consensus operation to the consensus manager
-    pub async fn send_operation(&self, operation: ConsensusOperation) -> CollectionResult<()> {
-        let consensus_manager = self.get_consensus_manager()?;
-        Ok(consensus_manager.propose_consensus_op(operation).await?)
-    }
-}
 
 #[actix_web::get("/collections")]
 async fn get_collections(dispatcher: web::Data<Dispatcher>) -> impl Responder {
