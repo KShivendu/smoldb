@@ -344,6 +344,7 @@ impl Consensus {
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum ConsensusOperation {
     AddPeer { peer_id: PeerId, uri: String },
+    RemovePeer { peer_id: PeerId },
     UpdateData(u64),
     CollectionOp(CollectionOperation),
 }

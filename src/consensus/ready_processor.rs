@@ -151,17 +151,29 @@ impl Consensus {
             ConsensusOperation::from_entry(&entry).expect("Entry data should be decodable");
         println!("Operation to apply: {operation:?}");
 
-        if let ConsensusOperation::AddPeer { peer_id, uri } = operation {
-            let extra_runtime = self.runtime.clone();
-            let consensus_state = self.consensus_state.clone();
-            let toc = self.toc.clone();
-            let uri = uri.parse::<Uri>().expect("Failed to parse URI");
-            extra_runtime.spawn(async move {
-                add_peer_to_toc_and_consensus_state(&consensus_state, &toc, peer_id, uri)
+        let extra_runtime = self.runtime.clone();
+        let consensus_state = self.consensus_state.clone();
+        let toc = self.toc.clone();
+
+        match operation {
+            ConsensusOperation::AddPeer { peer_id, uri } => {
+                let uri = uri.parse::<Uri>().expect("Failed to parse URI");
+                extra_runtime.spawn(async move {
+                    add_peer_to_toc_and_consensus_state(&consensus_state, &toc, peer_id, uri)
+                        .await
+                        .expect("Failed to add peer to consensus state and TOC");
+                })
+            }
+            ConsensusOperation::CollectionOp(op) => extra_runtime.spawn(async move {
+                // ToDo: Notify leader if the operation gives an error?
+                toc.perform_collection_op(op)
                     .await
-                    .expect("Failed to add peer to consensus state and TOC");
-            });
-        }
+                    .expect("Failed to handle collection operation");
+            }),
+            _ => extra_runtime.spawn(async move {
+                println!("Ignored consensus operation: {operation:?}");
+            }),
+        };
     }
 
     fn handle_conf_change(&mut self, entry: Entry) {
