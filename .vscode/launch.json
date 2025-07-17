@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'smoldb'",
+            "name": "Debug smoldb - 0.0.0.0:9001",
             "cargo": {
                 "args": [
                     "build",
@@ -21,7 +21,38 @@
             },
             "args": [
                 "--url",
-                "127.0.0.1:9900"
+                "0.0.0.0:9001",
+                "--p2p-url",
+                "0.0.0.0:5001",
+                "--peer-id",
+                "101"
+            ],
+            "cwd": "${workspaceFolder}",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug smoldb - 0.0.0.0:9002",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=smoldb",
+                    "--package=smoldb"
+                ],
+                "filter": {
+                    "name": "smoldb",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "--url",
+                "0.0.0.0:9002",
+                "--p2p-url",
+                "0.0.0.0:5002",
+                "--peer-id",
+                "102",
+                "--bootstrap",
+                "http://0.0.0.0:5001"
             ],
             "cwd": "${workspaceFolder}",
         },
