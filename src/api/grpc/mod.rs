@@ -70,21 +70,9 @@ pub async fn init(
 
     let p2p_service = ServiceServer::new(SimpleService::default());
 
-    let (sender, toc, consensus_manager) = (
-        dispatcher
-            .consensus
-            .as_ref()
-            .map(|c| c.get_sender())
-            .unwrap()
-            .unwrap()
-            .clone(),
-        dispatcher.toc.clone(),
-        dispatcher.consensus.clone().unwrap(),
-    );
-
-    let raft_service = RaftServer::new(RaftService::new(sender, toc, consensus_manager));
     let points_service =
         PointsInternalServer::new(PointsInternalService::new(dispatcher.toc.clone()));
+    let raft_service = RaftServer::new(RaftService::new(dispatcher));
 
     server
         .add_service(p2p_service)

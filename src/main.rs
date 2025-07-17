@@ -89,19 +89,16 @@ async fn main() -> std::io::Result<()> {
     let toc = TableOfContent::load(channel_service);
     let toc_arc = Arc::new(toc);
 
-    let peer_id = consensus_state.persistent.read().await.peer_id;
-
     let sender = Consensus::start(
-        peer_id,
+        consensus_state.persistent.read().await.peer_id,
         args.bootstrap.clone(),
         consensus_state.clone(),
         toc_arc.clone(),
         consensus_async_runtime,
     )
-    .expect("Failed to start consensus");
+    .expect("Failed to start consensus thread and loop");
 
-    let consensus_manager =
-        ConsensusManager::new(toc_arc.clone(), consensus_state.clone(), sender.clone());
+    let consensus_manager = ConsensusManager::new(consensus_state.clone(), sender);
 
     let consensus_manager_arc = Arc::new(consensus_manager);
 

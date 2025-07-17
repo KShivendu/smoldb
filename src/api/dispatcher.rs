@@ -1,7 +1,10 @@
+use http::Uri;
+
 use crate::consensus::manager::ConsensusManager;
-use crate::consensus::ConsensusOperation;
+use crate::consensus::{ConsensusOperation, Msg};
 use crate::storage::error::{CollectionResult, ConsensusError};
 use crate::storage::toc::{CollectionOperation, TableOfContent};
+use crate::types::PeerId;
 use std::sync::Arc;
 
 /// Router that can decide how an operation/request goes through ToC (local storage) and consensus manager (if enabled)
@@ -47,5 +50,66 @@ impl Dispatcher {
     pub async fn send_operation(&self, operation: ConsensusOperation) -> CollectionResult<()> {
         let consensus = self.get_consensus()?;
         Ok(consensus.propose_consensus_op(operation).await?)
+    }
+
+    /// Adds a peer to ToC and Consensus.
+    /// local consensus state, updates remote shards, and notifies the Raft consensus loop.
+    ///
+    /// Not cancel safe
+    pub async fn add_peer(
+        &self,
+        peer_id: PeerId,
+        uri: Uri,
+    ) -> Result<(PeerId, Vec<(PeerId, String)>), ConsensusError> {
+        // ToDo: Await adding the peer to the Raft consensus?
+        // ToDo: Program can crash any time so we should recover from this error or make all this atomic
+        // ToDo: Why is this random ID generation not allowed by RaftService's trait??
+        // If you uncomment it will start throwing error
+        // let mut rng = rand::rng();
+        // let operation_id = rng.random();
+
+        // ToDo: This doesn't notify all existing nodes. Only leader knows about the new peer
+        // while the new peer knows about everyone. And consensus seems to be working fine.
+
+        // Propose the operation in to the consensus loop
+        let operation_id = 100;
+        let consensus = self.get_consensus()?;
+        let _res = consensus.sender.send(Msg::Propose {
+            id: operation_id,
+            operation: ConsensusOperation::AddPeer {
+                peer_id,
+                uri: uri.to_string(),
+            },
+            callback: Box::new(move || {
+                println!("Callback executed operation with ID {operation_id}");
+            }),
+        });
+
+        // Update local consensus state
+        let (this_peer_id, updated_peers) = consensus
+            .state
+            .add_peer(peer_id, uri.clone())
+            .await
+            .map_err(|e| {
+                ConsensusError::ServiceError(format!("Failed to add peer to local state: {e}"))
+            })?;
+
+        {
+            let collections_guard = self.toc.collections.write().await;
+            for (collection_name, collection) in collections_guard.iter() {
+                let mut replica_holder_guard = collection.replica_holder.write().await;
+
+                replica_holder_guard
+                    .add_remote_shards(peer_id, collection_name.clone())
+                    .await
+                    .map_err(|e| {
+                        ConsensusError::ServiceError(format!(
+                            "Failed to add remote shards for collection '{collection_name}': {e}",
+                        ))
+                    })?;
+            }
+        }
+
+        Ok((this_peer_id, updated_peers))
     }
 }

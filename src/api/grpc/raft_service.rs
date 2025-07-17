@@ -1,34 +1,25 @@
 use crate::{
-    api::grpc::p2p_grpc_schema::{
-        raft_server::Raft, AddPeerToKnownMessage, AllPeers, PeerId,
-        RaftMessage as RaftMessageBytes, Uri,
+    api::{
+        dispatcher::{self, Dispatcher},
+        grpc::p2p_grpc_schema::{
+            raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
+            RaftMessage as RaftMessageBytes, Uri,
+        },
     },
-    consensus::{self, debuggables::DebuggableMessage, manager::ConsensusManager},
-    storage::toc::TableOfContent,
+    consensus::{self, debuggables::DebuggableMessage},
 };
 use prost_for_raft::Message as ProtocolBufferMessage; // this trait is required for .decode() to work
 use raft::eraftpb::Message as RaftMessageParsed;
-use std::sync::{mpsc::Sender, Arc};
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub struct RaftService {
-    sender: Sender<consensus::Msg>,
-    #[allow(dead_code)] // ToDo: Not used. remove?
-    toc: Arc<TableOfContent>,
-    consensus_manager: Arc<ConsensusManager>,
+    dispatcher: Arc<dispatcher::Dispatcher>,
 }
 
 impl RaftService {
-    pub fn new(
-        sender: Sender<consensus::Msg>,
-        toc: Arc<TableOfContent>,
-        consensus_manager: Arc<ConsensusManager>,
-    ) -> Self {
-        RaftService {
-            sender,
-            toc,
-            consensus_manager,
-        }
+    pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
+        RaftService { dispatcher }
     }
 }
 
@@ -45,7 +36,13 @@ impl Raft for RaftService {
         let debuggable_msg = DebuggableMessage::from(message.clone());
         debuggable_msg.log("P2P gRPC received Raft message");
 
-        self.sender
+        let consensus = self
+            .dispatcher
+            .get_consensus()
+            .map_err(|e| Status::internal(format!("Failed to get consensus: {e}")))?;
+
+        consensus
+            .sender
             .send(consensus::Msg::Raft(Box::new(message)))
             .map_err(|e| {
                 Status::internal(format!("Failed to send Raft message over channel: {e}"))
@@ -68,8 +65,6 @@ impl Raft for RaftService {
         &self,
         request: Request<AddPeerToKnownMessage>,
     ) -> Result<Response<AllPeers>, Status> {
-        // Here you would implement the logic to add a peer to the known peers list.
-        // For now, we return an empty AllPeers response.
         let AddPeerToKnownMessage {
             id: peer_id,
             uri: peer_uri,
@@ -78,12 +73,20 @@ impl Raft for RaftService {
 
         let uri = peer_uri.map(|u| u.parse::<http::Uri>().unwrap()).unwrap();
 
-        let all_peers = self
-            .consensus_manager
+        let (this_peer_id, all_peers) = self
+            .dispatcher
             .add_peer(peer_id, uri)
             .await
             .map_err(|e| Status::internal(format!("Failed to add peer: {e}")))?;
 
-        Ok(Response::new(all_peers))
+        let response = AllPeers {
+            all_peers: all_peers
+                .into_iter()
+                .map(|(id, uri)| Peer { id, uri })
+                .collect(),
+            first_peer_id: this_peer_id,
+        };
+
+        Ok(Response::new(response))
     }
 }
