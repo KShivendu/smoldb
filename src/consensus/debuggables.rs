@@ -19,21 +19,21 @@ impl From<&Entry> for DebuggableEntry {
             EntryType::EntryNormal => {
                 let data = ConsensusOperation::from_entry(entry)
                     .map(|e| format!("{e:?}"))
-                    .unwrap_or("Entry data should be decodable".to_string());
+                    .unwrap_or("EntryNormal data should be decodable".to_string());
 
                 data
             }
             EntryType::EntryConfChange => {
                 let data = ConfChange::decode(&*entry.data)
                     .map(|cc| format!("{cc:?}"))
-                    .unwrap_or("Entry data should be decodable".to_string());
+                    .unwrap_or("EntryConfChange data should be decodable".to_string());
 
                 data
             }
             EntryType::EntryConfChangeV2 => {
                 let data = ConfChangeV2::decode(&*entry.data)
                     .map(|cc| format!("{cc:?}"))
-                    .unwrap_or("Entry data should be decodable".to_string());
+                    .unwrap_or("EntryConfChangeV2 data should be decodable".to_string());
 
                 data
             }
@@ -82,8 +82,8 @@ pub struct DebuggableMessage {
     // snapshot: Option<DebuggableSnapshot>,
 }
 
-impl From<raft::eraftpb::Message> for DebuggableMessage {
-    fn from(msg: raft::eraftpb::Message) -> Self {
+impl From<&raft::eraftpb::Message> for DebuggableMessage {
+    fn from(msg: &raft::eraftpb::Message) -> Self {
         DebuggableMessage {
             msg_type: format!("{:?}", msg.get_msg_type()),
             from: msg.from,
@@ -144,12 +144,17 @@ impl DebuggableReady {
             && self.snapshot.is_none()
             && self.persisted_messages.is_empty();
 
-        let are_heartbeats = self
+        let mut are_heartbeats = self
             .msgs_to_send
             .iter()
-            .all(|msg| msg.msg_type == "MsgHeartbeat" || msg.msg_type == "MsgHeartbeatResponse");
+            .all(|msg| msg.msg_type == "MsgHeartbeat");
 
-        if all_non_msg_to_send_empty && are_heartbeats {
+        are_heartbeats |= self
+            .persisted_messages
+            .iter()
+            .all(|msg| msg.msg_type == "MsgHeartbeatResponse");
+
+        if all_non_msg_to_send_empty || are_heartbeats {
             // No messages to log, return early
             return;
         }
@@ -186,10 +191,7 @@ impl From<&raft::Ready> for DebuggableReady {
             commit: hs.commit,
         });
 
-        let msgs_to_send = msgs_to_send
-            .into_iter()
-            .map(DebuggableMessage::from)
-            .collect();
+        let msgs_to_send = msgs_to_send.iter().map(DebuggableMessage::from).collect();
 
         let entries_to_save = entries_to_save.iter().map(DebuggableEntry::from).collect();
 
@@ -198,7 +200,7 @@ impl From<&raft::Ready> for DebuggableReady {
         });
 
         let persisted_messages = persisted_messages
-            .into_iter()
+            .iter()
             .map(DebuggableMessage::from)
             .collect();
 

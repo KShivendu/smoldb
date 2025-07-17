@@ -1,6 +1,7 @@
 use crate::consensus::{
-    debuggables::DebuggableEntry, utils::add_peer_to_toc_and_consensus_state, Consensus,
-    ConsensusOperation, ProposalId,
+    debuggables::{DebuggableEntry, DebuggableReady},
+    utils::add_peer_to_toc_and_consensus_state,
+    Consensus, ConsensusOperation, ProposalId,
 };
 use http::Uri;
 use protobuf::Message as ProtobufMessage;

@@ -33,6 +33,9 @@ impl Raft for RaftService {
         let message = <RaftMessageParsed>::decode(message_bytes)
             .map_err(|e| Status::internal(format!("Failed to decode Raft message: {e}")))?;
 
+        // let msg = DebuggableMessage::from(&message);
+        // msg.log("Received Raft message via gRPC");
+
         let consensus = self
             .dispatcher
             .get_consensus()
