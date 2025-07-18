@@ -6,7 +6,7 @@ A smol distributed database implemented from scratch. It is heavily inspired by 
 
 ```sh
 # Run with Docker
-docker run -p 9900:9900 ghcr.io/kshivendu/smoldb
+docker run -p 9000:9000 ghcr.io/kshivendu/smoldb
 
 # Or compile locally:
 cargo run -r
@@ -14,21 +14,21 @@ cargo run -r
 
 ```bash
 # Create collection
-curl -X PUT http://localhost:9900/collections/test \
+curl -X PUT http://localhost:9000/collections/test \
   -H "Content-Type: application/json" \
   -d '{
     "params": "..."
   }'
 
 # Add points
-curl -X PUT http://localhost:9900/collections/test/points \
+curl -X PUT http://localhost:9000/collections/test/points \
   -H "Content-Type: application/json" \
   -d '{
     "points": [ { "id": 0, "payload": { "msg": "hello world" } } ]
   }'
 
 # Get point (response below)
-curl -X GET http://localhost:9900/collections/test/points/0
+curl -X GET http://localhost:9000/collections/test/points/0
 
 # Response:
 {
@@ -39,7 +39,7 @@ curl -X GET http://localhost:9900/collections/test/points/0
 }
 
 # Get collection's cluster info (response below)
-curl -X GET http://localhost:9900/collections/test/cluster
+curl -X GET http://localhost:9000/collections/test/cluster
 
 # Response:
 {
