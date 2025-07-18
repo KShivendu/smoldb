@@ -1,51 +1,14 @@
+use crate::api::dispatcher::Dispatcher;
 use crate::api::helpers;
-use crate::consensus::{ConsensusOperation, Persistent};
-use crate::consensus_manager::ConsensusManager;
 use crate::storage::collection::{Collection, CollectionInfo};
-use crate::storage::error::{CollectionError, CollectionResult, ConsensusError};
-use crate::storage::toc::{CollectionMetaOperation, TableOfContent};
+use crate::storage::error::CollectionError;
+use crate::storage::toc::CollectionOperation;
 use crate::types::{PeerId, ShardId};
 use actix_web::{
     web::{self, Json},
     Responder,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-// Router that decides if query should go through ToC or consensus
-pub struct Dispatcher {
-    pub toc: Arc<TableOfContent>,
-    pub consensus_manager: Option<ConsensusManager>,
-}
-
-impl Dispatcher {
-    pub fn from(toc: Arc<TableOfContent>, consensus_manager: Option<ConsensusManager>) -> Self {
-        Dispatcher {
-            toc,
-            consensus_manager,
-        }
-    }
-
-    pub async fn get_cluster_info(&self) -> Option<Persistent> {
-        if let Some(consensus_state) = &self.consensus_manager {
-            Some(consensus_state.get_state().persistent.read().await.clone())
-        } else {
-            None
-        }
-    }
-
-    pub fn get_consensus_manager(&self) -> CollectionResult<&ConsensusManager> {
-        Ok(self
-            .consensus_manager
-            .as_ref()
-            .ok_or(ConsensusError::NotEnabled())?)
-    }
-
-    // Send a consensus operation to the consensus manager
-    pub async fn send_operation(&self, operation: ConsensusOperation) -> CollectionResult<()> {
-        let consensus_manager = self.get_consensus_manager()?;
-        Ok(consensus_manager.submit_consensus_op(operation).await?)
-    }
-}
 
 #[actix_web::get("/collections")]
 async fn get_collections(dispatcher: web::Data<Dispatcher>) -> impl Responder {
@@ -96,19 +59,13 @@ async fn delete_collection(
     helpers::time(async {
         let collection_name = collection_name.into_inner();
 
-        let res = dispatcher
-            .toc
-            .perform_collection_meta_op(CollectionMetaOperation::DeleteCollection {
+        dispatcher
+            .submit_collection_op(CollectionOperation::DeleteCollection {
                 collection_name: collection_name.clone(),
             })
-            .await;
+            .await?;
 
-        match res {
-            Ok(_) => Ok(format!(
-                "Collection '{collection_name}' deleted successfully."
-            )),
-            Err(e) => Err(CollectionError::StorageError(e)),
-        }
+        Ok(true)
     })
     .await
 }
@@ -210,20 +167,14 @@ async fn create_collection(
     helpers::time(async {
         let collection_name = collection_name.into_inner();
 
-        // ToDo: Push this to consensus instead of directly committing locally?
-        let result = dispatcher
-            .toc
-            .perform_collection_meta_op(CollectionMetaOperation::CreateCollection {
+        dispatcher
+            .submit_collection_op(CollectionOperation::CreateCollection {
                 collection_name: collection_name.clone(),
                 params: operation.params.clone(),
             })
-            .await;
+            .await?;
 
-        // ToDo: Return Created() and BadRequest() based on the result?
-        match result {
-            Ok(res) => Ok(res),
-            Err(e) => Err(CollectionError::StorageError(e)),
-        }
+        Ok(true)
     })
     .await
 }

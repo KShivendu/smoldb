@@ -11,7 +11,7 @@ pub enum StorageError {
 #[derive(Error, Debug)]
 pub enum ConsensusError {
     #[error("Consensus is not enabled")]
-    NotEnabled(),
+    NotEnabled,
     #[error("Service error: {0}")]
     ServiceError(String),
 }
@@ -30,6 +30,13 @@ pub enum CollectionError {
     ConsensusError(#[from] ConsensusError),
     #[error("Json parsing error: {0}")]
     JsonParseError(#[from] serde_path_to_error::Error<serde_json::Error>),
+}
+
+// Need special implementation for tonic::Status to wrap into Box
+impl From<tonic::Status> for CollectionError {
+    fn from(status: tonic::Status) -> Self {
+        CollectionError::TonicStatusError(Box::new(status))
+    }
 }
 
 pub type CollectionResult<T> = Result<T, CollectionError>;

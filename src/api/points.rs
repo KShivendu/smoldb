@@ -1,5 +1,5 @@
 use crate::{
-    api::{collection::Dispatcher, helpers},
+    api::{dispatcher::Dispatcher, helpers},
     storage::{
         error::CollectionError,
         segment::{Point, PointId},

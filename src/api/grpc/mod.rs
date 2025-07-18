@@ -5,8 +5,9 @@ mod points_service;
 mod raft_service;
 mod simple_service;
 
-use crate::{
-    api::grpc::{
+use crate::api::{
+    dispatcher::Dispatcher,
+    grpc::{
         p2p_grpc_schema::{
             points_internal_server::PointsInternalServer, raft_server::RaftServer,
             service_server::ServiceServer,
@@ -15,13 +16,11 @@ use crate::{
         raft_service::RaftService,
         simple_service::SimpleService,
     },
-    consensus::{self, ConsensusState},
-    storage::toc::TableOfContent,
 };
 use http::Uri;
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::{mpsc::Sender, Arc},
+    sync::Arc,
     time::Duration,
 };
 use tonic::transport::{Channel, Error as TonicError, Server};
@@ -64,20 +63,16 @@ pub async fn make_default_grpc_channel(uri: Uri) -> Result<Channel, TonicError> 
 pub async fn init(
     host: String,
     grpc_port: u16,
-    toc: Arc<TableOfContent>,
-    sender: Sender<consensus::Msg>,
-    consensus_state: Option<Arc<ConsensusState>>,
+    dispatcher: Arc<Dispatcher>,
 ) -> std::io::Result<()> {
     let mut server = Server::builder();
     let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
 
     let p2p_service = ServiceServer::new(SimpleService::default());
-    let raft_service = RaftServer::new(RaftService::new(
-        sender,
-        toc.clone(),
-        consensus_state.clone(),
-    ));
-    let points_service = PointsInternalServer::new(PointsInternalService::new(toc));
+
+    let points_service =
+        PointsInternalServer::new(PointsInternalService::new(dispatcher.toc.clone()));
+    let raft_service = RaftServer::new(RaftService::new(dispatcher));
 
     server
         .add_service(p2p_service)

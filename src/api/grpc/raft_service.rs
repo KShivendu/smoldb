@@ -1,33 +1,25 @@
 use crate::{
-    api::grpc::p2p_grpc_schema::{
-        raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
-        RaftMessage as RaftMessageBytes, Uri,
+    api::{
+        dispatcher::{self, Dispatcher},
+        grpc::p2p_grpc_schema::{
+            raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
+            RaftMessage as RaftMessageBytes, Uri,
+        },
     },
-    consensus::{self, ConsensusState},
-    storage::toc::TableOfContent,
+    consensus::{self},
 };
 use prost_for_raft::Message as ProtocolBufferMessage; // this trait is required for .decode() to work
 use raft::eraftpb::Message as RaftMessageParsed;
-use std::sync::{mpsc::Sender, Arc};
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub struct RaftService {
-    sender: Sender<consensus::Msg>,
-    toc: Arc<TableOfContent>,
-    consensus_state: Option<Arc<ConsensusState>>,
+    dispatcher: Arc<dispatcher::Dispatcher>,
 }
 
 impl RaftService {
-    pub fn new(
-        sender: Sender<consensus::Msg>,
-        toc: Arc<TableOfContent>,
-        consensus_state: Option<Arc<ConsensusState>>,
-    ) -> Self {
-        RaftService {
-            sender,
-            toc,
-            consensus_state,
-        }
+    pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
+        RaftService { dispatcher }
     }
 }
 
@@ -41,7 +33,16 @@ impl Raft for RaftService {
         let message = <RaftMessageParsed>::decode(message_bytes)
             .map_err(|e| Status::internal(format!("Failed to decode Raft message: {e}")))?;
 
-        self.sender
+        // let msg = DebuggableMessage::from(&message);
+        // msg.log("Received Raft message via gRPC");
+
+        let consensus = self
+            .dispatcher
+            .get_consensus()
+            .map_err(|e| Status::internal(format!("Failed to get consensus: {e}")))?;
+
+        consensus
+            .sender
             .send(consensus::Msg::Raft(Box::new(message)))
             .map_err(|e| {
                 Status::internal(format!("Failed to send Raft message over channel: {e}"))
@@ -59,57 +60,33 @@ impl Raft for RaftService {
         Ok(Response::new(uri))
     }
 
+    /// Cancel safety??
     async fn add_peer_to_known(
         &self,
         request: Request<AddPeerToKnownMessage>,
     ) -> Result<Response<AllPeers>, Status> {
-        // Here you would implement the logic to add a peer to the known peers list.
-        // For now, we return an empty AllPeers response.
-        let request = request.into_inner();
+        let AddPeerToKnownMessage {
+            id: peer_id,
+            uri: peer_uri,
+            port: _,
+        } = request.into_inner();
 
-        let consensus_state = self
-            .consensus_state
-            .as_ref()
-            .ok_or_else(|| Status::internal("Consensus state is not available in RaftService"))?;
+        let uri = peer_uri.map(|u| u.parse::<http::Uri>().unwrap()).unwrap();
 
-        let uri = request
-            .uri
-            .map(|u| u.parse::<http::Uri>().unwrap())
-            .unwrap();
-
-        consensus_state
-            .add_peer(request.id, uri)
+        let (this_peer_id, all_peers) = self
+            .dispatcher
+            .add_peer(peer_id, uri)
             .await
             .map_err(|e| Status::internal(format!("Failed to add peer: {e}")))?;
 
-        let collections_guard = self.toc.collections.write().await;
-        for (collection_name, collection) in collections_guard.iter() {
-            let mut replica_holder_guard = collection.replica_holder.write().await;
-            replica_holder_guard
-                .add_remote_shards(request.id, collection_name.clone())
-                .await
-                .map_err(|e| {
-                    Status::internal(format!(
-                        "Failed to add remote shards for collection '{collection_name}': {e}",
-                    ))
-                })?;
-        }
-
-        let persistent = consensus_state.persistent.read().await.clone();
-
-        let all_peers = persistent
-            .peers
-            .into_iter()
-            .map(|(id, uri)| Peer { id, uri })
-            .collect();
-
-        let this_peer_id = persistent.peer_id;
-
-        let all_peers = AllPeers {
-            all_peers,
+        let response = AllPeers {
+            all_peers: all_peers
+                .into_iter()
+                .map(|(id, uri)| Peer { id, uri })
+                .collect(),
             first_peer_id: this_peer_id,
         };
 
-        Ok(Response::new(all_peers))
+        Ok(Response::new(response))
     }
 }
