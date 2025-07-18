@@ -63,6 +63,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Protoc # for protobuf
         uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install minimal nightly (only for fmt)
         uses: dtolnay/rust-toolchain@nightly
         with:
