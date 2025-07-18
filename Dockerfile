@@ -111,7 +111,6 @@ ENV TZ=Etc/UTC \
     RUN_MODE=production
 
 EXPOSE 9000
-EXPOSE 9910
 
 LABEL org.opencontainers.image.title="Smol DB"
 LABEL org.opencontainers.image.description="A smol database implemented from scratch in Rust"
@@ -123,7 +122,6 @@ LABEL org.opencontainers.image.vendor="kshivendu"
 ENTRYPOINT ["/smoldb"]
 
 # docker build --network=host -t kshivendu/smoldb:latest .
-# docker run -p 9000:9000 -p 9910:9910 kshivendu/smoldb
-# docker run -p 9000:9000 -p 9910:9910 kshivendu/smoldb
-
-# docker run --rm -p 9000:9000 --name smoldb -p 9910:9910 kshivendu/smoldb
+# docker run -p 9000:9000 kshivendu/smoldb
+# docker run -p 9000:9000 kshivendu/smoldb
+# docker run --rm -p 9000:9000 --name smoldb kshivendu/smoldb
