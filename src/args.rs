@@ -8,10 +8,10 @@ pub struct Args {
     #[clap(short, long)]
     pub bootstrap: Option<Uri>,
     /// Url of the node
-    #[clap(short, long, default_value = "http://0.0.0.0:9900")]
+    #[clap(short, long, default_value = "http://0.0.0.0:9000")]
     pub url: Uri,
     /// Url of the node
-    #[clap(short, long, default_value = "http://0.0.0.0:9920")]
+    #[clap(short, long, default_value = "http://0.0.0.0:5000")]
     pub p2p_url: Uri,
     /// Peer id
     #[clap(long)]

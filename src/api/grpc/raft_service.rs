@@ -55,7 +55,7 @@ impl Raft for RaftService {
         // Here you would implement the logic to return the URI of a peer by its ID.
         // For now, we return an empty URI.
         let uri = Uri {
-            uri: "smoldb:9900".to_string(),
+            uri: "smoldb:9000".to_string(),
         };
         Ok(Response::new(uri))
     }
