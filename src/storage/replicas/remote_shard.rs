@@ -78,7 +78,11 @@ impl RemoteShard {
     pub fn get_channel_service(&self) -> ChannelService {
         let mut channel_service = ChannelService::default();
 
+        // ToDo: Use `ConsensusState` for channel pool
+        // TODo: Drop this
+
         let inner_map: HashMap<_, _> = HashMap::from_iter(vec![
+            (100, http::Uri::from_str("http://0.0.0.0:5000").unwrap()),
             (101, http::Uri::from_str("http://0.0.0.0:5001").unwrap()),
             (102, http::Uri::from_str("http://0.0.0.0:5002").unwrap()),
             (103, http::Uri::from_str("http://0.0.0.0:5003").unwrap()),

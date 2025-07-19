@@ -1,11 +1,10 @@
-use http::Uri;
-
 use crate::consensus::manager::ConsensusManager;
 use crate::consensus::utils::add_peer_to_toc_and_consensus_state;
 use crate::consensus::{ConsensusOperation, Msg};
 use crate::storage::error::{CollectionResult, ConsensusError};
 use crate::storage::toc::{CollectionOperation, TableOfContent};
 use crate::types::PeerId;
+use http::Uri;
 use std::sync::Arc;
 
 /// Router that can decide how an operation/request goes through ToC (local storage) and consensus manager (if enabled)
@@ -28,18 +27,22 @@ impl Dispatcher {
         }
     }
 
+    pub async fn get_peer_id(&self) -> Result<PeerId, ConsensusError> {
+        Ok(self.get_consensus()?.state.get_peer_id().await)
+    }
+
     pub async fn submit_collection_op(
         &self,
         operation: CollectionOperation,
     ) -> CollectionResult<()> {
-        let Some(consensus_manager) = &self.consensus else {
+        let Some(consensus) = &self.consensus else {
             // Do locally only if consensus is not enabled
             self.toc.perform_collection_op(operation).await?;
             return Ok(());
         };
 
         // ToDo: Await consensus operations before committing locally
-        consensus_manager
+        consensus
             .propose_consensus_op(ConsensusOperation::CollectionOp(operation.clone()))
             .await?;
         self.toc.perform_collection_op(operation).await?;

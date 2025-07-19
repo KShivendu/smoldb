@@ -27,7 +27,7 @@ pub trait ShardOperationTrait {
 
 pub struct ReplicaSet {
     pub local: LocalShard,
-    pub remotes: Vec<RemoteShard>,
+    pub remotes: HashMap<PeerId, RemoteShard>,
 
     #[allow(dead_code)]
     collection_id: CollectionName,
@@ -37,7 +37,12 @@ impl ReplicaSet {
     pub fn new(local: LocalShard, remotes: Vec<PeerId>, collection_id: CollectionName) -> Self {
         let remotes = remotes
             .into_iter()
-            .map(|peer_id| RemoteShard::new(local.id, collection_id.clone(), peer_id))
+            .map(|peer_id| {
+                (
+                    peer_id,
+                    RemoteShard::new(local.id, collection_id.clone(), peer_id),
+                )
+            })
             .collect();
 
         ReplicaSet {
@@ -68,7 +73,7 @@ impl ReplicaSet {
             return final_results;
         }
 
-        for remote in &self.remotes {
+        for remote in self.remotes.values() {
             let operation_result = operation(remote).await;
             match operation_result {
                 Ok(res) => final_results.push(Ok(res)),
@@ -116,29 +121,6 @@ impl ReplicaHolder {
             .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))?;
 
         Ok(replica_set)
-    }
-
-    // Wrong abstraction: but add remote shards for a given collection in each of the shards.
-    pub async fn add_remote_shards(
-        &mut self,
-        peer_id: PeerId,
-        collection: CollectionName,
-    ) -> Result<(), StorageError> {
-        for (shard_id, replica_set) in self.shards.iter_mut() {
-            // Add if not exists
-            if replica_set.remotes.iter().any(|r| r.peer_id == peer_id) {
-                continue; // Skip if remote shard already exists
-            }
-
-            replica_set
-                .remotes
-                .push(RemoteShard::new(*shard_id, collection.clone(), peer_id));
-        }
-
-        // ToDo: What happens to hashring if shard already exists when you add?
-        // self.ring.add(shard_id);
-
-        Ok(())
     }
 
     pub fn select_shards(

@@ -93,9 +93,8 @@ pub struct CollectionClusterInfo {
 }
 
 impl CollectionClusterInfo {
-    pub async fn from(collection: &Collection) -> Self {
+    pub async fn from(peer_id: PeerId, collection: &Collection) -> Self {
         let replica_holder = collection.replica_holder.read().await;
-        let peer_id = 0;
 
         let local_shards = replica_holder
             .shards
@@ -110,7 +109,7 @@ impl CollectionClusterInfo {
 
         let mut remote_shards = vec![];
         for (_, replica_set) in replica_holder.shards.iter() {
-            for remote_shard in replica_set.remotes.iter() {
+            for (_, remote_shard) in replica_set.remotes.iter() {
                 remote_shards.push(CollectionClusterRemoteShard {
                     peer_id: remote_shard.peer_id,
                     shard_id: remote_shard.id,
@@ -143,7 +142,8 @@ async fn get_collection_cluster_info(
             .await
             .get(&collection_name)
         {
-            return Ok(CollectionClusterInfo::from(collection).await);
+            let peer_id = dispatcher.get_peer_id().await?;
+            return Ok(CollectionClusterInfo::from(peer_id, collection).await);
         }
 
         Err(CollectionError::ServiceError(format!(
