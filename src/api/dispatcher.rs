@@ -20,8 +20,8 @@ impl Dispatcher {
 
     /// Get the consensus manager if it exists, otherwise return [`ConsensusError::NotEnabled`].
     pub fn get_consensus(&self) -> Result<&Arc<ConsensusManager>, ConsensusError> {
-        if let Some(consensus_manager) = &self.consensus {
-            Ok(consensus_manager)
+        if let Some(consensus) = &self.consensus {
+            Ok(consensus)
         } else {
             Err(ConsensusError::NotEnabled)
         }
@@ -48,12 +48,6 @@ impl Dispatcher {
         self.toc.perform_collection_op(operation).await?;
 
         Ok(())
-    }
-
-    // Send a consensus operation to the consensus manager
-    pub async fn send_operation(&self, operation: ConsensusOperation) -> CollectionResult<()> {
-        let consensus = self.get_consensus()?;
-        Ok(consensus.propose_consensus_op(operation).await?)
     }
 
     /// Adds a peer to ToC and Consensus.
