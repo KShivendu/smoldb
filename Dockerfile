@@ -101,9 +101,10 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
     && mv "target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/smoldb" /smoldb/smoldb
 
-FROM gcr.io/distroless/cc-debian12 AS smoldb
+FROM debian:12-slim AS smoldb
 
 COPY --from=builder /smoldb/smoldb /smoldb
+COPY --from=builder /smoldb/tools/entrypoint.sh /entrypoint.sh
 
 USER 0
 
@@ -111,6 +112,7 @@ ENV TZ=Etc/UTC \
     RUN_MODE=production
 
 EXPOSE 9000
+EXPOSE 5000
 
 LABEL org.opencontainers.image.title="Smol DB"
 LABEL org.opencontainers.image.description="A smol database implemented from scratch in Rust"
@@ -119,9 +121,8 @@ LABEL org.opencontainers.image.documentation="https://github.com/kshivendu/smold
 LABEL org.opencontainers.image.source="https://github.com/kshivendu/smoldb"
 LABEL org.opencontainers.image.vendor="kshivendu"
 
-ENTRYPOINT ["/smoldb"]
+ENTRYPOINT ["./entrypoint.sh"]
 
 # docker build --network=host -t kshivendu/smoldb:latest .
-# docker run -p 9000:9000 kshivendu/smoldb
-# docker run -p 9000:9000 kshivendu/smoldb
 # docker run --rm -p 9000:9000 --name smoldb kshivendu/smoldb
+# docker run --rm -p 9000:9000 -it --name smoldb kshivendu/smoldb /bin/bash
