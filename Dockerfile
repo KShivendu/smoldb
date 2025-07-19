@@ -125,3 +125,4 @@ ENTRYPOINT ["./entrypoint.sh"]
 
 # docker build --network=host -t kshivendu/smoldb:latest .
 # docker run --rm -p 9000:9000 --name smoldb kshivendu/smoldb
+# docker run --rm -p 9000:9000 -it --name smoldb kshivendu/smoldb /bin/sh
