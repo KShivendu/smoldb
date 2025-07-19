@@ -3,27 +3,14 @@ use crate::{
     api::grpc::{make_default_grpc_channel, p2p_grpc_schema::raft_client::RaftClient},
     consensus::Consensus,
     storage::error::CollectionResult,
-    types::PeerId,
 };
+use http::Uri;
 use prost_for_raft::Message as RaftMessageTrait;
 use raft::prelude::Message as RaftMessage;
-use std::{collections::HashMap, str::FromStr};
 use tonic::{transport::Channel, Request};
 
-pub async fn get_raft_client(peer_id: PeerId) -> CollectionResult<RaftClient<Channel>> {
-    let inner_map: HashMap<_, _> = HashMap::from_iter(vec![
-        (101, http::Uri::from_str("http://0.0.0.0:5001").unwrap()),
-        (102, http::Uri::from_str("http://0.0.0.0:5002").unwrap()),
-        (103, http::Uri::from_str("http://0.0.0.0:5003").unwrap()),
-    ]);
-
-    let uri = inner_map
-        .get(&peer_id)
-        .expect("Peer ID not found in the channel map")
-        .clone();
-
+pub async fn get_raft_client(uri: Uri) -> CollectionResult<RaftClient<Channel>> {
     let channel = make_default_grpc_channel(uri.clone()).await?;
-
     Ok(RaftClient::new(channel))
 }
 
@@ -36,9 +23,11 @@ impl Consensus {
 
             let destination_peer = message.to;
 
-            if let Ok(mut client) = get_raft_client(destination_peer).await {
-                // ToDo: Ignoring errors for now. But should be propagated
-                let _ = client.send(Request::new(req.clone())).await;
+            if let Ok(uri) = self.consensus_state.get_peer_uri(destination_peer).await {
+                if let Ok(mut client) = get_raft_client(uri).await {
+                    // ToDo: Ignoring errors for now. But should be propagated
+                    let _ = client.send(Request::new(req.clone())).await;
+                }
             }
         }
     }

@@ -84,7 +84,10 @@ async fn main() -> std::io::Result<()> {
 
     // Sharing the Arc<RwLock<HashMap<PeerId, Uri>>>
     let consensus_state = Arc::new(ConsensusState::new(args.p2p_url.clone(), args.peer_id));
-    let channel_service = ChannelService::new(consensus_state.peer_address_by_id.clone());
+    let channel_service = ChannelService::new(
+        consensus_state.get_peer_id().await,
+        consensus_state.peer_address_by_id.clone(),
+    );
 
     let toc = TableOfContent::load(channel_service);
     let toc_arc = Arc::new(toc);
@@ -107,9 +110,9 @@ async fn main() -> std::io::Result<()> {
     let http_dispatcher_arc = dispatcher_arc.clone();
     let http_handle = std::thread::spawn(move || {
         rt_http.block_on(async {
-            if let Err(e) = start_http_server(args.url, http_dispatcher_arc).await {
-                eprintln!("HTTP Server error: {e}");
-            }
+            start_http_server(args.url, http_dispatcher_arc)
+                .await
+                .expect("HTTP Server stopped")
         });
     });
 
@@ -117,9 +120,9 @@ async fn main() -> std::io::Result<()> {
     let rt_p2p = rt.handle().clone();
     let p2p_handle = std::thread::spawn(move || {
         rt_p2p.block_on(async {
-            if let Err(e) = start_p2p_server(args.p2p_url, dispatcher_arc).await {
-                eprintln!("gRPC Server error: {e}");
-            }
+            start_p2p_server(args.p2p_url, dispatcher_arc)
+                .await
+                .expect("gRPC Server stopped")
         });
     });
 

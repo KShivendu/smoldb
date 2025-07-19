@@ -17,11 +17,9 @@ use tokio::sync::RwLock;
 pub const COLLECTIONS_DIR: &str = "collections";
 
 pub struct TableOfContent {
-    pub collections: Arc<RwLock<Collections>>,
+    pub collections: Arc<RwLock<HashMap<CollectionName, Collection>>>,
     pub channel_service: ChannelService,
 }
-
-pub type Collections = HashMap<CollectionName, Collection>;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum CollectionOperation {
@@ -110,6 +108,11 @@ impl TableOfContent {
                 let collection =
                     Collection::init(collection_name.clone(), CollectionConfig { params }, &path)
                         .await?;
+
+                let remote_ids = self.channel_service.get_other_peer_ids().await;
+                for peer_id in remote_ids {
+                    collection.add_remote_replicas(peer_id).await;
+                }
 
                 {
                     let mut write_collections = self.collections.write().await;

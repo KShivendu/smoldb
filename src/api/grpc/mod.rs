@@ -19,7 +19,7 @@ use crate::api::{
 };
 use http::Uri;
 use std::{
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -66,7 +66,11 @@ pub async fn init(
     dispatcher: Arc<Dispatcher>,
 ) -> std::io::Result<()> {
     let mut server = Server::builder();
-    let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
+    let socket = SocketAddr::from((
+        host.parse::<IpAddr>()
+            .unwrap_or(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))),
+        grpc_port,
+    ));
 
     let p2p_service = ServiceServer::new(SimpleService::default());
 

@@ -16,19 +16,9 @@ pub async fn add_peer_to_toc_and_consensus_state(
         ConsensusError::ServiceError(format!("Failed to add peer to local consensus state: {e}"))
     })?;
 
-    {
-        let collections = toc.collections.read().await;
-        for (collection_name, collection) in collections.iter() {
-            let mut replica_holder = collection.replica_holder.write().await;
-            replica_holder
-                .add_remote_shards(peer_id, collection_name.clone())
-                .await
-                .map_err(|e| {
-                    ConsensusError::ServiceError(format!(
-                        "Failed to add remote shards for collection '{collection_name}': {e}",
-                    ))
-                })?;
-        }
+    let collections = toc.collections.read().await;
+    for collection in collections.values() {
+        collection.add_remote_replicas(peer_id).await;
     }
 
     Ok((peer_id, all_peers))

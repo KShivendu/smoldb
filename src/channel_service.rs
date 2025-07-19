@@ -40,16 +40,27 @@ impl Default for TransportChannelPool {
 
 #[derive(Clone, Default)]
 pub struct ChannelService {
+    pub peer_id: PeerId,
     /// Shared with consensus state
     pub id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>,
     pub channel_pool: Arc<TransportChannelPool>,
 }
 
 impl ChannelService {
-    pub fn new(id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>) -> Self {
+    pub fn new(peer_id: PeerId, id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>) -> Self {
         Self {
+            peer_id,
             id_to_address,
             channel_pool: Arc::new(TransportChannelPool::default()),
         }
+    }
+
+    pub async fn get_other_peer_ids(&self) -> Vec<PeerId> {
+        let id_to_address = self.id_to_address.read().await;
+        id_to_address
+            .keys()
+            .cloned()
+            .filter(|&id| id != self.peer_id)
+            .collect()
     }
 }

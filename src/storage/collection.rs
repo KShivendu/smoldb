@@ -1,10 +1,13 @@
 use crate::{
     storage::{
         error::{CollectionError, CollectionResult, StorageError},
-        replicas::{local_shard::LocalShard, ReplicaHolder, ReplicaSet, ShardOperationTrait},
+        replicas::{
+            local_shard::LocalShard, remote_shard::RemoteShard, ReplicaHolder, ReplicaSet,
+            ShardOperationTrait,
+        },
         segment::{Point, PointId},
     },
-    types::ShardId,
+    types::{PeerId, ShardId},
 };
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
@@ -50,7 +53,7 @@ impl Collection {
                 let shard_id = shard_id as ShardId;
                 let replica_set = ReplicaSet::new(
                     LocalShard::init(shard_path, shard_id),
-                    vec![], // No remote shards for now
+                    vec![], // No remote replicas initially. They will be added by Collection::add_remote_replicas
                     id.clone(),
                 );
 
@@ -58,14 +61,23 @@ impl Collection {
             })
             .collect::<Result<HashMap<_, _>, StorageError>>()?;
 
-        // ToDo: Add remote shards to replica holder while creating a new collection?
-
         Ok(Collection {
             id,
             config,
             replica_holder: Arc::new(RwLock::new(ReplicaHolder::new(shards))),
             path: path.to_owned(),
         })
+    }
+
+    /// ToDo: Should only add a remote replica, but only for one shard at a time
+    pub async fn add_remote_replicas(&self, peer_id: PeerId) {
+        let mut replica_holder = self.replica_holder.write().await;
+        for (shard_id, replica_set) in replica_holder.shards.iter_mut() {
+            replica_set.remotes.insert(
+                peer_id,
+                RemoteShard::new(*shard_id, self.id.clone(), peer_id),
+            );
+        }
     }
 
     pub fn delete(&self) -> Result<(), StorageError> {

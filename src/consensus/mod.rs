@@ -11,7 +11,10 @@ use crate::{
         p2p_grpc_schema::{raft_client::RaftClient, AddPeerToKnownMessage},
     },
     consensus::{raft_storage::RaftStorage, utils::add_peer_to_toc_and_consensus_state},
-    storage::toc::{CollectionOperation, TableOfContent},
+    storage::{
+        error::ConsensusError,
+        toc::{CollectionOperation, TableOfContent},
+    },
     types::PeerId,
 };
 use http::Uri;
@@ -52,7 +55,15 @@ pub struct Persistent {
 pub struct ConsensusState {
     // ToDo: Replace with parking_lot::RwLock?
     pub persistent: RwLock<Persistent>,
+
+    // ToDo: This is redundant with `persistent.peers`. Consider removing it
     pub peer_address_by_id: Arc<RwLock<HashMap<PeerId, Uri>>>,
+}
+
+impl ConsensusState {
+    pub async fn get_peer_id(&self) -> PeerId {
+        self.persistent.read().await.peer_id
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,8 +102,10 @@ impl ConsensusState {
         &self,
         peer_id: PeerId,
         uri: Uri,
-    ) -> Result<(PeerId, Vec<(PeerId, String)>), Box<dyn Error>> {
+    ) -> Result<(PeerId, Vec<(PeerId, String)>), ConsensusError> {
         // Add a new peer to the consensus state
+        let mut peer_address_by_id = self.peer_address_by_id.write().await;
+        peer_address_by_id.insert(peer_id, uri.clone());
         let mut persistent = self.persistent.write().await;
         persistent.peers.insert(peer_id, uri.to_string());
 
@@ -101,6 +114,14 @@ impl ConsensusState {
         let latest_peers = persistent.peers.clone().into_iter().collect();
 
         Ok((leader_peer_id, latest_peers))
+    }
+
+    pub async fn get_peer_uri(&self, peer_id: PeerId) -> Result<Uri, ConsensusError> {
+        let peer_address_by_id = self.peer_address_by_id.read().await;
+        peer_address_by_id
+            .get(&peer_id)
+            .cloned()
+            .ok_or_else(|| ConsensusError::ServiceError(format!("Peer ID {peer_id} not found")))
     }
 }
 
