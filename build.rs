@@ -8,7 +8,10 @@ pub fn build_proto_files() {
         .out_dir("src/api/grpc")
         .build_server(true)
         .build_client(true)
-        .compile_protos(&["src/proto/p2p_grpc.proto"], &["src/proto"])
+        .compile_protos(
+            &["src/api/grpc/proto/p2p_grpc.proto"],
+            &["src/api/grpc/proto"],
+        )
         .expect("Failed to compile proto files");
 }
 
