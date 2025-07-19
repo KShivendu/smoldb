@@ -32,7 +32,7 @@ fn parse_number(n: &str) -> Result<usize, String> {
 #[clap(version, about)]
 pub struct Args {
     /// Smoldb URI
-    #[clap(short, long, default_value = "http://localhost:9001")]
+    #[clap(short, long, default_value = "http://localhost:9000")]
     pub uri: Uri,
 
     /// Name of the collection
