@@ -2,50 +2,23 @@ version: "3.7"
 
 services:
   smoldb-0:
-    image: ghcr.io/kshivendu/smoldb:dev
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
-    environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
-      - QDRANT__CLUSTER__ENABLED=true
-      - QDRANT__CLUSTER__RESHARDING_ENABLED=true
-      - QDRANT__CLUSTER__P2P__PORT=6335
+    container_name: smoldb-0
+    image: kshivendu/smoldb:latest
     ports:
-      - "9001:9000"
-    entrypoint: []
-    command: ./smoldb --url 'smoldb-0:9000'
+      - "9000:9000"
+    command: --url smoldb-0:9000 --p2p-url smoldb-0:5000 --peer-id 100
 
   smoldb-1:
-    image: ghcr.io/kshivendu/smoldb:dev
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
-    environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
-      - QDRANT__CLUSTER__ENABLED=true
-      - QDRANT__CLUSTER__RESHARDING_ENABLED=true
-      - QDRANT__CLUSTER__P2P__PORT=6335
-    depends_on:
-      - smoldb-0
+    container_name: smoldb-1
+    image: kshivendu/smoldb:latest
     ports:
-      - "9002:9000"
-    entrypoint: []
-    command: bash -c "sleep 5 && ./smoldb --bootstrap 'smoldb-0:5000' --url 'smoldb-1:9000'"
+      - "9001:9000"
+    command: sh -c "echo 'Waiting 5s' && sleep 5 && /smoldb --bootstrap smoldb-0:5000 --url smoldb-1:9000 --p2p-url smoldb-1:5000  --peer-id 101"
 
   smoldb-2:
-    image: ghcr.io/kshivendu/smoldb:dev
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
-    environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
-      - QDRANT__CLUSTER__ENABLED=true
-      - QDRANT__CLUSTER__RESHARDING_ENABLED=true
-      - QDRANT__CLUSTER__P2P__PORT=6335
-    depends_on:
-      - smoldb-0
+    container_name: smoldb-2
+    image: kshivendu/smoldb:latest
     ports:
-      - "9003:9000"
-    entrypoint: []
-    command: bash -c "sleep 5 && ./smoldb --bootstrap 'smoldb-0:5000' --url 'smoldb-2:9000'"
+      - "9002:9000"
+    # ToDo: Should be possible to wait only 5s once consensus is fully fixed
+    command: sh -c "echo 'Waiting 10s' && sleep 10 && /smoldb --bootstrap smoldb-0:5000 --url smoldb-2:9000 --p2p-url smoldb-2:5000 --peer-id 102"
