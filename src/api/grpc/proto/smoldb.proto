@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package p2p_grpc_schema;
+package smoldb;
 
 import "google/protobuf/empty.proto";
 

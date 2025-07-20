@@ -1,6 +1,6 @@
-use crate::api::grpc::p2p_grpc_schema::RaftMessage as GrpcRaftMessage;
+use crate::api::grpc::schema::RaftMessage as GrpcRaftMessage;
 use crate::{
-    api::grpc::{make_default_grpc_channel, p2p_grpc_schema::raft_client::RaftClient},
+    api::grpc::{make_default_grpc_channel, schema::raft_client::RaftClient},
     consensus::Consensus,
     storage::error::CollectionResult,
 };

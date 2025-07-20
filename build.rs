@@ -8,8 +8,24 @@ pub fn build_proto_files() {
         .out_dir("src/api/grpc")
         .build_server(true)
         .build_client(true)
-        .compile_protos(&["src/proto/p2p_grpc.proto"], &["src/proto"])
+        .compile_protos(
+            &["src/api/grpc/proto/smoldb.proto"],
+            &["src/api/grpc/proto"],
+        )
         .expect("Failed to compile proto files");
+
+    let generated_file = PathBuf::from("src/api/grpc/smoldb.rs");
+    let target_file = PathBuf::from("src/api/grpc/schema.rs");
+
+    if generated_file.exists() {
+        std::fs::rename(generated_file, target_file)
+            .expect("Failed to rename generated file to schema.rs");
+    } else {
+        panic!(
+            "Generated file does not exist: {}",
+            generated_file.display()
+        );
+    }
 }
 
 fn main() {

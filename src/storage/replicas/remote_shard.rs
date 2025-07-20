@@ -1,5 +1,5 @@
 use crate::{
-    api::grpc::p2p_grpc_schema::{
+    api::grpc::schema::{
         points_internal_client::PointsInternalClient, GetPointsRequest, Point as PointGrpc,
         UpsertPointsRequest,
     },

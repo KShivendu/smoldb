@@ -1,6 +1,6 @@
 use tonic::{Request, Response, Status};
 
-use crate::api::grpc::p2p_grpc_schema::{service_server::Service, RootApiReply, RootApiRequest};
+use crate::api::grpc::schema::{service_server::Service, RootApiReply, RootApiRequest};
 
 #[derive(Default)]
 pub struct SimpleService {}
