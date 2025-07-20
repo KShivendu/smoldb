@@ -16,7 +16,7 @@ pub struct ChannelService {
     /// ToDo: We can have a proper channel pool instead of single channel to increase this throughput
     ///
     /// Channels are created only when required
-    pub uri_to_channel: tokio::sync::RwLock<HashMap<Uri, Channel>>,
+    pub uri_to_channel: RwLock<HashMap<Uri, Channel>>,
 }
 
 impl ChannelService {
@@ -24,7 +24,7 @@ impl ChannelService {
         Self {
             peer_id,
             id_to_address,
-            uri_to_channel: tokio::sync::RwLock::new(HashMap::new()),
+            uri_to_channel: RwLock::new(HashMap::new()),
         }
     }
 
