@@ -1,6 +1,6 @@
 use crate::{
     consensus::{ConsensusOperation, ConsensusState, Msg, Persistent},
-    storage::error::ConsensusError,
+    error::ConsensusError,
 };
 use rand::Rng;
 use std::sync::{mpsc::Sender, Arc};

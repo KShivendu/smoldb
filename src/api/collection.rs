@@ -1,7 +1,7 @@
 use crate::api::dispatcher::Dispatcher;
 use crate::api::helpers;
+use crate::error::CollectionError;
 use crate::storage::collection::{Collection, CollectionInfo};
-use crate::storage::error::CollectionError;
 use crate::storage::toc::CollectionOperation;
 use crate::types::{PeerId, ShardId};
 use actix_web::{

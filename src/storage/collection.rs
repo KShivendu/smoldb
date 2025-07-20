@@ -1,6 +1,6 @@
 use crate::{
+    error::{CollectionError, CollectionResult, StorageError},
     storage::{
-        error::{CollectionError, CollectionResult, StorageError},
         replicas::{
             local_shard::LocalShard, remote_shard::RemoteShard, ReplicaHolder, ReplicaSet,
             ShardOperationTrait,

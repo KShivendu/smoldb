@@ -11,10 +11,8 @@ use crate::{
         schema::{raft_client::RaftClient, AddPeerToKnownMessage},
     },
     consensus::{raft_storage::RaftStorage, utils::add_peer_to_toc_and_consensus_state},
-    storage::{
-        error::ConsensusError,
-        toc::{CollectionOperation, TableOfContent},
-    },
+    error::ConsensusError,
+    storage::toc::{CollectionOperation, TableOfContent},
     types::PeerId,
 };
 use http::Uri;

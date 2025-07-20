@@ -1,7 +1,7 @@
 use crate::consensus::manager::ConsensusManager;
 use crate::consensus::utils::add_peer_to_toc_and_consensus_state;
 use crate::consensus::{ConsensusOperation, Msg};
-use crate::storage::error::{CollectionResult, ConsensusError};
+use crate::error::{CollectionResult, ConsensusError};
 use crate::storage::toc::{CollectionOperation, TableOfContent};
 use crate::types::PeerId;
 use http::Uri;

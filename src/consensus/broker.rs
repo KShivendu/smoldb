@@ -2,7 +2,7 @@ use crate::api::grpc::schema::RaftMessage as GrpcRaftMessage;
 use crate::{
     api::grpc::{make_default_grpc_channel, schema::raft_client::RaftClient},
     consensus::Consensus,
-    storage::error::CollectionResult,
+    error::CollectionResult,
 };
 use http::Uri;
 use prost_for_raft::Message as RaftMessageTrait;

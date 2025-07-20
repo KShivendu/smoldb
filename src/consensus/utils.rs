@@ -1,7 +1,5 @@
 use crate::{
-    consensus::ConsensusState,
-    storage::{error::ConsensusError, toc::TableOfContent},
-    types::PeerId,
+    consensus::ConsensusState, error::ConsensusError, storage::toc::TableOfContent, types::PeerId,
 };
 use http::Uri;
 use std::sync::Arc;

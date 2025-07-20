@@ -1,9 +1,7 @@
 use crate::{
     api::{dispatcher::Dispatcher, helpers},
-    storage::{
-        error::CollectionError,
-        segment::{Point, PointId},
-    },
+    error::CollectionError,
+    storage::segment::{Point, PointId},
 };
 use actix_web::{
     web::{self, Json},
