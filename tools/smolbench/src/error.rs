@@ -6,7 +6,9 @@ pub enum SmolBenchError {
     CreateCollectionError(String),
     #[error("Failed to delete collection: {0}")]
     DeleteCollectionError(String),
-    #[error("Failed to create collection: {0}")]
+    #[error("Failed to upsert points: {0}")]
+    UpsertPointsError(String),
+    #[error("Failed to retrieve points: {0}")]
     RetrievePointsError(String),
     #[error("Request error: {0}")]
     RequestError(#[from] reqwest::Error),

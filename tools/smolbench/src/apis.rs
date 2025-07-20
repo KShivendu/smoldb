@@ -115,7 +115,7 @@ pub async fn upsert_points(
         match body {
             ApiResponse::Success(body) => results.push(body),
             ApiResponse::Error(res) => {
-                return Err(SmolBenchError::CreateCollectionError(res.error));
+                return Err(SmolBenchError::UpsertPointsError(res.error));
             }
         }
 
