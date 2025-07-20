@@ -83,7 +83,6 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_async_runtime = rt.handle().clone();
 
-    // Sharing the Arc<RwLock<HashMap<PeerId, Uri>>>
     let consensus_state = Arc::new(ConsensusState::new(args.p2p_url.clone(), args.peer_id));
     let channel_service = ChannelService::new(
         consensus_state.get_peer_id().await,

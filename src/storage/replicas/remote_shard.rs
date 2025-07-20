@@ -60,10 +60,7 @@ impl RemoteShard {
     ) -> CollectionResult<T> {
         let uri = self.current_address(&channel_service).await?;
 
-        let channel = channel_service
-            .channel_pool
-            .get_or_create_channel(uri)
-            .await?;
+        let channel = channel_service.get_or_create_channel(uri).await?;
 
         let points_channel: PointsInternalClient<Channel> = PointsInternalClient::new(channel);
 
