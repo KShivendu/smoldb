@@ -8,6 +8,7 @@ use tokio::time::sleep;
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Strongly recommend to use `wait=true`
 pub async fn create_collection(
     url: &Uri,
     collection_name: &str,
@@ -91,6 +92,7 @@ pub async fn exists_collection(url: &Uri, collection_name: &str) -> Result<bool,
     }
 }
 
+/// Strongly recommend to use `wait=true`
 pub async fn delete_collection(
     url: &Uri,
     collection_name: &str,
