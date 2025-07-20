@@ -57,7 +57,7 @@ pub struct Args {
 
     /// Use if you don't want to upsert points by default
     #[clap(long, default_value = "false")]
-    pub skip_write: bool,
+    pub skip_upsert: bool,
 
     /// Check whether to query after upsert
     #[clap(long, default_value = "false")]

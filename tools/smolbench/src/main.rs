@@ -54,7 +54,7 @@ async fn main() -> Result<(), SmolBenchError> {
         }
     }
 
-    if !args.skip_write {
+    if !args.skip_upsert {
         let batch_responses = upsert_points(
             &args.uri,
             &args.collection_name,
