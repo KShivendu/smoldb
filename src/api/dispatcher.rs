@@ -47,6 +47,9 @@ impl Dispatcher {
             .await?;
         self.toc.perform_collection_op(operation).await?;
 
+        // ToDo: Should return the response of the consensus operation as result: true or acknowledged: true (if consensus)
+        // ToDo: Add `wait` param to wait for the consensus operation to be applied across the cluster
+
         Ok(())
     }
 

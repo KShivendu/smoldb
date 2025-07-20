@@ -8,7 +8,7 @@ pub mod types;
 pub mod utils;
 
 use crate::{
-    apis::{create_collection, delete_collection, get_collection, read_point, upsert_points},
+    apis::{create_collection, delete_collection, exists_collection, read_point, upsert_points},
     utils::log_latencies,
 };
 use args::parse_args;
@@ -21,9 +21,7 @@ async fn main() -> Result<(), SmolBenchError> {
     // println!("Parsed arguments: {:?}", &args);
 
     if !args.skip_create {
-        let exists = get_collection(&args.uri, &args.collection_name)
-            .await
-            .is_ok();
+        let exists = exists_collection(&args.uri, &args.collection_name).await?;
 
         if exists {
             if args.skip_if_exists {
@@ -36,8 +34,8 @@ async fn main() -> Result<(), SmolBenchError> {
                     "Collection '{}' already exists, deleting it and creating a new one",
                     args.collection_name
                 );
-                delete_collection(&args.uri, &args.collection_name).await?;
-                match create_collection(&args.uri, &args.collection_name).await {
+                delete_collection(&args.uri, &args.collection_name, true).await?;
+                match create_collection(&args.uri, &args.collection_name, true).await {
                     Ok(_) => println!("Collection created successfully."),
                     Err(e) => return Err(SmolBenchError::CreateCollectionError(e.to_string()))?,
                 }
@@ -47,7 +45,7 @@ async fn main() -> Result<(), SmolBenchError> {
                 "Collection '{}' does not exist, creating it",
                 args.collection_name
             );
-            match create_collection(&args.uri, &args.collection_name).await {
+            match create_collection(&args.uri, &args.collection_name, true).await {
                 Ok(_) => println!("Collection created successfully."),
                 Err(e) => return Err(SmolBenchError::CreateCollectionError(e.to_string()))?,
             }
