@@ -57,11 +57,11 @@ pub struct Args {
 
     /// Use if you don't want to upsert points by default
     #[clap(long, default_value = "false")]
-    pub skip_upsert: bool,
+    pub skip_write: bool,
 
     /// Check whether to query after upsert
     #[clap(long, default_value = "false")]
-    pub skip_query: bool,
+    pub skip_read: bool,
 
     /// Number of 9 digits to show in p99* results
     /// Defaults to 3, i.e. shows only p99

@@ -28,7 +28,7 @@ async fn test_smoldb_consecutive_writes() -> Result<(), crate::error::SmolBenchE
 
     assert_eq!(upsert_response.len(), expected_batch_count);
 
-    let get_points = crate::apis::retrieve_points(&uri, &collection_name, None).await?;
+    let get_points = crate::apis::read_points(&uri, &collection_name, None).await?;
     assert_eq!(get_points.result.points.len(), num_points);
 
     Ok(())

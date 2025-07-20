@@ -47,11 +47,11 @@ impl PointsInternal for PointsInternalService {
             Some(ids.into_iter().map(PointId::Id).collect::<Vec<_>>())
         };
 
-        let points = collection.get_points(point_ids, shard_id, true).await;
+        let points = collection.read_points(point_ids, shard_id, true).await;
 
         let points = points.map_err(|e| {
             tonic::Status::internal(format!(
-                "Failed to retrieve points from collection '{collection_name}': {e}"
+                "Failed to read points from collection '{collection_name}': {e}"
             ))
         })?;
 

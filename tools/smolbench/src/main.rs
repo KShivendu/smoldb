@@ -8,7 +8,7 @@ pub mod types;
 pub mod utils;
 
 use crate::{
-    apis::{create_collection, delete_collection, get_collection, retrieve_point, upsert_points},
+    apis::{create_collection, delete_collection, get_collection, read_point, upsert_points},
     utils::log_latencies,
 };
 use args::parse_args;
@@ -54,7 +54,7 @@ async fn main() -> Result<(), SmolBenchError> {
         }
     }
 
-    if !args.skip_upsert {
+    if !args.skip_write {
         let batch_responses = upsert_points(
             &args.uri,
             &args.collection_name,
@@ -72,20 +72,20 @@ async fn main() -> Result<(), SmolBenchError> {
         log_latencies(&batch_responses, args.p9, "server-side batched upsert").await?;
     }
 
-    if !args.skip_query {
+    if !args.skip_read {
         let num_queries = args.num_points.min(1000) as u64;
         let mut rnd = rand::rng();
         let ids = (0..num_queries)
             .map(|_| rnd.random::<u64>() % args.num_points as u64) // Assume that IDs in the range [0, num_points) have been upserted
             .collect::<Vec<_>>();
-        let responses = retrieve_point(&args.uri, &args.collection_name, ids).await?;
+        let responses = read_point(&args.uri, &args.collection_name, ids).await?;
         println!(
-            "Retrieved {} points from collection '{}':",
+            "Read {} points from collection '{}':",
             responses.len(),
             args.collection_name,
         );
 
-        log_latencies(&responses, args.p9, "server-side retrieve").await?;
+        log_latencies(&responses, args.p9, "server-side read").await?;
     }
 
     Ok(())

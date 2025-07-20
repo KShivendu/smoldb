@@ -175,7 +175,7 @@ impl TableOfContent {
         Ok(true)
     }
 
-    pub async fn retrieve_points(
+    pub async fn read_points(
         &self,
         collection_name: &str,
         ids: Option<Vec<PointId>>,
@@ -185,9 +185,9 @@ impl TableOfContent {
             StorageError::BadInput(format!("Collection '{collection_name}' does not exist"))
         })?;
 
-        collection.get_points(ids, None, false).await.map_err(|e| {
+        collection.read_points(ids, None, false).await.map_err(|e| {
             StorageError::ServiceError(format!(
-                "Failed to retrieve points from collection '{collection_name}': {e}"
+                "Failed to read points from collection '{collection_name}': {e}"
             ))
         })
     }
