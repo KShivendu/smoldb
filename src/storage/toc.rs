@@ -18,7 +18,7 @@ pub const COLLECTIONS_DIR: &str = "collections";
 
 pub struct TableOfContent {
     pub collections: Arc<RwLock<HashMap<CollectionName, Collection>>>,
-    pub channel_service: ChannelService,
+    pub channel_service: Arc<ChannelService>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -36,6 +36,7 @@ impl TableOfContent {
     pub fn load(channel_service: ChannelService) -> Self {
         let collections_path = Path::new("storage").join(COLLECTIONS_DIR);
         std::fs::create_dir_all(&collections_path).expect("Failed to create collections directory");
+        let channel_service = Arc::new(channel_service);
 
         // Load collections from the directory
         let mut collections = HashMap::new();
@@ -61,7 +62,7 @@ impl TableOfContent {
                 .expect("Collection name is not valid UTF-8")
                 .to_string();
 
-            let collection = Collection::load(collection_name, &path)
+            let collection = Collection::load(collection_name, &path, channel_service.clone())
                 .expect("Failed to load collection from path");
 
             collections.insert(collection.id.clone(), collection);
@@ -105,9 +106,13 @@ impl TableOfContent {
                 println!("Creating collection {collection_name}");
                 let path = Self::mkdir_collection_dir(&collection_name).await?;
 
-                let collection =
-                    Collection::init(collection_name.clone(), CollectionConfig { params }, &path)
-                        .await?;
+                let collection = Collection::init(
+                    collection_name.clone(),
+                    CollectionConfig { params },
+                    &path,
+                    self.channel_service.clone(),
+                )
+                .await?;
 
                 let remote_ids = self.channel_service.get_other_peer_ids().await;
                 for peer_id in remote_ids {

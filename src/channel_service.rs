@@ -1,4 +1,4 @@
-use crate::{api::grpc::make_default_grpc_channel, types::PeerId};
+use crate::{api::grpc::make_default_grpc_channel, error::CollectionError, types::PeerId};
 use http::Uri;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
@@ -26,6 +26,13 @@ impl ChannelService {
             id_to_address,
             uri_to_channel: tokio::sync::RwLock::new(HashMap::new()),
         }
+    }
+
+    pub async fn get_uri(&self, peer_id: PeerId) -> Result<Uri, CollectionError> {
+        let guard = self.id_to_address.read().await;
+        guard.get(&peer_id).cloned().ok_or_else(|| {
+            CollectionError::ServiceError(format!("URI for peer ID {peer_id} was not found"))
+        })
     }
 
     pub async fn get_or_create_channel(&self, uri: Uri) -> Result<Channel, TonicError> {

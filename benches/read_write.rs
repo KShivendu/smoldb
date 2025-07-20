@@ -1,8 +1,13 @@
+use std::sync::Arc;
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use serde_json::json;
-use smoldb::storage::{
-    collection::{Collection, CollectionConfig},
-    segment::{Point, PointId},
+use smoldb::{
+    channel_service::ChannelService,
+    storage::{
+        collection::{Collection, CollectionConfig},
+        segment::{Point, PointId},
+    },
 };
 use tempfile::TempDir;
 
@@ -19,6 +24,8 @@ pub fn single_write(c: &mut Criterion) {
 
     let tempdir = TempDir::new().expect("Failed to create temporary directory");
 
+    let channel_service = Arc::new(ChannelService::default());
+
     let collection = rt.block_on(async {
         Collection::init(
             "test_collection".to_string(),
@@ -26,6 +33,7 @@ pub fn single_write(c: &mut Criterion) {
                 params: "...".to_string(),
             },
             tempdir.path(),
+            channel_service.clone(),
         )
         .await
         .unwrap()
@@ -59,6 +67,8 @@ pub fn concurrent_write(c: &mut Criterion) {
 
     let tempdir = TempDir::new().expect("Failed to create temporary directory");
 
+    let channel_service = Arc::new(ChannelService::default());
+
     let collection = rt.block_on(async {
         Collection::init(
             "test_collection".to_string(),
@@ -66,6 +76,7 @@ pub fn concurrent_write(c: &mut Criterion) {
                 params: "...".to_string(),
             },
             tempdir.path(),
+            channel_service,
         )
         .await
         .unwrap()
@@ -109,6 +120,8 @@ pub fn single_read(c: &mut Criterion) {
 
     let tempdir = TempDir::new().expect("Failed to create temporary directory");
 
+    let channel_service = Arc::new(ChannelService::default());
+
     let collection = rt.block_on(async {
         let collection = Collection::init(
             "test_collection".to_string(),
@@ -116,6 +129,7 @@ pub fn single_read(c: &mut Criterion) {
                 params: "...".to_string(),
             },
             tempdir.path(),
+            channel_service,
         )
         .await
         .unwrap();
@@ -169,6 +183,8 @@ fn concurrent_read(c: &mut Criterion) {
 
     let point_ids = points.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
 
+    let channel_service = Arc::new(ChannelService::default());
+
     let collection = rt.block_on(async {
         let collection = Collection::init(
             "test_collection".to_string(),
@@ -176,6 +192,7 @@ fn concurrent_read(c: &mut Criterion) {
                 params: "...".to_string(),
             },
             tempdir.path(),
+            channel_service,
         )
         .await
         .unwrap();

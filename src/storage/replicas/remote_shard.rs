@@ -12,55 +12,38 @@ use crate::{
     },
     types::{PeerId, ShardId},
 };
-use std::{collections::HashMap, future::Future, str::FromStr, sync::Arc};
-use tokio::sync::RwLock;
+use std::{future::Future, sync::Arc};
 use tonic::{async_trait, transport::Channel, Request, Status};
 
 pub struct RemoteShard {
     pub id: ShardId,
     pub collection: CollectionName,
     pub peer_id: PeerId,
+    pub channel_service: Arc<ChannelService>,
 }
 
 impl RemoteShard {
     /// Init a remote shard in memory that can be used to communicate with replicas on a remote peer.
-    pub fn new(id: ShardId, collection: CollectionName, peer_id: PeerId) -> Self {
+    pub fn new(
+        id: ShardId,
+        collection: CollectionName,
+        peer_id: PeerId,
+        channel_service: Arc<ChannelService>,
+    ) -> Self {
         RemoteShard {
             id,
             collection,
             peer_id,
-        }
-    }
-
-    async fn current_address(
-        &self,
-        channel_service: &ChannelService,
-    ) -> CollectionResult<http::Uri> {
-        let guard_peer_addresses = channel_service.id_to_address.read().await;
-        let peer_address = guard_peer_addresses.get(&self.peer_id).cloned();
-
-        println!(
-            "Remote shard {}:{} has address {:?}",
-            self.peer_id, self.id, peer_address
-        );
-
-        match peer_address {
-            Some(uri) => Ok(uri),
-            None => Err(CollectionError::ServiceError(format!(
-                "Peer {} does not have an address in the channel service",
-                self.peer_id
-            ))),
+            channel_service,
         }
     }
 
     async fn with_points_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        channel_service: ChannelService,
         f: impl Fn(PointsInternalClient<Channel>) -> O,
     ) -> CollectionResult<T> {
-        let uri = self.current_address(&channel_service).await?;
-
-        let channel = channel_service.get_or_create_channel(uri).await?;
+        let uri = self.channel_service.get_uri(self.peer_id).await?;
+        let channel = self.channel_service.get_or_create_channel(uri).await?;
 
         let points_channel: PointsInternalClient<Channel> = PointsInternalClient::new(channel);
 
@@ -70,23 +53,6 @@ impl RemoteShard {
                 self.id, e
             ))
         })
-    }
-
-    pub fn get_channel_service(&self) -> ChannelService {
-        let mut channel_service = ChannelService::default();
-
-        // ToDo: Use `ConsensusState` for channel pool
-        // TODo: Drop this
-
-        let inner_map: HashMap<_, _> = HashMap::from_iter(vec![
-            (100, http::Uri::from_str("http://0.0.0.0:5000").unwrap()),
-            (101, http::Uri::from_str("http://0.0.0.0:5001").unwrap()),
-            (102, http::Uri::from_str("http://0.0.0.0:5002").unwrap()),
-            (103, http::Uri::from_str("http://0.0.0.0:5003").unwrap()),
-        ]);
-        channel_service.id_to_address = Arc::new(RwLock::new(inner_map));
-
-        channel_service
     }
 }
 
@@ -107,10 +73,8 @@ impl ShardOperationTrait for RemoteShard {
             })
             .collect::<Vec<_>>();
 
-        let channel_service = self.get_channel_service();
-
         let get_points_response = self
-            .with_points_client(channel_service, |mut client| {
+            .with_points_client(|mut client| {
                 println!(
                     "Calling PointsInternalClient::get_points on remote shard {}:{}",
                     self.peer_id, self.id
@@ -143,10 +107,8 @@ impl ShardOperationTrait for RemoteShard {
     }
 
     async fn upsert_points(&self, points: Vec<Point>) -> CollectionResult<()> {
-        let channel_service = self.get_channel_service();
-
         let _upsert_points_response = self
-            .with_points_client(channel_service, |mut client| {
+            .with_points_client(|mut client| {
                 let points = points.clone();
                 async move {
                     client
