@@ -1,9 +1,9 @@
 use crate::{
     api::points::PointsOperation,
     channel_service::ChannelService,
+    error::StorageError,
     storage::{
         collection::{Collection, CollectionConfig, CollectionName, COLLECTION_CONFIG_FILE},
-        error::StorageError,
         segment::{Point, PointId},
     },
 };

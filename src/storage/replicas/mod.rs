@@ -1,14 +1,10 @@
 pub mod local_shard;
 pub mod remote_shard;
 
-use crate::storage::replicas::local_shard::LocalShard;
-use crate::storage::replicas::remote_shard::RemoteShard;
+use crate::error::{CollectionResult, StorageError};
+use crate::storage::replicas::{local_shard::LocalShard, remote_shard::RemoteShard};
 use crate::storage::segment::Point;
-use crate::storage::{
-    collection::CollectionName,
-    error::{CollectionResult, StorageError},
-    segment::PointId,
-};
+use crate::storage::{collection::CollectionName, segment::PointId};
 use crate::types::{PeerId, ShardId};
 use futures::future::BoxFuture;
 use std::collections::HashMap;

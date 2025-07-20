@@ -1,6 +1,6 @@
 use crate::{
+    error::{CollectionError, CollectionResult, StorageError},
     storage::{
-        error::{CollectionError, CollectionResult, StorageError},
         replicas::ShardOperationTrait,
         segment::{Point, PointId, Segment},
     },

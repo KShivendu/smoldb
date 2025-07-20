@@ -4,9 +4,9 @@ use crate::{
         UpsertPointsRequest,
     },
     channel_service::ChannelService,
+    error::{CollectionError, CollectionResult},
     storage::{
         collection::CollectionName,
-        error::{CollectionError, CollectionResult},
         replicas::ShardOperationTrait,
         segment::{Point, PointId},
     },

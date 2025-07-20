@@ -1,4 +1,4 @@
-use crate::storage::error::StorageError;
+use crate::error::StorageError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
