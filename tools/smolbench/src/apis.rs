@@ -107,7 +107,7 @@ pub async fn delete_collection(
         ApiResponse::Error(res) => Err(SmolBenchError::DeleteCollectionError(res.error)),
     }?;
 
-    println!("Waiting for collection '{}' to be created", collection_name);
+    println!("Waiting for collection '{}' to be deleted", collection_name);
     let now = std::time::Instant::now();
 
     if wait {
