@@ -12,9 +12,9 @@ use crate::api::{
         raft_service::RaftService,
         schema::{
             points_internal_server::PointsInternalServer, raft_server::RaftServer,
-            service_server::ServiceServer,
+            smol_server::SmolServer,
         },
-        simple_service::SimpleService,
+        simple_service::SmolService,
     },
 };
 use http::Uri;
@@ -72,14 +72,14 @@ pub async fn init(
         grpc_port,
     ));
 
-    let p2p_service = ServiceServer::new(SimpleService::default());
+    let smol_service = SmolServer::new(SmolService::default());
 
     let points_service =
         PointsInternalServer::new(PointsInternalService::new(dispatcher.toc.clone()));
     let raft_service = RaftServer::new(RaftService::new(dispatcher));
 
     server
-        .add_service(p2p_service)
+        .add_service(smol_service)
         .add_service(raft_service)
         .add_service(points_service)
         .serve_with_shutdown(socket, async {

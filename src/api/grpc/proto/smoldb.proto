@@ -4,9 +4,9 @@ package smoldb;
 
 import "google/protobuf/empty.proto";
 
-// Simple service:
+// Smol service:
 
-service Service {
+service Smol {
   // Returns the title and version of the service - useful for debugging
   rpc RootApi (RootApiRequest) returns (RootApiReply) {}
 }
