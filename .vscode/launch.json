@@ -7,6 +7,31 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug smoldb - 0.0.0.0:9000",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=smoldb",
+                    "--package=smoldb"
+                ],
+                "filter": {
+                    "name": "smoldb",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "--url",
+                "0.0.0.0:9000",
+                "--p2p-url",
+                "0.0.0.0:5000",
+                "--peer-id",
+                "100"
+            ],
+            "cwd": "${workspaceFolder}",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug smoldb - 0.0.0.0:9001",
             "cargo": {
                 "args": [
@@ -25,34 +50,9 @@
                 "--p2p-url",
                 "0.0.0.0:5001",
                 "--peer-id",
-                "101"
-            ],
-            "cwd": "${workspaceFolder}",
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug smoldb - 0.0.0.0:9002",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=smoldb",
-                    "--package=smoldb"
-                ],
-                "filter": {
-                    "name": "smoldb",
-                    "kind": "bin"
-                }
-            },
-            "args": [
-                "--url",
-                "0.0.0.0:9002",
-                "--p2p-url",
-                "0.0.0.0:5002",
-                "--peer-id",
-                "102",
+                "101",
                 "--bootstrap",
-                "http://0.0.0.0:5001"
+                "http://0.0.0.0:5000"
             ],
             "cwd": "${workspaceFolder}",
         },
