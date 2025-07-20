@@ -8,8 +8,8 @@ pub enum SmolBenchError {
     DeleteCollectionError(String),
     #[error("Failed to upsert points: {0}")]
     UpsertPointsError(String),
-    #[error("Failed to retrieve points: {0}")]
-    RetrievePointsError(String),
+    #[error("Failed to read points: {0}")]
+    ReadPointsError(String),
     #[error("Request error: {0}")]
     RequestError(#[from] reqwest::Error),
     #[error("JSON parsing error: {0}")]

@@ -228,7 +228,7 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn get_points(
+    pub async fn read_points(
         &self,
         ids: Option<Vec<PointId>>,
         shard_id: Option<ShardId>,

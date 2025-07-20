@@ -43,7 +43,7 @@ pub async fn get_collection(
 
     match body {
         ApiResponse::Success(body) => Ok(body),
-        ApiResponse::Error(res) => Err(SmolBenchError::RetrievePointsError(res.error)),
+        ApiResponse::Error(res) => Err(SmolBenchError::ReadPointsError(res.error)),
     }
 }
 
@@ -129,8 +129,8 @@ pub async fn upsert_points(
     Ok(results)
 }
 
-/// Retrieve points by their IDs
-pub async fn retrieve_point(
+/// Read points by their IDs
+pub async fn read_point(
     url: &Uri,
     collection_name: &str,
     ids: Vec<u64>,
@@ -150,7 +150,7 @@ pub async fn retrieve_point(
             ApiResponse::Success(body) => {
                 results.push(body);
             }
-            ApiResponse::Error(res) => Err(SmolBenchError::RetrievePointsError(res.error))?,
+            ApiResponse::Error(res) => Err(SmolBenchError::ReadPointsError(res.error))?,
         }
     }
 
@@ -159,7 +159,7 @@ pub async fn retrieve_point(
 
 /// Scroll through all points in a collection by pagination?
 /// ToDo: Implement pagination logic in smoldb APIs
-pub async fn retrieve_points(
+pub async fn read_points(
     url: &Uri,
     collection_name: &str,
     _ids: Option<Vec<PointId>>, // ToDo: Use this parameter to filter points
@@ -175,6 +175,6 @@ pub async fn retrieve_points(
 
     match body {
         ApiResponse::Success(body) => Ok(body),
-        ApiResponse::Error(res) => Err(SmolBenchError::RetrievePointsError(res.error)),
+        ApiResponse::Error(res) => Err(SmolBenchError::ReadPointsError(res.error)),
     }
 }

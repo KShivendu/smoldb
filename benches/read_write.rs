@@ -150,7 +150,7 @@ pub fn single_read(c: &mut Criterion) {
     group.bench_function("single_read", |b| {
         b.to_async(&rt).iter(|| async {
             collection
-                .get_points(Some(vec![PointId::Id(0)]), None, true)
+                .read_points(Some(vec![PointId::Id(0)]), None, true)
                 .await
                 .unwrap();
         })
@@ -206,7 +206,7 @@ fn concurrent_read(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             for chunk in point_ids.chunks(chunk_size) {
                 collection
-                    .get_points(Some(chunk.to_vec()), None, true)
+                    .read_points(Some(chunk.to_vec()), None, true)
                     .await
                     .unwrap();
             }

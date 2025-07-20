@@ -97,7 +97,7 @@ impl Segment {
             return Ok(points);
         };
 
-        // If ids are provided, retrieve only those points
+        // If ids are provided, read only those points
         for id in ids {
             let key = id.into_string();
             if let Some(value) = self.db.get(key).map_err(|e| {

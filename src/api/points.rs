@@ -66,7 +66,7 @@ async fn get_point(
 
         let result = dispatcher
             .toc
-            .retrieve_points(&collection_name, Some(vec![point_id]))
+            .read_points(&collection_name, Some(vec![point_id]))
             .await;
 
         match result {
@@ -96,7 +96,7 @@ async fn list_points(
 ) -> impl Responder {
     helpers::time(async {
         let collection_name = collection_name.into_inner();
-        let result = dispatcher.toc.retrieve_points(&collection_name, None).await;
+        let result = dispatcher.toc.read_points(&collection_name, None).await;
         match result {
             Ok(points) => {
                 if points.is_empty() {
