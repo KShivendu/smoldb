@@ -3,10 +3,10 @@ use tonic::{Request, Response, Status};
 use crate::api::grpc::schema::{service_server::Service, RootApiReply, RootApiRequest};
 
 #[derive(Default)]
-pub struct SimpleService {}
+pub struct SmolService {}
 
 #[tonic::async_trait]
-impl Service for SimpleService {
+impl Service for SmolService {
     async fn root_api(
         &self,
         _request: Request<RootApiRequest>,
