@@ -6,7 +6,7 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y protobuf-compiler libprotobuf-dev
 
 # You can also interact with the p2p (internal) gRPC API like this:
-grpcurl -plaintext -import-path src/proto -proto root_api.proto 0.0.0.0:5000 smoldb_p2p_grpc.Service/RootApi
+grpcurl -plaintext -import-path src/api/grpc/proto/ -proto smoldb.proto 0.0.0.0:5000 smoldb.Service/RootApi
 ```
 
 
