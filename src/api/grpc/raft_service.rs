@@ -1,7 +1,7 @@
 use crate::{
     api::{
         dispatcher::{self, Dispatcher},
-        grpc::p2p_grpc_schema::{
+        grpc::schema::{
             raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
             RaftMessage as RaftMessageBytes, Uri,
         },

@@ -8,7 +8,7 @@ pub mod utils;
 use crate::{
     api::grpc::{
         make_grpc_channel,
-        p2p_grpc_schema::{raft_client::RaftClient, AddPeerToKnownMessage},
+        schema::{raft_client::RaftClient, AddPeerToKnownMessage},
     },
     consensus::{raft_storage::RaftStorage, utils::add_peer_to_toc_and_consensus_state},
     storage::{
