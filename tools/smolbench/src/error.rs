@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum SmolBenchError {
     #[error("Failed to create collection: {0}")]
     CreateCollectionError(String),
+    #[error("Failed to check if collection exists: {0}")]
+    CollectionExistsError(String),
     #[error("Failed to delete collection: {0}")]
     DeleteCollectionError(String),
     #[error("Failed to upsert points: {0}")]

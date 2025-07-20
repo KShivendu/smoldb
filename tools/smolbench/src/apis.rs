@@ -6,9 +6,13 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::time::sleep;
 
+const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Strongly recommend to use `wait=true`
 pub async fn create_collection(
     url: &Uri,
     collection_name: &str,
+    wait: bool,
 ) -> Result<ApiSuccessResponse<bool>, SmolBenchError> {
     let client = reqwest::Client::new();
 
@@ -22,16 +26,43 @@ pub async fn create_collection(
 
     let body: ApiResponse<bool> = res.json().await?;
 
-    match body {
+    let now = std::time::Instant::now();
+
+    let success_res = match body {
         ApiResponse::Success(body) => Ok(body),
         ApiResponse::Error(res) => Err(SmolBenchError::CreateCollectionError(res.error)),
+    }?;
+
+    if wait {
+        while now.elapsed() < WAIT_TIMEOUT {
+            let exists = exists_collection(url, collection_name).await?;
+
+            if exists {
+                return Ok(success_res);
+            }
+
+            println!(
+                "Waiting for collection '{}' to be created...",
+                collection_name
+            );
+
+            if now.elapsed() >= WAIT_TIMEOUT {
+                return Err(SmolBenchError::CreateCollectionError(
+                    "Timed out waiting for collection creation".to_string(),
+                ));
+            }
+
+            sleep(Duration::from_millis(100)).await;
+        }
     }
+
+    Ok(success_res)
 }
 
-pub async fn get_collection(
+async fn get_collection(
     url: &Uri,
     collection_name: &str,
-) -> Result<ApiSuccessResponse<Value>, SmolBenchError> {
+) -> Result<ApiResponse<Value>, SmolBenchError> {
     let client = reqwest::Client::new();
 
     let res = client
@@ -41,13 +72,32 @@ pub async fn get_collection(
 
     let body: ApiResponse<Value> = res.json().await?;
 
-    match body {
-        ApiResponse::Success(body) => Ok(body),
-        ApiResponse::Error(res) => Err(SmolBenchError::ReadPointsError(res.error)),
+    Ok(body)
+}
+
+pub async fn exists_collection(url: &Uri, collection_name: &str) -> Result<bool, SmolBenchError> {
+    // It's important to differentiate between collection not existing vs request/parsing
+    match get_collection(url, collection_name).await {
+        Ok(ApiResponse::Success(_collection)) => Ok(true),
+        Ok(ApiResponse::Error(error_res)) => {
+            if error_res.error
+                == format!("Service error: Collection: {collection_name} doesn't exist")
+            {
+                Ok(false)
+            } else {
+                Err(SmolBenchError::CollectionExistsError(error_res.error))
+            }
+        }
+        Err(e) => Err(e),
     }
 }
 
-pub async fn delete_collection(url: &Uri, collection_name: &str) -> Result<(), SmolBenchError> {
+/// Strongly recommend to use `wait=true`
+pub async fn delete_collection(
+    url: &Uri,
+    collection_name: &str,
+    wait: bool,
+) -> Result<(), SmolBenchError> {
     let client = reqwest::Client::new();
 
     let res = client
@@ -55,15 +105,38 @@ pub async fn delete_collection(url: &Uri, collection_name: &str) -> Result<(), S
         .send()
         .await?;
 
-    if res.status().is_success() {
-        Ok(())
-    } else {
-        let body: ApiResponse<Value> = res.json().await?;
-        match body {
-            ApiResponse::Success(_) => Ok(()),
-            ApiResponse::Error(res) => Err(SmolBenchError::DeleteCollectionError(res.error)),
+    let body: ApiResponse<Value> = res.json().await?;
+    let success_res = match body {
+        ApiResponse::Success(_) => Ok(()),
+        ApiResponse::Error(res) => Err(SmolBenchError::DeleteCollectionError(res.error)),
+    }?;
+
+    let now = std::time::Instant::now();
+
+    if wait {
+        while now.elapsed() < WAIT_TIMEOUT {
+            let deleted = !exists_collection(url, collection_name).await?;
+
+            if deleted {
+                return Ok(success_res);
+            }
+
+            println!(
+                "Waiting for collection '{}' to be deleted...",
+                collection_name
+            );
+
+            if now.elapsed() >= WAIT_TIMEOUT {
+                return Err(SmolBenchError::CreateCollectionError(
+                    "Timed out waiting for collection deletion".to_string(),
+                ));
+            }
+
+            sleep(Duration::from_millis(100)).await;
         }
     }
+
+    Ok(success_res)
 }
 
 pub async fn upsert_points(
