@@ -1,19 +1,40 @@
-use std::{collections::HashMap, sync::Arc};
-
+use crate::{api::grpc::make_default_grpc_channel, error::CollectionError, types::PeerId};
 use http::Uri;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use tonic::transport::{Channel, Error as TonicError};
 
-use crate::{api::grpc::make_default_grpc_channel, types::PeerId};
-
-/// Holds a pool of channels established for a set of URIs.
-/// Channel are shared by cloning them.
-/// Make the `pool_size` larger to increase throughput.
-pub struct TransportChannelPool {
-    uri_to_channel: tokio::sync::RwLock<HashMap<Uri, Channel>>,
+#[derive(Default)]
+/// This service is used to manage [`Channel`] connection pools between peers
+/// It maintains connection pools and handles re-connection
+pub struct ChannelService {
+    pub peer_id: PeerId,
+    /// Directly shared with `ConsensusState` instead of having a .add_peer() function
+    pub id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>,
+    ///
+    /// Note: `Channel` can only send one request in flight.
+    /// ToDo: We can have a proper channel pool instead of single channel to increase this throughput
+    ///
+    /// Channels are created only when required
+    pub uri_to_channel: RwLock<HashMap<Uri, Channel>>,
 }
 
-impl TransportChannelPool {
+impl ChannelService {
+    pub fn new(peer_id: PeerId, id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>) -> Self {
+        Self {
+            peer_id,
+            id_to_address,
+            uri_to_channel: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub async fn get_uri(&self, peer_id: PeerId) -> Result<Uri, CollectionError> {
+        let guard = self.id_to_address.read().await;
+        guard.get(&peer_id).cloned().ok_or_else(|| {
+            CollectionError::ServiceError(format!("URI for peer ID {peer_id} was not found"))
+        })
+    }
+
     pub async fn get_or_create_channel(&self, uri: Uri) -> Result<Channel, TonicError> {
         let uri_to_channel_guard = self.uri_to_channel.read().await;
 
@@ -27,32 +48,6 @@ impl TransportChannelPool {
         uri_to_channel_guard.insert(uri.clone(), channel.clone());
 
         Ok(channel)
-    }
-}
-
-impl Default for TransportChannelPool {
-    fn default() -> Self {
-        Self {
-            uri_to_channel: tokio::sync::RwLock::new(HashMap::new()),
-        }
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct ChannelService {
-    pub peer_id: PeerId,
-    /// Shared with consensus state
-    pub id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>,
-    pub channel_pool: Arc<TransportChannelPool>,
-}
-
-impl ChannelService {
-    pub fn new(peer_id: PeerId, id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>) -> Self {
-        Self {
-            peer_id,
-            id_to_address,
-            channel_pool: Arc::new(TransportChannelPool::default()),
-        }
     }
 
     pub async fn get_other_peer_ids(&self) -> Vec<PeerId> {

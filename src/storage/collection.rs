@@ -1,4 +1,5 @@
 use crate::{
+    channel_service::ChannelService,
     error::{CollectionError, CollectionResult, StorageError},
     storage::{
         replicas::{
@@ -30,6 +31,7 @@ pub struct Collection {
     pub config: CollectionConfig,
     pub replica_holder: Arc<RwLock<ReplicaHolder>>,
     pub path: PathBuf,
+    pub channel_service: Arc<ChannelService>,
 }
 
 impl Collection {
@@ -37,6 +39,7 @@ impl Collection {
         id: CollectionName,
         config: CollectionConfig,
         path: &Path,
+        channel_service: Arc<ChannelService>,
     ) -> Result<Self, StorageError> {
         // ToDo: Create ShardHolder & ShardReplicaSet
 
@@ -51,10 +54,11 @@ impl Collection {
             .enumerate()
             .map(|(shard_id, shard_path)| {
                 let shard_id = shard_id as ShardId;
+                // No remote replicas initially. They will be added by Collection::add_remote_replicas
                 let replica_set = ReplicaSet::new(
                     LocalShard::init(shard_path, shard_id),
-                    vec![], // No remote replicas initially. They will be added by Collection::add_remote_replicas
                     id.clone(),
+                    channel_service.clone(),
                 );
 
                 Ok((shard_id, replica_set))
@@ -66,6 +70,7 @@ impl Collection {
             config,
             replica_holder: Arc::new(RwLock::new(ReplicaHolder::new(shards))),
             path: path.to_owned(),
+            channel_service,
         })
     }
 
@@ -75,7 +80,12 @@ impl Collection {
         for (shard_id, replica_set) in replica_holder.shards.iter_mut() {
             replica_set.remotes.insert(
                 peer_id,
-                RemoteShard::new(*shard_id, self.id.clone(), peer_id),
+                RemoteShard::new(
+                    *shard_id,
+                    self.id.clone(),
+                    peer_id,
+                    self.channel_service.clone(),
+                ),
             );
         }
     }
@@ -95,7 +105,11 @@ impl Collection {
         Ok(())
     }
 
-    pub fn load(id: CollectionName, path: &Path) -> Result<Self, StorageError> {
+    pub fn load(
+        id: CollectionName,
+        path: &Path,
+        channel_service: Arc<ChannelService>,
+    ) -> Result<Self, StorageError> {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         if !config_path.exists() {
             return Err(StorageError::BadInput(format!(
@@ -133,7 +147,7 @@ impl Collection {
             replicas.insert(
                 shard_id,
                 // ToDo: Load remote shards if any
-                ReplicaSet::new(shard, vec![], id.clone()),
+                ReplicaSet::new(shard, id.clone(), channel_service.clone()),
             );
         }
 
@@ -142,6 +156,7 @@ impl Collection {
             config,
             replica_holder: Arc::new(RwLock::new(ReplicaHolder::new(replicas))),
             path: path.to_path_buf(),
+            channel_service,
         })
     }
 

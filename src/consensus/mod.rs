@@ -55,6 +55,7 @@ pub struct ConsensusState {
     pub persistent: RwLock<Persistent>,
 
     // ToDo: This is redundant with `persistent.peers`. Consider removing it
+    // This is shared with `ChannelService`
     pub peer_address_by_id: Arc<RwLock<HashMap<PeerId, Uri>>>,
 }
 

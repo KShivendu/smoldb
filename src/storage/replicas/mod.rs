@@ -1,6 +1,7 @@
 pub mod local_shard;
 pub mod remote_shard;
 
+use crate::channel_service::ChannelService;
 use crate::error::{CollectionResult, StorageError};
 use crate::storage::replicas::{local_shard::LocalShard, remote_shard::RemoteShard};
 use crate::storage::segment::Point;
@@ -8,6 +9,7 @@ use crate::storage::{collection::CollectionName, segment::PointId};
 use crate::types::{PeerId, ShardId};
 use futures::future::BoxFuture;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tonic::async_trait;
 
 #[derive(Copy, Clone, Debug)]
@@ -27,25 +29,39 @@ pub struct ReplicaSet {
 
     #[allow(dead_code)]
     collection_id: CollectionName,
+
+    channel_service: Arc<ChannelService>,
 }
 
 impl ReplicaSet {
-    pub fn new(local: LocalShard, remotes: Vec<PeerId>, collection_id: CollectionName) -> Self {
-        let remotes = remotes
-            .into_iter()
-            .map(|peer_id| {
-                (
-                    peer_id,
-                    RemoteShard::new(local.id, collection_id.clone(), peer_id),
-                )
-            })
-            .collect();
-
+    pub fn new(
+        local: LocalShard,
+        collection_id: CollectionName,
+        channel_service: Arc<ChannelService>,
+    ) -> Self {
         ReplicaSet {
             local,
-            remotes,
+            remotes: HashMap::new(),
             collection_id,
+            channel_service,
         }
+    }
+
+    pub async fn add_remote(&mut self, peer_id: PeerId) -> CollectionResult<()> {
+        if self.remotes.contains_key(&peer_id) {
+            return Err(StorageError::BadInput(format!(
+                "Remote peer {peer_id} already exists"
+            )))?;
+        }
+
+        let remote = RemoteShard::new(
+            self.local.id,
+            self.collection_id.clone(),
+            peer_id,
+            self.channel_service.clone(),
+        );
+        self.remotes.insert(peer_id, remote);
+        Ok(())
     }
 
     pub fn num_replicas(&self) -> usize {
@@ -150,9 +166,11 @@ mod tests {
         let s0 = LocalShard::init(tmp_dir.path().join("0"), 0);
         let s1 = LocalShard::init(tmp_dir.path().join("1"), 1);
 
+        let cs = Arc::new(ChannelService::default());
+
         let shard_holder = ReplicaHolder::new(HashMap::from_iter([
-            (0, ReplicaSet::new(s0, vec![], "c1".to_string())),
-            (1, ReplicaSet::new(s1, vec![], "c1".to_string())),
+            (0, ReplicaSet::new(s0, "c1".to_string(), cs.clone())),
+            (1, ReplicaSet::new(s1, "c1".to_string(), cs)),
         ]));
 
         let shards_to_point_ids = shard_holder
