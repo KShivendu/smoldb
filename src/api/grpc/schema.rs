@@ -86,7 +86,7 @@ pub struct Point {
     pub payload: ::prost::alloc::string::String,
 }
 /// Generated client implementations.
-pub mod service_client {
+pub mod smol_client {
     #![allow(
         unused_variables,
         dead_code,
@@ -97,10 +97,10 @@ pub mod service_client {
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
-    pub struct ServiceClient<T> {
+    pub struct SmolClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl ServiceClient<tonic::transport::Channel> {
+    impl SmolClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -111,7 +111,7 @@ pub mod service_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> ServiceClient<T>
+    impl<T> SmolClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::Body>,
         T::Error: Into<StdError>,
@@ -129,7 +129,7 @@ pub mod service_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> ServiceClient<InterceptedService<T, F>>
+        ) -> SmolClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -143,7 +143,7 @@ pub mod service_client {
                 http::Request<tonic::body::Body>,
             >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
         {
-            ServiceClient::new(InterceptedService::new(inner, interceptor))
+            SmolClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -190,9 +190,9 @@ pub mod service_client {
                     )
                 })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/smoldb.Service/RootApi");
+            let path = http::uri::PathAndQuery::from_static("/smoldb.Smol/RootApi");
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("smoldb.Service", "RootApi"));
+            req.extensions_mut().insert(GrpcMethod::new("smoldb.Smol", "RootApi"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -495,7 +495,7 @@ pub mod points_internal_client {
     }
 }
 /// Generated server implementations.
-pub mod service_server {
+pub mod smol_server {
     #![allow(
         unused_variables,
         dead_code,
@@ -504,9 +504,9 @@ pub mod service_server {
         clippy::let_unit_value,
     )]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with ServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with SmolServer.
     #[async_trait]
-    pub trait Service: std::marker::Send + std::marker::Sync + 'static {
+    pub trait Smol: std::marker::Send + std::marker::Sync + 'static {
         /// Returns the title and version of the service - useful for debugging
         async fn root_api(
             &self,
@@ -514,14 +514,14 @@ pub mod service_server {
         ) -> std::result::Result<tonic::Response<super::RootApiReply>, tonic::Status>;
     }
     #[derive(Debug)]
-    pub struct ServiceServer<T> {
+    pub struct SmolServer<T> {
         inner: Arc<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
         max_decoding_message_size: Option<usize>,
         max_encoding_message_size: Option<usize>,
     }
-    impl<T> ServiceServer<T> {
+    impl<T> SmolServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -572,9 +572,9 @@ pub mod service_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for ServiceServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for SmolServer<T>
     where
-        T: Service,
+        T: Smol,
         B: Body + std::marker::Send + 'static,
         B::Error: Into<StdError> + std::marker::Send + 'static,
     {
@@ -589,10 +589,10 @@ pub mod service_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/smoldb.Service/RootApi" => {
+                "/smoldb.Smol/RootApi" => {
                     #[allow(non_camel_case_types)]
-                    struct RootApiSvc<T: Service>(pub Arc<T>);
-                    impl<T: Service> tonic::server::UnaryService<super::RootApiRequest>
+                    struct RootApiSvc<T: Smol>(pub Arc<T>);
+                    impl<T: Smol> tonic::server::UnaryService<super::RootApiRequest>
                     for RootApiSvc<T> {
                         type Response = super::RootApiReply;
                         type Future = BoxFuture<
@@ -605,7 +605,7 @@ pub mod service_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as Service>::root_api(&inner, request).await
+                                <T as Smol>::root_api(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -654,7 +654,7 @@ pub mod service_server {
             }
         }
     }
-    impl<T> Clone for ServiceServer<T> {
+    impl<T> Clone for SmolServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -667,8 +667,8 @@ pub mod service_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "smoldb.Service";
-    impl<T> tonic::server::NamedService for ServiceServer<T> {
+    pub const SERVICE_NAME: &str = "smoldb.Smol";
+    impl<T> tonic::server::NamedService for SmolServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
 }

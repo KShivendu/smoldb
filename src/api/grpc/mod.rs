@@ -12,7 +12,7 @@ use crate::api::{
         raft_service::RaftService,
         schema::{
             points_internal_server::PointsInternalServer, raft_server::RaftServer,
-            service_server::ServiceServer,
+            smol_server::SmolServer,
         },
         simple_service::SmolService,
     },
@@ -72,7 +72,7 @@ pub async fn init(
         grpc_port,
     ));
 
-    let smol_service = ServiceServer::new(SmolService::default());
+    let smol_service = SmolServer::new(SmolService::default());
 
     let points_service =
         PointsInternalServer::new(PointsInternalService::new(dispatcher.toc.clone()));

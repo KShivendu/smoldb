@@ -1,12 +1,12 @@
 use tonic::{Request, Response, Status};
 
-use crate::api::grpc::schema::{service_server::Service, RootApiReply, RootApiRequest};
+use crate::api::grpc::schema::{smol_server::Smol as SmolTrait, RootApiReply, RootApiRequest};
 
 #[derive(Default)]
 pub struct SmolService {}
 
 #[tonic::async_trait]
-impl Service for SmolService {
+impl SmolTrait for SmolService {
     async fn root_api(
         &self,
         _request: Request<RootApiRequest>,
