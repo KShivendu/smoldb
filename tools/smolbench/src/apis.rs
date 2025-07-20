@@ -26,12 +26,13 @@ pub async fn create_collection(
 
     let body: ApiResponse<bool> = res.json().await?;
 
-    let now = std::time::Instant::now();
-
     let success_res = match body {
         ApiResponse::Success(body) => Ok(body),
         ApiResponse::Error(res) => Err(SmolBenchError::CreateCollectionError(res.error)),
     }?;
+
+    println!("Waiting for collection '{}' to be created", collection_name);
+    let now = std::time::Instant::now();
 
     if wait {
         while now.elapsed() < WAIT_TIMEOUT {
@@ -40,11 +41,6 @@ pub async fn create_collection(
             if exists {
                 return Ok(success_res);
             }
-
-            println!(
-                "Waiting for collection '{}' to be created...",
-                collection_name
-            );
 
             if now.elapsed() >= WAIT_TIMEOUT {
                 return Err(SmolBenchError::CreateCollectionError(
@@ -111,6 +107,7 @@ pub async fn delete_collection(
         ApiResponse::Error(res) => Err(SmolBenchError::DeleteCollectionError(res.error)),
     }?;
 
+    println!("Waiting for collection '{}' to be created", collection_name);
     let now = std::time::Instant::now();
 
     if wait {
@@ -120,11 +117,6 @@ pub async fn delete_collection(
             if deleted {
                 return Ok(success_res);
             }
-
-            println!(
-                "Waiting for collection '{}' to be deleted...",
-                collection_name
-            );
 
             if now.elapsed() >= WAIT_TIMEOUT {
                 return Err(SmolBenchError::CreateCollectionError(
