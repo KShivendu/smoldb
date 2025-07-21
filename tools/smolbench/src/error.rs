@@ -2,6 +2,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum SmolBenchError {
+    #[error("Consensus error: {0}")]
+    ConsensusError(String),
     #[error("Failed to create collection: {0}")]
     CreateCollectionError(String),
     #[error("Failed to check if collection exists: {0}")]

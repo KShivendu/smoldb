@@ -8,12 +8,63 @@ use tokio::time::sleep;
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 
+pub async fn wait_consensus_start(url: &Uri) -> Result<(), SmolBenchError> {
+    let now = std::time::Instant::now();
+
+    while now.elapsed() < WAIT_TIMEOUT {
+        let cluster_info = get_cluster_info(url).await?;
+
+        match cluster_info {
+            ApiResponse::Success(info) => {
+                let leader = info
+                    .result
+                    .get("raft_info")
+                    .and_then(|r| r.get("leader"))
+                    .and_then(|r| r.as_u64())
+                    .unwrap();
+
+                if leader != 0 {
+                    println!("Consensus started with leader: {}", leader);
+                    return Ok(());
+                } else {
+                    println!("No leader found in cluster info, waiting for consensus to start...");
+                }
+            }
+            ApiResponse::Error(err) => {
+                return Err(SmolBenchError::ConsensusError(format!(
+                    "Cluster not started: {}",
+                    err.error
+                )));
+            }
+        }
+
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    Err(SmolBenchError::ConsensusError(
+        "Timed out waiting for consensus to start".to_string(),
+    ))
+}
+
+async fn get_cluster_info(url: &Uri) -> Result<ApiResponse<Value>, SmolBenchError> {
+    let client = reqwest::Client::new();
+
+    let res = client.get(format!("{url}/cluster")).send().await?;
+
+    let body: ApiResponse<Value> = res.json().await?;
+
+    Ok(body)
+}
+
 /// Strongly recommend to use `wait=true`
 pub async fn create_collection(
     url: &Uri,
     collection_name: &str,
     wait: bool,
 ) -> Result<ApiSuccessResponse<bool>, SmolBenchError> {
+    // First ensure that consensus is started
+    crate::apis::wait_consensus_start(&url).await?;
+
     let client = reqwest::Client::new();
 
     let res = client
@@ -94,6 +145,9 @@ pub async fn delete_collection(
     collection_name: &str,
     wait: bool,
 ) -> Result<(), SmolBenchError> {
+    // First ensure that consensus is started
+    crate::apis::wait_consensus_start(&url).await?;
+
     let client = reqwest::Client::new();
 
     let res = client

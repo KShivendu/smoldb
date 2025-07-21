@@ -14,23 +14,42 @@ fn get_smoldb_exec() -> PathBuf {
 async fn wait_peer_start(uri: &str) {
     let client = reqwest::Client::new();
     let start = std::time::Instant::now();
-    while let Err(_) = client.get(uri).send().await {
+    while let Err(e) = client.get(uri).send().await {
         if start.elapsed() > MAX_PEER_WAIT {
-            panic!("Smoldb peer did not start within the expected time");
+            panic!("Smoldb peer did not start within the expected time: {e}");
         }
     }
 }
 
-pub async fn start_peer(
+pub struct SmolDbNode {
+    child: std::process::Child,
+}
+
+impl SmolDbNode {
+    pub fn new(child: std::process::Child) -> Self {
+        SmolDbNode { child }
+    }
+}
+
+impl Drop for SmolDbNode {
+    fn drop(&mut self) {
+        if let Err(e) = self.child.kill() {
+            eprintln!("Failed to kill Smoldb process: {e}");
+        }
+    }
+}
+
+pub async fn start_smoldb(
     peer_dir: &Path,
     log_file: &str,
     peer_id: u64,
     port: u32,
     p2p_port: u32,
     bootstrap: Option<String>,
-) -> std::process::Child {
+) -> SmolDbNode {
     let smoldb_path = get_smoldb_exec();
-    let log_path = peer_dir.join(log_file); // ToDo: Add logging
+    let cwd = std::env::current_dir().expect("Failed to get current directory");
+    let log_path = cwd.join(log_file); // ToDo: Add logging
 
     if !smoldb_path.exists() {
         panic!("Smoldb executable not found at {:?}", smoldb_path);
@@ -76,5 +95,5 @@ pub async fn start_peer(
 
     println!("Started Smoldb peer at {http_url} in {peer_dir:?}");
 
-    child
+    SmolDbNode::new(child)
 }
