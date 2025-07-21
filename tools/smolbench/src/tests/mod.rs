@@ -1,6 +1,6 @@
 mod utils;
 
-use self::utils::start_peer;
+use self::utils::start_smoldb;
 use http::Uri;
 use std::str::FromStr;
 use temp_dir::TempDir;
@@ -8,7 +8,7 @@ use temp_dir::TempDir;
 #[tokio::test]
 async fn test_smoldb_consecutive_writes() -> Result<(), crate::error::SmolBenchError> {
     let peer_dir = TempDir::new().expect("Failed to create temp dir");
-    let _child = start_peer(peer_dir.path(), "test_peer.log", 101, 9001, 5001, None).await;
+    let _node = start_smoldb(peer_dir.path(), "test_peer.log", 101, 9001, 5001, None).await;
 
     let uri = Uri::from_str("http://localhost:9001").unwrap();
     let collection_name = "benchmark".to_string();
@@ -16,11 +16,10 @@ async fn test_smoldb_consecutive_writes() -> Result<(), crate::error::SmolBenchE
     let batch_size: usize = 100;
     let delay = None;
 
-    if let Ok(create_response) = crate::apis::create_collection(&uri, &collection_name, true).await
-    {
-        println!("Result: {}", &create_response.result);
-        assert!(create_response.result);
-    };
+    let create_response = crate::apis::create_collection(&uri, &collection_name, true).await?;
+
+    println!("Result: {}", &create_response.result);
+    assert!(create_response.result);
 
     let expected_batch_count = num_points.div_ceil(batch_size);
 

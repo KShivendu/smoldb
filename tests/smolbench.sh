@@ -2,4 +2,4 @@
 set -eoux pipefail
 
 cargo build
-cargo test -p smolbench
+cargo test -p smolbench -- --nocapture
