@@ -71,6 +71,9 @@ async fn start_p2p_server(
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    #[cfg(debug_assertions)]
+    color_backtrace::install();
+
     let args = parse_args();
 
     // Create a dedicated thread for internal gRPC service while we also run Actix Web server
