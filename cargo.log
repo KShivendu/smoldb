@@ -1,0 +1,143 @@
+warning: unreachable expression
+  --> src/main.rs:37:5
+   |
+35 |       panic!("Fucked");
+   |       ---------------- any code following this expression is unreachable
+36 |
+37 | /     HttpServer::new(move || {
+38 | |         App::new()
+39 | |             .wrap(middleware::NormalizePath::trim())
+40 | |             .service(index)
+...  |
+53 | |     .run()
+54 | |     .await
+   | |__________^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` on by default
+
+warning: unused variable: `dispatcher_app_data`
+  --> src/main.rs:31:9
+   |
+31 |     let dispatcher_app_data = Data::from(dispatcher);
+   |         ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dispatcher_app_data`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `host`
+  --> src/main.rs:33:10
+   |
+33 |     let (host, port) = (url.host().unwrap(), url.port_u16().unwrap());
+   |          ^^^^ help: if this is intentional, prefix it with an underscore: `_host`
+
+warning: unused variable: `port`
+  --> src/main.rs:33:16
+   |
+33 |     let (host, port) = (url.host().unwrap(), url.port_u16().unwrap());
+   |                ^^^^ help: if this is intentional, prefix it with an underscore: `_port`
+
+warning: `smoldb` (bin "smoldb") generated 4 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running `target/debug/smoldb`
+Created Raft node with ID: 1498847316966911
+Starting consensus thread...
+Starting Actix Web server on http://0.0.0.0:9000/
+The application panicked (crashed).
+Message:  Fucked
+Location: src/main.rs:35
+
+Run with COLORBT_SHOW_HIDDEN=1 environment variable to disable frame filtering.
+Run with RUST_BACKTRACE=full to include source snippets.
+Starting internal gRPC server on 0.0.0.0:5000
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ BACKTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                              ⋮ 9 frames hidden ⋮                               
+10: smoldb::start_http_server::{{closure}}::h1f379b0bffe426a2
+    at /home/kshivendu/projects/smoldb/src/main.rs:35
+11: smoldb::main::{{closure}}::{{closure}}::{{closure}}::h7c3d5619388f12e9
+    at /home/kshivendu/projects/smoldb/src/main.rs:118
+12: tokio::runtime::park::CachedParkThread::block_on::{{closure}}::ha95e871200946f6f
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/park.rs:285
+13: tokio::task::coop::with_budget::h74e1a16377c44246
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/task/coop/mod.rs:167
+14: tokio::task::coop::budget::h3447893aa75aa632
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/task/coop/mod.rs:133
+15: tokio::runtime::park::CachedParkThread::block_on::hb6bd7bae7f2b072a
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/park.rs:285
+16: tokio::runtime::context::blocking::BlockingRegionGuard::block_on::he8b5478e5a174fae
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/context/blocking.rs:66
+17: tokio::runtime::handle::Handle::block_on_inner::{{closure}}::h76140ab7e0827a92
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/handle.rs:327
+18: tokio::runtime::context::runtime::enter_runtime::h5e746063e4e8ac95
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/context/runtime.rs:65
+19: tokio::runtime::handle::Handle::block_on_inner::h8bc11e85c63f755f
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/handle.rs:326
+20: tokio::runtime::handle::Handle::block_on::h52090238083c2204
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/handle.rs:305
+21: smoldb::main::{{closure}}::{{closure}}::h1c90774333246a70
+    at /home/kshivendu/projects/smoldb/src/main.rs:116
+22: std::sys::backtrace::__rust_begin_short_backtrace::h372e0bcc34ac4975
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sys/backtrace.rs:152
+23: std::thread::Builder::spawn_unchecked_::{{closure}}::{{closure}}::ha315012662a34533
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/mod.rs:559
+24: <core::panic::unwind_safe::AssertUnwindSafe<F> as core::ops::function::FnOnce<()>>::call_once::h4da1acd8e29774f5
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/panic/unwind_safe.rs:272
+25: std::panicking::try::do_call::hbdf2fe6c0ea87f20
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panicking.rs:589
+26: __rust_try
+    at <unknown source file>
+27: std::panicking::try::h74bdf17a63572619
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panicking.rs:552
+28: std::panic::catch_unwind::h250b5e3c8a6a7b18
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panic.rs:359
+29: std::thread::Builder::spawn_unchecked_::{{closure}}::h43cc45519ee1a716
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/mod.rs:557
+30: core::ops::function::FnOnce::call_once{{vtable.shim}}::h6b6023a86bd7ec3d
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250
+31: <alloc::boxed::Box<F,A> as core::ops::function::FnOnce<Args>>::call_once::he4962534b56a5929
+    at /rustc/6b00bc3880198600130e1cf62b8f8a93494488cc/library/alloc/src/boxed.rs:1966
+32: <alloc::boxed::Box<F,A> as core::ops::function::FnOnce<Args>>::call_once::h95af12d5a868b9d0
+    at /rustc/6b00bc3880198600130e1cf62b8f8a93494488cc/library/alloc/src/boxed.rs:1966
+33: std::sys::pal::unix::thread::Thread::new::thread_start::h1822d22fde68314f
+    at /rustc/6b00bc3880198600130e1cf62b8f8a93494488cc/library/std/src/sys/pal/unix/thread.rs:97
+34: start_thread
+    at ./nptl/pthread_create.c:442
+35: __GI___clone3
+    at ./misc/../sysdeps/unix/sysv/linux/x86_64/clone3.S:81
+The application panicked (crashed).
+Message:  HTTP server thread panicked: Any { .. }
+Location: src/main.rs:133
+
+Run with COLORBT_SHOW_HIDDEN=1 environment variable to disable frame filtering.
+Run with RUST_BACKTRACE=full to include source snippets.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ BACKTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                              ⋮ 10 frames hidden ⋮                              
+11: core::result::Result<T,E>::expect::hb3a8f6382896eba4
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:1089
+12: smoldb::main::{{closure}}::h58f9ac0262ec84b0
+    at /home/kshivendu/projects/smoldb/src/main.rs:133
+13: tokio::runtime::park::CachedParkThread::block_on::{{closure}}::ha75abd555f3f86da
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/park.rs:285
+14: tokio::task::coop::with_budget::hc727b5a9e4f5c3b7
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/task/coop/mod.rs:167
+15: tokio::task::coop::budget::h74c93dbc2d4f264b
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/task/coop/mod.rs:133
+16: tokio::runtime::park::CachedParkThread::block_on::h3cd8afd884c1dbbc
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/park.rs:285
+17: tokio::runtime::context::blocking::BlockingRegionGuard::block_on::h4c524b284c2bef8e
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/context/blocking.rs:66
+18: tokio::runtime::scheduler::multi_thread::MultiThread::block_on::{{closure}}::h54990e5c51d18773
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/scheduler/multi_thread/mod.rs:87
+19: tokio::runtime::context::runtime::enter_runtime::h1b6fad6adecdc494
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/context/runtime.rs:65
+20: tokio::runtime::scheduler::multi_thread::MultiThread::block_on::h5bc8690234fee422
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/scheduler/multi_thread/mod.rs:86
+21: tokio::runtime::runtime::Runtime::block_on_inner::h59715d78c2571214
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/runtime.rs:358
+22: tokio::runtime::runtime::Runtime::block_on::hd6cab64a46d34c0b
+    at /home/kshivendu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.46.1/src/runtime/runtime.rs:330
+23: smoldb::main::hbae7227592599000
+    at /home/kshivendu/projects/smoldb/src/main.rs:136
+24: core::ops::function::FnOnce::call_once::h08e133f0269822b6
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250
+25: std::sys::backtrace::__rust_begin_short_backtrace::h6c5bb45948078d93
+    at /home/kshivendu/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sys/backtrace.rs:152
+                              ⋮ 15 frames hidden ⋮                              
