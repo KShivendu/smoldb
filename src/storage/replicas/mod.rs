@@ -106,14 +106,20 @@ impl ReplicaSet {
 
 pub struct ReplicaHolder {
     pub shards: HashMap<ShardId, ReplicaSet>,
-    ring: hashring::HashRing<ShardId>,
+    ring: hashring::HashRing<(ShardId, usize)>,
 }
+
+const HASHRING_SCALE: usize = 100;
 
 impl ReplicaHolder {
     pub fn new(shards: HashMap<ShardId, ReplicaSet>) -> Self {
         let mut ring = hashring::HashRing::new();
         for shard_id in shards.keys() {
-            ring.add(*shard_id);
+            // Add virtual shards to the ring for each shard
+            // This helps with even distribution of points across shards
+            for virtual_shard_idx in 0..HASHRING_SCALE {
+                ring.add((*shard_id, virtual_shard_idx));
+            }
         }
 
         ReplicaHolder { shards, ring }
@@ -141,7 +147,7 @@ impl ReplicaHolder {
     ) -> Result<HashMap<ShardId, Vec<PointId>>, StorageError> {
         let mut shards_to_point_ids = HashMap::new();
         for point_id in point_ids {
-            let shard_id = self
+            let (shard_id, _virtual_shard_idx) = self
                 .ring
                 .get(&point_id)
                 .ok_or_else(|| StorageError::ServiceError("No shards found".to_string()))?;
@@ -185,13 +191,9 @@ mod tests {
         let expected_grouping = HashMap::from_iter([
             (
                 0,
-                vec![
-                    PointId::Id(1),
-                    PointId::Id(100),
-                    PointId::Uuid("dummy-uuid".to_string()),
-                ],
+                vec![PointId::Id(100), PointId::Uuid("dummy-uuid".to_string())],
             ),
-            (1, vec![PointId::Id(2)]),
+            (1, vec![PointId::Id(1), PointId::Id(2)]),
         ]);
 
         assert_eq!(shards_to_point_ids, expected_grouping);
