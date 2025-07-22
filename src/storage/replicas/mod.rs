@@ -191,13 +191,9 @@ mod tests {
         let expected_grouping = HashMap::from_iter([
             (
                 0,
-                vec![
-                    PointId::Id(1),
-                    PointId::Id(100),
-                    PointId::Uuid("dummy-uuid".to_string()),
-                ],
+                vec![PointId::Id(100), PointId::Uuid("dummy-uuid".to_string())],
             ),
-            (1, vec![PointId::Id(2)]),
+            (1, vec![PointId::Id(1), PointId::Id(2)]),
         ]);
 
         assert_eq!(shards_to_point_ids, expected_grouping);
