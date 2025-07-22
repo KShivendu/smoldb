@@ -22,11 +22,14 @@ use actix_web::{middleware, web::Data, App, HttpServer};
 use api::service::index;
 use args::parse_args;
 use http::Uri;
+use log::info;
+use slog::{o, Drain};
+use slog_scope::GlobalLoggerGuard;
 use std::sync::Arc;
 
 // Function to start the Actix Web server
 async fn start_http_server(url: Uri, dispatcher: Arc<Dispatcher>) -> std::io::Result<()> {
-    println!("Starting Actix Web server on {url}");
+    info!("Starting Actix Web server on {url}");
 
     let dispatcher_app_data = Data::from(dispatcher);
 
@@ -60,19 +63,33 @@ async fn start_p2p_server(
     let p2p_host = p2p_uri.host().unwrap().to_string();
     let p2p_port = p2p_uri.port_u16().unwrap();
 
-    println!("Starting internal gRPC server on {p2p_host}:{p2p_port}");
+    info!("Starting internal gRPC server on {p2p_host}:{p2p_port}");
 
     if let Err(e) = api::grpc::init(p2p_host, p2p_port, dispatcher).await {
-        eprintln!("Failed to start gRPC server: {e}");
+        log::error!("Failed to start gRPC server: {e}");
     }
 
     Ok(())
+}
+
+fn setup_logging() -> GlobalLoggerGuard {
+    let decorator = slog_term::TermDecorator::new().build();
+    let drain = slog_term::FullFormat::new(decorator).build().fuse();
+    let drain = slog::Filter::new(drain, |record| record.module().starts_with("smoldb")).fuse();
+    let drain = slog_async::Async::new(drain).build().fuse();
+    let logger = slog::Logger::root(drain, o!());
+
+    let logger_guard = slog_scope::set_global_logger(logger);
+    slog_stdlog::init_with_level(log::Level::Info).unwrap();
+
+    logger_guard
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     #[cfg(debug_assertions)]
     color_backtrace::install();
+    let _logger_guard = setup_logging();
 
     let args = parse_args();
 

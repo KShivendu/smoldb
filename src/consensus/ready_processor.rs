@@ -3,6 +3,7 @@ use crate::consensus::{
     ConsensusOperation, ProposalId,
 };
 use http::Uri;
+use log::{info, warn};
 use protobuf::Message as ProtobufMessage;
 use raft::{
     prelude::{ConfChange, Entry, EntryType, Snapshot},
@@ -101,7 +102,7 @@ impl Consensus {
 
     /// Handle soft state change.
     fn handle_soft_state_change(&self, new_soft_state: &SoftState) {
-        println!("Raft node soft state changed to: {new_soft_state:?}");
+        info!("Raft node soft state changed to: {new_soft_state:?}");
         let new_role = format!("{:?}", new_soft_state.raft_state);
         let new_leader = new_soft_state.leader_id;
 
@@ -116,7 +117,7 @@ impl Consensus {
     }
 
     fn handle_hard_state_change(&self, new_hard_state: &raft::eraftpb::HardState) {
-        println!("Raft hard state changed to: {new_hard_state:?}");
+        info!("Raft hard state changed to: {new_hard_state:?}");
 
         // Update consensus state with new hard state
         let hs = new_hard_state.clone();
@@ -133,7 +134,7 @@ impl Consensus {
     }
 
     fn handle_hard_state_commit_change(&self, commit: u64) {
-        println!("Raft hard state commit changed to: {commit}");
+        info!("Raft hard state commit changed to: {commit}");
 
         // Update consensus state with new commit index
         let extra_runtime = self.runtime.clone();
@@ -149,7 +150,7 @@ impl Consensus {
     fn handle_normal(&self, entry: Entry) {
         let operation =
             ConsensusOperation::from_entry(&entry).expect("Entry data should be decodable");
-        println!("Operation to apply: {operation:?}");
+        info!("Operation to apply: {operation:?}");
 
         let extra_runtime = self.runtime.clone();
         let consensus_state = self.consensus_state.clone();
@@ -171,7 +172,7 @@ impl Consensus {
                     .expect("Failed to handle collection operation");
             }),
             _ => extra_runtime.spawn(async move {
-                println!("Ignored consensus operation: {operation:?}");
+                warn!("Ignored consensus operation: {operation:?}");
             }),
         };
     }

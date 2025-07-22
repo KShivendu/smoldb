@@ -16,6 +16,7 @@ use crate::{
     types::PeerId,
 };
 use http::Uri;
+use log::{error, info};
 use raft::{
     prelude::{ConfChange, ConfChangeType, Entry, Message},
     Config, RawNode,
@@ -212,7 +213,7 @@ impl Consensus {
             .spawn(move || {
                 // If set, running in cluster mode?
                 if let Some(bootstrap_uri) = bootstrap_uri {
-                    println!("Bootstrapping consensus from {bootstrap_uri}");
+                    info!("Bootstrapping consensus from {bootstrap_uri}");
                     consensus
                         .runtime
                         .block_on(async {
@@ -221,16 +222,16 @@ impl Consensus {
                         .unwrap();
                 }
 
-                println!("Starting consensus thread...");
+                info!("Starting consensus thread...");
 
                 let rt = consensus.runtime.clone();
 
                 // ToDo: Running loop inside async might not a good idea, figure out a way to run it in a blocking manner?
                 rt.block_on(async {
                     if let Err(e) = consensus.run_loop().await {
-                        eprintln!("Consensus thread stopped with error: {e}");
+                        error!("Consensus thread stopped with error: {e}");
                     } else {
-                        println!("Consensus thread stopped");
+                        error!("Consensus thread stopped");
                     }
                 })
             })?;
@@ -258,7 +259,7 @@ impl Consensus {
         };
         let raft = RawNode::new(&config, storage, &logger)?;
 
-        println!("Created Raft node with ID: {peer_id}");
+        info!("Created Raft node with ID: {peer_id}");
 
         let (sender, receiver) = channel::<Msg>();
 
