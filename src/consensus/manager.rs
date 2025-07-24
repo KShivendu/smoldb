@@ -15,6 +15,14 @@ impl ConsensusManager {
         ConsensusManager { state, sender }
     }
 
+    pub async fn is_ready(&self) -> bool {
+        let p = self.state.persistent.read().await;
+        // Intentionally didn't make it a Option because raft crate sets individual fields at a time
+        // and doing that will complicate the logic with no benefit.
+        // Downside of using a badly designed library 😢
+        p.raft_info.role != ""
+    }
+
     pub async fn get_cluster_info(&self) -> Persistent {
         self.state.persistent.read().await.clone()
     }

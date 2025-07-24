@@ -12,6 +12,8 @@ pub enum StorageError {
 pub enum ConsensusError {
     #[error("Consensus is not enabled")]
     NotEnabled,
+    #[error("Consensus is not ready yet")]
+    NotReady,
     #[error("Service error: {0}")]
     ServiceError(String),
 }
