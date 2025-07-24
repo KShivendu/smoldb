@@ -20,7 +20,7 @@ impl ConsensusManager {
         // Intentionally didn't make it a Option because raft crate sets individual fields at a time
         // and doing that will complicate the logic with no benefit.
         // Downside of using a badly designed library 😢
-        p.raft_info.role != ""
+        !p.raft_info.role.is_empty()
     }
 
     pub async fn get_cluster_info(&self) -> Persistent {
