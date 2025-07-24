@@ -41,6 +41,10 @@ impl Dispatcher {
             return Ok(());
         };
 
+        if !consensus.is_ready().await {
+            return Err(ConsensusError::NotReady)?;
+        }
+
         consensus
             .propose_consensus_op(ConsensusOperation::CollectionOp(operation.clone()))
             .await?;

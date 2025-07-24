@@ -8,7 +8,7 @@ use tokio::time::sleep;
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 
-pub async fn wait_consensus_start(url: &Uri) -> Result<(), SmolBenchError> {
+pub async fn wait_consensus_ready(url: &Uri) -> Result<(), SmolBenchError> {
     let now = std::time::Instant::now();
 
     while now.elapsed() < WAIT_TIMEOUT {
@@ -16,18 +16,18 @@ pub async fn wait_consensus_start(url: &Uri) -> Result<(), SmolBenchError> {
 
         match cluster_info {
             ApiResponse::Success(info) => {
-                let leader = info
+                let role = info
                     .result
                     .get("raft_info")
-                    .and_then(|r| r.get("leader"))
-                    .and_then(|r| r.as_u64())
+                    .and_then(|r| r.get("role"))
+                    .and_then(|r| r.as_str())
                     .unwrap();
 
-                if leader != 0 {
-                    println!("Consensus started with leader: {}", leader);
+                if !role.is_empty() {
+                    // Don't confuse with raft crate's ready/lightready state
                     return Ok(());
                 } else {
-                    println!("No leader found in cluster info, waiting for consensus to start...");
+                    println!("Waiting for consensus to be ready...");
                 }
             }
             ApiResponse::Error(err) => {
@@ -63,7 +63,7 @@ pub async fn create_collection(
     wait: bool,
 ) -> Result<ApiSuccessResponse<bool>, SmolBenchError> {
     // First ensure that consensus is started
-    crate::apis::wait_consensus_start(&url).await?;
+    crate::apis::wait_consensus_ready(&url).await?;
 
     let client = reqwest::Client::new();
 
@@ -146,7 +146,7 @@ pub async fn delete_collection(
     wait: bool,
 ) -> Result<(), SmolBenchError> {
     // First ensure that consensus is started
-    crate::apis::wait_consensus_start(&url).await?;
+    crate::apis::wait_consensus_ready(&url).await?;
 
     let client = reqwest::Client::new();
 
