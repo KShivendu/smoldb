@@ -89,14 +89,24 @@ pub struct ListPointsResponse {
     pub points: Vec<Point>,
 }
 
-#[actix_web::get("/collections/{collection_name}/points")]
+#[derive(Deserialize)]
+pub struct ListPointsRequest {
+    pub ids: Vec<PointId>,
+}
+
+#[actix_web::post("/collections/{collection_name}/points")]
 async fn list_points(
     collection_name: web::Path<String>,
+    operation: Json<ListPointsRequest>,
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
     helpers::time(async {
         let collection_name = collection_name.into_inner();
-        let result = dispatcher.toc.read_points(&collection_name, None).await;
+        let ids = operation.into_inner().ids;
+        let result = dispatcher
+            .toc
+            .read_points(&collection_name, Some(ids))
+            .await;
         match result {
             Ok(points) => {
                 if points.is_empty() {
