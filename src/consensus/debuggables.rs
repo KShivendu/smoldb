@@ -1,3 +1,4 @@
+use log::debug;
 use prost_for_raft::Message;
 use raft::prelude::{ConfChange, ConfChangeV2, Entry, EntryType, Snapshot};
 
@@ -52,7 +53,7 @@ impl DebuggableEntry {
     pub fn log(&self, prefix: &str) {
         let debuggable_entry =
             serde_json::to_string(self).expect("Failed to serialize entry to JSON");
-        println!("{prefix}: {debuggable_entry}");
+        debug!("{prefix}: {debuggable_entry}");
     }
 }
 
