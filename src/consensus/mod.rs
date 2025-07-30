@@ -308,7 +308,7 @@ impl Consensus {
                                 operation,
                                 callback,
                             } => {
-                                println!(
+                                log::info!(
                                     "Received proposal with ID: {id} and operation: {operation:?}"
                                 );
                                 callbacks.insert(id, callback);

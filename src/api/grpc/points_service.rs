@@ -8,6 +8,7 @@ use crate::{
         toc::TableOfContent,
     },
 };
+use log::debug;
 use std::sync::Arc;
 use tonic::{async_trait, Response};
 
@@ -79,7 +80,7 @@ impl PointsInternal for PointsInternalService {
             points,
             shard_id: _, // ToDo: We should specify shard_id when upserting?
         } = _request.into_inner();
-        println!("Received internal request to upsert points from collection: {collection_name}");
+        debug!("Received internal request to upsert points from collection: {collection_name}");
 
         let collections = self.toc.collections.read().await;
         let collection = collections.get(&collection_name).ok_or_else(|| {

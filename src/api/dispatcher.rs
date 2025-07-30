@@ -84,7 +84,7 @@ impl Dispatcher {
                 uri: uri.to_string(),
             },
             callback: Box::new(move || {
-                println!("Callback executed operation with ID {operation_id}");
+                log::info!("Callback executed operation with ID {operation_id}");
             }),
         });
 

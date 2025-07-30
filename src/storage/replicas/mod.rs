@@ -8,7 +8,8 @@ use crate::storage::segment::Point;
 use crate::storage::{collection::CollectionName, segment::PointId};
 use crate::types::{PeerId, ShardId};
 use futures::future::BoxFuture;
-use log::warn;
+use log::{error, warn};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tonic::async_trait;
@@ -22,6 +23,12 @@ pub struct UpdateResult {
 pub trait ShardOperationTrait {
     async fn get_points(&self, ids: Option<Vec<PointId>>) -> CollectionResult<Vec<Point>>;
     async fn upsert_points(&self, points: Vec<Point>) -> CollectionResult<()>;
+}
+
+#[derive(Serialize, PartialEq, Debug, Clone)]
+pub enum ShardState {
+    Active,
+    Dead,
 }
 
 pub struct ReplicaSet {
@@ -50,9 +57,13 @@ impl ReplicaSet {
         }
     }
 
+    pub fn get_peer_id(&self) -> PeerId {
+        self.channel_service.peer_id
+    }
+
     /// Add a remote shard to the replica set
     pub async fn add_remote(&mut self, peer_id: PeerId) {
-        if peer_id == self.channel_service.peer_id {
+        if peer_id == self.get_peer_id() {
             warn!("Cannot add local shard as remote replica: {peer_id}");
             return;
         }
@@ -84,12 +95,12 @@ impl ReplicaSet {
         &self,
         operation: F,
         local_only: bool,
-    ) -> Vec<CollectionResult<Res>>
+    ) -> Vec<(PeerId, CollectionResult<Res>)>
     where
         F: Fn(&(dyn ShardOperationTrait + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
         let local_result = operation(&self.local).await;
-        let mut final_results = vec![local_result];
+        let mut final_results = vec![(self.get_peer_id(), local_result)];
 
         if local_only {
             return final_results;
@@ -98,14 +109,14 @@ impl ReplicaSet {
         for remote in self.remotes.values() {
             let operation_result = operation(remote).await;
             match operation_result {
-                Ok(res) => final_results.push(Ok(res)),
+                Ok(res) => final_results.push((remote.peer_id, Ok(res))),
                 Err(e) => {
                     // Ignore errors from remote shards, but log them
-                    println!(
+                    error!(
                         "Error executing operation on remote shard {}/{}: {}",
                         remote.peer_id, remote.id, e
                     );
-                    final_results.push(Err(e));
+                    final_results.push((remote.peer_id, Err(e)));
                 }
             }
         }
@@ -151,6 +162,43 @@ impl ReplicaHolder {
         Ok(replica_set)
     }
 
+    // Proposes an operation to set replica state provided the it matches the existing state.
+    pub async fn set_replica_state(
+        &mut self,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        from_state: Option<ShardState>,
+        state: ShardState,
+    ) -> Result<(), StorageError> {
+        let replica_set = self
+            .shards
+            .get_mut(&shard_id)
+            .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))?;
+
+        let remote = replica_set.remotes.get_mut(&peer_id).ok_or_else(|| {
+            StorageError::BadInput(format!(
+                "Remote peer {peer_id} not found in shard {shard_id}"
+            ))
+        })?;
+
+        if let Some(expected_state) = from_state {
+            if remote.state == expected_state {
+                // Modify only if the current state matches the expected state
+                remote.state = state;
+            } else {
+                return Err(StorageError::BadInput(format!(
+                    "Remote peer {peer_id} in shard {shard_id} is in state {:?}, expected {:?}",
+                    remote.state, expected_state
+                )));
+            }
+        } else {
+            // If no expected state is provided, just set the state
+            remote.state = state;
+        }
+
+        Ok(())
+    }
+
     pub fn select_shards(
         &self,
         point_ids: &[PointId],
@@ -179,10 +227,11 @@ mod tests {
     async fn test_shard_routing() {
         let tmp_dir = tempfile::tempdir().unwrap();
 
+        let peer_id: PeerId = 100;
         let s0 = LocalShard::init(tmp_dir.path().join("0"), 0);
         let s1 = LocalShard::init(tmp_dir.path().join("1"), 1);
 
-        let cs = Arc::new(ChannelService::default());
+        let cs = Arc::new(ChannelService::empty(peer_id));
 
         let shard_holder = ReplicaHolder::new(HashMap::from_iter([
             (0, ReplicaSet::new(s0, "c1".to_string(), 0, cs.clone())),
