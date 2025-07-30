@@ -10,7 +10,7 @@ use crate::{
     types::{PeerId, ShardId},
 };
 use futures::FutureExt;
-use log::error;
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{btree_map::Entry, BTreeMap, HashMap},
@@ -163,7 +163,7 @@ impl Collection {
         points: Vec<Point>,
         local_only: bool,
     ) -> CollectionResult<()> {
-        let shard_holder = &self.replica_holder.read().await;
+        let replica_holder_guard = self.replica_holder.read().await;
 
         let point_ids: Vec<_> = points.iter().map(|point| point.id.clone()).collect();
 
@@ -172,9 +172,11 @@ impl Collection {
             .map(|point| (point.id.clone(), point))
             .collect();
 
+        let mut replicas_to_mark_dead = vec![];
+
         // ToDo: Run this operation concurrently for each shard
-        for (shard_id, shard_point_ids) in shard_holder.select_shards(&point_ids)? {
-            let replica_set = shard_holder
+        for (shard_id, shard_point_ids) in replica_holder_guard.select_shards(&point_ids)? {
+            let replica_set = replica_holder_guard
                 .shards
                 .get(&shard_id)
                 .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))?;
@@ -205,13 +207,8 @@ impl Collection {
 
             for (remote_peer_id, result) in remote_results {
                 if let Err(e) = result {
-                    error!("Failed to upsert points in remote shard {shard_id} for peer {remote_peer_id}: {e}");
-                    // Mark the replica with missed update as Dead
-                    self.replica_holder
-                        .write()
-                        .await
-                        .set_replica_state(shard_id, *remote_peer_id, None, ShardState::Dead)
-                        .await?;
+                    error!("Failed to upsert points in remote shard {shard_id} for peer {remote_peer_id}: {e}. Will mark it as dead.");
+                    replicas_to_mark_dead.push((shard_id, *remote_peer_id));
                 }
             }
 
@@ -230,6 +227,21 @@ impl Collection {
                     "Failed to upsert points in shard {shard_id}: only {total_success} out of {num_replicas} replicas succeeded"
                 )));
             }
+        }
+
+        // Release the read lock before taking write lock
+        drop(replica_holder_guard);
+
+        // Mark the replicas that missed the update as Dead
+        for (shard_id, peer_id) in replicas_to_mark_dead {
+            self.replica_holder
+                .write()
+                .await
+                .set_replica_state(shard_id, peer_id, None, ShardState::Dead)
+                .await?;
+            info!(
+                "Marked remote shard {shard_id} for peer {peer_id} as Dead due to failed upsert."
+            );
         }
 
         Ok(())

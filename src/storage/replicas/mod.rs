@@ -8,7 +8,7 @@ use crate::storage::segment::Point;
 use crate::storage::{collection::CollectionName, segment::PointId};
 use crate::types::{PeerId, ShardId};
 use futures::future::BoxFuture;
-use log::warn;
+use log::{error, warn};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -112,7 +112,7 @@ impl ReplicaSet {
                 Ok(res) => final_results.push((remote.peer_id, Ok(res))),
                 Err(e) => {
                     // Ignore errors from remote shards, but log them
-                    println!(
+                    error!(
                         "Error executing operation on remote shard {}/{}: {}",
                         remote.peer_id, remote.id, e
                     );
