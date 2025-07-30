@@ -8,6 +8,7 @@ use crate::storage::segment::Point;
 use crate::storage::{collection::CollectionName, segment::PointId};
 use crate::types::{PeerId, ShardId};
 use futures::future::BoxFuture;
+use log::warn;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tonic::async_trait;
@@ -50,12 +51,18 @@ impl ReplicaSet {
     }
 
     /// Add a remote shard to the replica set
-    pub async fn add_remote(&mut self, peer_id: PeerId) -> Result<(), StorageError> {
+    pub async fn add_remote(&mut self, peer_id: PeerId) {
+        if peer_id == self.channel_service.peer_id {
+            warn!("Cannot add local shard as remote replica: {peer_id}");
+            return;
+        }
+
         if self.remotes.contains_key(&peer_id) {
-            return Err(StorageError::BadInput(format!(
+            warn!(
                 "Remote replica for shard {} at {peer_id} already exists in collection {}",
                 self.shard_id, self.collection_id
-            )));
+            );
+            return;
         }
 
         let remote = RemoteShard::new(
@@ -65,8 +72,6 @@ impl ReplicaSet {
             self.channel_service.clone(),
         );
         self.remotes.insert(peer_id, remote);
-
-        Ok(())
     }
 
     pub fn num_replicas(&self) -> usize {
