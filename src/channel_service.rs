@@ -6,8 +6,8 @@ use tonic::transport::{Channel, Error as TonicError};
 
 #[derive(Default)]
 /// This service is used to manage [`Channel`] connection pools between peers
-/// It maintains connection pools and handles re-connection
 pub struct ChannelService {
+    /// It maintains connection pools and handles re-connection
     pub peer_id: PeerId,
     /// Directly shared with `ConsensusState` instead of having a .add_peer() function
     pub id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>,
@@ -20,6 +20,14 @@ pub struct ChannelService {
 }
 
 impl ChannelService {
+    pub fn empty(peer_id: PeerId) -> Self {
+        Self {
+            peer_id,
+            id_to_address: Arc::new(RwLock::new(HashMap::new())),
+            uri_to_channel: RwLock::new(HashMap::new()),
+        }
+    }
+
     pub fn new(peer_id: PeerId, id_to_address: Arc<RwLock<HashMap<PeerId, Uri>>>) -> Self {
         Self {
             peer_id,

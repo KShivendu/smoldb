@@ -1,7 +1,7 @@
 use crate::{
     error::{CollectionError, CollectionResult, StorageError},
     storage::{
-        replicas::ShardOperationTrait,
+        replicas::{ShardOperationTrait, ShardState},
         segment::{Point, PointId, Segment},
     },
     types::{SegmentId, ShardId},
@@ -15,6 +15,7 @@ pub struct LocalShard {
     pub id: ShardId,
     pub path: PathBuf,
     pub segments: HashMap<SegmentId, Segment>,
+    pub shard_state: ShardState,
     // ToDo: Wal
 }
 
@@ -58,6 +59,7 @@ impl LocalShard {
             id,
             path: path.to_owned(),
             segments: HashMap::from_iter([(0, segment0)]),
+            shard_state: ShardState::Active,
         }
     }
 
@@ -96,6 +98,7 @@ impl LocalShard {
             id,
             path: path.to_owned(),
             segments,
+            shard_state: ShardState::Active, // ToDo: Load from disk?
         })
     }
 

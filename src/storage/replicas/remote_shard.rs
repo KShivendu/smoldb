@@ -7,7 +7,7 @@ use crate::{
     error::{CollectionError, CollectionResult},
     storage::{
         collection::CollectionName,
-        replicas::ShardOperationTrait,
+        replicas::{ShardOperationTrait, ShardState},
         segment::{Point, PointId},
     },
     types::{PeerId, ShardId},
@@ -20,6 +20,7 @@ pub struct RemoteShard {
     pub collection: CollectionName,
     pub peer_id: PeerId,
     pub channel_service: Arc<ChannelService>,
+    pub state: ShardState,
 }
 
 impl RemoteShard {
@@ -35,6 +36,7 @@ impl RemoteShard {
             collection,
             peer_id,
             channel_service,
+            state: ShardState::Active,
         }
     }
 

@@ -2,12 +2,15 @@ use crate::{
     channel_service::ChannelService,
     error::{CollectionError, CollectionResult, StorageError},
     storage::{
-        replicas::{local_shard::LocalShard, ReplicaHolder, ReplicaSet, ShardOperationTrait},
+        replicas::{
+            local_shard::LocalShard, ReplicaHolder, ReplicaSet, ShardOperationTrait, ShardState,
+        },
         segment::{Point, PointId},
     },
     types::{PeerId, ShardId},
 };
 use futures::FutureExt;
+use log::error;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{btree_map::Entry, BTreeMap, HashMap},
@@ -191,13 +194,25 @@ impl Collection {
                 )
                 .await;
 
-            let total_success = results.iter().filter(|r| r.is_ok()).count();
+            let total_success = results.iter().filter(|(_, r)| r.is_ok()).count();
 
-            let (local_result, _remote_results) = results.split_first().unwrap();
+            let ((_peer_id, local_result), remote_results) = results.split_first().unwrap();
             if let Err(e) = local_result {
                 return Err(CollectionError::ServiceError(format!(
                     "Failed to upsert points in local shard {shard_id}: {e}"
                 )));
+            }
+
+            for (remote_peer_id, result) in remote_results {
+                if let Err(e) = result {
+                    error!("Failed to upsert points in remote shard {shard_id} for peer {remote_peer_id}: {e}");
+                    // Mark the replica with missed update as Dead
+                    self.replica_holder
+                        .write()
+                        .await
+                        .set_replica_state(shard_id, *remote_peer_id, None, ShardState::Dead)
+                        .await?;
+                }
             }
 
             // ToDo: Both should have collection level config
@@ -248,6 +263,7 @@ impl Collection {
                     )
                     .await
                     .into_iter()
+                    .map(|(_peer_id, r)| r)
                     .collect::<Result<Vec<_>, _>>()?;
 
                 for point in replica_results.into_iter().flatten() {

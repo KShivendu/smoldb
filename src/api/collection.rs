@@ -2,6 +2,7 @@ use crate::api::dispatcher::Dispatcher;
 use crate::api::helpers;
 use crate::error::CollectionError;
 use crate::storage::collection::{Collection, CollectionInfo};
+use crate::storage::replicas::ShardState;
 use crate::storage::toc::CollectionOperation;
 use crate::types::{PeerId, ShardId};
 use actix_web::{
@@ -74,14 +75,14 @@ async fn delete_collection(
 pub struct CollectionClusterLocalShard {
     pub shard_id: ShardId,
     pub point_count: usize,
-    pub state: String,
+    pub state: ShardState,
 }
 
 #[derive(Serialize)]
 pub struct CollectionClusterRemoteShard {
     pub peer_id: PeerId,
     pub shard_id: ShardId,
-    pub state: String,
+    pub state: ShardState,
 }
 
 #[derive(Serialize)]
@@ -103,7 +104,7 @@ impl CollectionClusterInfo {
                 // FixMe: Not all replicas will have a local shard
                 shard_id: *shard_id,
                 point_count: replica_set.local.count_points(),
-                state: "Active".to_string(), // ToDo: Placeholder for actual state
+                state: replica_set.local.shard_state.clone(),
             })
             .collect::<Vec<_>>();
 
@@ -113,7 +114,7 @@ impl CollectionClusterInfo {
                 remote_shards.push(CollectionClusterRemoteShard {
                     peer_id: remote_shard.peer_id,
                     shard_id: remote_shard.id,
-                    state: "Active".to_string(), // ToDo: Placeholder for actual state
+                    state: remote_shard.state.clone(),
                 });
             }
         }
