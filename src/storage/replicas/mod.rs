@@ -27,8 +27,8 @@ pub struct ReplicaSet {
     pub local: LocalShard,
     pub remotes: HashMap<PeerId, RemoteShard>,
 
-    #[allow(dead_code)]
     collection_id: CollectionName,
+    shard_id: ShardId,
 
     channel_service: Arc<ChannelService>,
 }
@@ -37,21 +37,25 @@ impl ReplicaSet {
     pub fn new(
         local: LocalShard,
         collection_id: CollectionName,
+        shard_id: ShardId,
         channel_service: Arc<ChannelService>,
     ) -> Self {
         ReplicaSet {
             local,
             remotes: HashMap::new(),
             collection_id,
+            shard_id,
             channel_service,
         }
     }
 
-    pub async fn add_remote(&mut self, peer_id: PeerId) -> CollectionResult<()> {
+    /// Add a remote shard to the replica set
+    pub async fn add_remote(&mut self, peer_id: PeerId) -> Result<(), StorageError> {
         if self.remotes.contains_key(&peer_id) {
             return Err(StorageError::BadInput(format!(
-                "Remote peer {peer_id} already exists"
-            )))?;
+                "Remote replica for shard {} at {peer_id} already exists in collection {}",
+                self.shard_id, self.collection_id
+            )));
         }
 
         let remote = RemoteShard::new(
@@ -61,6 +65,7 @@ impl ReplicaSet {
             self.channel_service.clone(),
         );
         self.remotes.insert(peer_id, remote);
+
         Ok(())
     }
 
@@ -175,8 +180,8 @@ mod tests {
         let cs = Arc::new(ChannelService::default());
 
         let shard_holder = ReplicaHolder::new(HashMap::from_iter([
-            (0, ReplicaSet::new(s0, "c1".to_string(), cs.clone())),
-            (1, ReplicaSet::new(s1, "c1".to_string(), cs)),
+            (0, ReplicaSet::new(s0, "c1".to_string(), 0, cs.clone())),
+            (1, ReplicaSet::new(s1, "c1".to_string(), 1, cs)),
         ]));
 
         let shards_to_point_ids = shard_holder

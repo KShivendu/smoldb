@@ -2,10 +2,7 @@ use crate::{
     channel_service::ChannelService,
     error::{CollectionError, CollectionResult, StorageError},
     storage::{
-        replicas::{
-            local_shard::LocalShard, remote_shard::RemoteShard, ReplicaHolder, ReplicaSet,
-            ShardOperationTrait,
-        },
+        replicas::{local_shard::LocalShard, ReplicaHolder, ReplicaSet, ShardOperationTrait},
         segment::{Point, PointId},
     },
     types::{PeerId, ShardId},
@@ -58,6 +55,7 @@ impl Collection {
                 let replica_set = ReplicaSet::new(
                     LocalShard::init(shard_path, shard_id),
                     id.clone(),
+                    shard_id,
                     channel_service.clone(),
                 );
 
@@ -75,19 +73,13 @@ impl Collection {
     }
 
     /// ToDo: Should only add a remote replica, but only for one shard at a time
-    pub async fn add_remote_replicas(&self, peer_id: PeerId) {
+    pub async fn add_remote_replicas(&self, peer_id: PeerId) -> Result<(), StorageError> {
         let mut replica_holder = self.replica_holder.write().await;
-        for (shard_id, replica_set) in replica_holder.shards.iter_mut() {
-            replica_set.remotes.insert(
-                peer_id,
-                RemoteShard::new(
-                    *shard_id,
-                    self.id.clone(),
-                    peer_id,
-                    self.channel_service.clone(),
-                ),
-            );
+        for (_shard_id, replica_set) in replica_holder.shards.iter_mut() {
+            replica_set.add_remote(peer_id).await?;
         }
+
+        Ok(())
     }
 
     pub fn delete(&self) -> Result<(), StorageError> {
@@ -147,7 +139,7 @@ impl Collection {
             replicas.insert(
                 shard_id,
                 // ToDo: Load remote shards if any
-                ReplicaSet::new(shard, id.clone(), channel_service.clone()),
+                ReplicaSet::new(shard, id.clone(), shard_id, channel_service.clone()),
             );
         }
 

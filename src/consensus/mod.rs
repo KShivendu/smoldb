@@ -182,6 +182,7 @@ impl Consensus {
                 &self.toc,
                 peer.id,
                 peer.uri.parse::<Uri>()?,
+                true,
             )
             .await?;
         }

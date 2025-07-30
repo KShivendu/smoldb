@@ -89,8 +89,9 @@ impl Dispatcher {
         });
 
         // Update local consensus state
+        // ToDo: Await Consensus::AddPeer consensus operation to be applied via ready_processor::handle_normal() to add remote replicas and other stuff instead of doing it forcefully here.
         let (this_peer_id, updated_peers) =
-            add_peer_to_toc_and_consensus_state(&consensus.state, &self.toc, peer_id, uri)
+            add_peer_to_toc_and_consensus_state(&consensus.state, &self.toc, peer_id, uri, true)
                 .await
                 .map_err(|e| {
                     ConsensusError::ServiceError(format!(
