@@ -110,10 +110,10 @@ impl ConsensusState {
         persistent.peers.insert(peer_id, uri.to_string());
 
         // ToDo: Should return leader peer ID instead of current peer ID
-        let leader_peer_id = persistent.peer_id;
+        let this_peer_id = persistent.peer_id;
         let latest_peers = persistent.peers.clone().into_iter().collect();
 
-        Ok((leader_peer_id, latest_peers))
+        Ok((this_peer_id, latest_peers))
     }
 
     pub async fn get_peer_uri(&self, peer_id: PeerId) -> Result<Uri, ConsensusError> {

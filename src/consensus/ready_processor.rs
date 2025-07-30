@@ -160,16 +160,9 @@ impl Consensus {
             ConsensusOperation::AddPeer { peer_id, uri } => {
                 let uri = uri.parse::<Uri>().expect("Failed to parse URI");
                 extra_runtime.spawn(async move {
-                    // We don't add remote replicas here because it was already done by ConfChange::AddNode
-                    add_peer_to_toc_and_consensus_state(
-                        &consensus_state,
-                        &toc,
-                        peer_id,
-                        uri,
-                        false,
-                    )
-                    .await
-                    .expect("Failed to add peer to consensus state and TOC");
+                    add_peer_to_toc_and_consensus_state(&consensus_state, &toc, peer_id, uri, true)
+                        .await
+                        .expect("Failed to add peer to consensus state and TOC");
                 })
             }
             ConsensusOperation::CollectionOp(op) => extra_runtime.spawn(async move {

@@ -76,7 +76,7 @@ impl Collection {
     pub async fn add_remote_replicas(&self, peer_id: PeerId) -> Result<(), StorageError> {
         let mut replica_holder = self.replica_holder.write().await;
         for (_shard_id, replica_set) in replica_holder.shards.iter_mut() {
-            replica_set.add_remote(peer_id).await?;
+            replica_set.add_remote(peer_id).await;
         }
 
         Ok(())

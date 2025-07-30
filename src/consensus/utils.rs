@@ -11,12 +11,9 @@ pub async fn add_peer_to_toc_and_consensus_state(
     uri: Uri,
     add_remote_replicas: bool,
 ) -> Result<(PeerId, Vec<(PeerId, String)>), ConsensusError> {
-    let (_leader_peer_id, all_peers) =
-        consensus_state.add_peer(peer_id, uri).await.map_err(|e| {
-            ConsensusError::ServiceError(format!(
-                "Failed to add peer to local consensus state: {e}"
-            ))
-        })?;
+    let (_this_peer_id, all_peers) = consensus_state.add_peer(peer_id, uri).await.map_err(|e| {
+        ConsensusError::ServiceError(format!("Failed to add peer to local consensus state: {e}"))
+    })?;
 
     if add_remote_replicas {
         let collections = toc.collections.read().await;
