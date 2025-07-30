@@ -21,7 +21,12 @@ pub async fn add_peer_to_toc_and_consensus_state(
     if add_remote_replicas {
         let collections = toc.collections.read().await;
         for collection in collections.values() {
-            collection.add_remote_replicas(peer_id).await;
+            collection.add_remote_replicas(peer_id).await.map_err(|e| {
+                ConsensusError::ServiceError(format!(
+                    "Failed to add remote replicas for peer {peer_id} in collection {}: {e}",
+                    collection.id
+                ))
+            })?;
         }
     }
 

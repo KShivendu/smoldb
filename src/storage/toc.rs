@@ -116,7 +116,7 @@ impl TableOfContent {
 
                 let remote_ids = self.channel_service.get_other_peer_ids().await;
                 for peer_id in remote_ids {
-                    collection.add_remote_replicas(peer_id).await;
+                    collection.add_remote_replicas(peer_id).await?;
                 }
 
                 {

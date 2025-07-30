@@ -73,11 +73,13 @@ impl Collection {
     }
 
     /// ToDo: Should only add a remote replica, but only for one shard at a time
-    pub async fn add_remote_replicas(&self, peer_id: PeerId) {
+    pub async fn add_remote_replicas(&self, peer_id: PeerId) -> Result<(), StorageError> {
         let mut replica_holder = self.replica_holder.write().await;
         for (_shard_id, replica_set) in replica_holder.shards.iter_mut() {
-            replica_set.add_remote(peer_id).await;
+            replica_set.add_remote(peer_id).await?;
         }
+
+        Ok(())
     }
 
     pub fn delete(&self) -> Result<(), StorageError> {
