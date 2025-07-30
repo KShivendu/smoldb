@@ -313,7 +313,7 @@ impl Consensus {
                                 );
                                 callbacks.insert(id, callback);
 
-                                // If add peer, first propose a conf change to the Raft node
+                                // If adding peer, first propose a ConfChange to the Raft node
                                 if let ConsensusOperation::AddPeer { peer_id, uri } = &operation {
                                     // ToDo: Use ConfChangeV2 instead
                                     let mut conf_change = ConfChange::default();
@@ -328,7 +328,7 @@ impl Consensus {
                                         .expect("Failed to propose conf change to add peer");
                                 }
 
-                                // Propose the operation to the Raft node log
+                                // Propose the operation to the Raft node log to be handled eventually by ready_processor
                                 let msg_bytes = operation.into_bytes();
                                 raft_node.propose(vec![], msg_bytes).unwrap();
                             }
