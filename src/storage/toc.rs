@@ -1,5 +1,5 @@
 use crate::{
-    api::points::{PointsOperation, Query},
+    api::points::Query,
     channel_service::ChannelService,
     error::StorageError,
     storage::{
@@ -13,6 +13,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::RwLock;
+use tokio::sync::RwLockReadGuard;
 
 pub const COLLECTIONS_DIR: &str = "collections";
 
@@ -148,31 +149,37 @@ impl TableOfContent {
         }
     }
 
-    pub async fn perform_points_op(
+    async fn get_collection(
         &self,
         collection_name: &str,
-        operation: PointsOperation,
-    ) -> Result<bool, StorageError> {
-        // ToDo: Have independent read locks for each collection. It should improve perf?
+    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
         let collections = self.collections.read().await;
-        let collection = collections.get(collection_name).ok_or_else(|| {
-            StorageError::BadInput(format!("Collection '{collection_name}' does not exist"))
-        })?;
 
-        match operation {
-            PointsOperation::Upsert(upsert_points) => {
-                collection
-                    .upsert_points(upsert_points.points, false)
-                    .await
-                    .map_err(|e| {
-                        StorageError::ServiceError(format!(
-                            "Failed to upsert points in collection '{collection_name}': {e}"
-                        ))
-                    })?;
-            }
+        if !collections.contains_key(collection_name) {
+            return Err(StorageError::BadInput(format!(
+                "Collection '{collection_name}' does not exist"
+            )));
         }
 
-        Ok(true)
+        let collection_guard = RwLockReadGuard::map(collections, |collections| {
+            collections.get(collection_name).unwrap() // safe since we checked the key exists
+        });
+
+        Ok(collection_guard)
+    }
+
+    pub async fn upsert_points(
+        &self,
+        collection_name: &str,
+        points: Vec<Point>,
+    ) -> Result<(), StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+
+        collection.upsert_points(points, false).await.map_err(|e| {
+            StorageError::ServiceError(format!(
+                "Failed to upsert points in collection '{collection_name}': {e}"
+            ))
+        })
     }
 
     pub async fn read_points(
@@ -180,10 +187,7 @@ impl TableOfContent {
         collection_name: &str,
         ids: Option<Vec<PointId>>,
     ) -> Result<Vec<Point>, StorageError> {
-        let collections = self.collections.read().await;
-        let collection = collections.get(collection_name).ok_or_else(|| {
-            StorageError::BadInput(format!("Collection '{collection_name}' does not exist"))
-        })?;
+        let collection = self.get_collection(collection_name).await?;
 
         collection.read_points(ids, None, false).await.map_err(|e| {
             StorageError::ServiceError(format!(
@@ -197,10 +201,7 @@ impl TableOfContent {
         collection_name: &str,
         query: Query,
     ) -> Result<Vec<Point>, StorageError> {
-        let collections = self.collections.read().await;
-        let collection = collections.get(collection_name).ok_or_else(|| {
-            StorageError::BadInput(format!("Collection '{collection_name}' does not exist"))
-        })?;
+        let collection = self.get_collection(collection_name).await?;
 
         collection.query_points(query).await.map_err(|e| {
             StorageError::ServiceError(format!(
