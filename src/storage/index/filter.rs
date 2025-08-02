@@ -16,3 +16,13 @@ pub struct QueryFilter {
     pub value: String,
     pub op: FilterOperator,
 }
+
+impl QueryFilter {
+    pub fn new(key: impl Into<String>, value: impl Into<String>, op: FilterOperator) -> Self {
+        Self {
+            key: key.into(),
+            value: value.into(),
+            op,
+        }
+    }
+}

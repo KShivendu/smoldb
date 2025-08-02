@@ -375,3 +375,168 @@ impl CollectionInfo {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::index::filter::{FilterOperator, QueryFilter};
+
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_collection_init() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
+        let path = temp_dir.path();
+        let collection_name = "test_collection".to_string();
+        let config = CollectionConfig {
+            params: "test_params".to_string(),
+            payload_schema: BTreeMap::new(),
+        };
+
+        let collection = Collection::init(
+            collection_name,
+            config,
+            path,
+            Arc::new(ChannelService::empty(100)),
+        )
+        .await
+        .expect("Failed to initialize collection");
+
+        let config_path = path.join("config.json");
+
+        assert_eq!(collection.id, "test_collection");
+        assert!(collection.path.exists());
+        assert!(config_path.exists());
+
+        let replica_holder = collection.replica_holder.read().await;
+        assert_eq!(replica_holder.shards.len(), 2);
+        assert_eq!(replica_holder.shards[&0].remotes.len(), 0);
+        assert_eq!(replica_holder.shards[&1].remotes.len(), 0);
+
+        let shard0_dir = path.join("0");
+        let shard1_dir = path.join("1");
+        assert!(shard0_dir.exists());
+        assert!(shard1_dir.exists());
+    }
+
+    #[test]
+    fn test_collection_config_save() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
+        let path = temp_dir.path();
+        let config = CollectionConfig {
+            params: "test_params".to_string(),
+            payload_schema: BTreeMap::new(),
+        };
+
+        config
+            .save(&path)
+            .expect("Failed to save collection config");
+
+        let config_path = path.join(COLLECTION_CONFIG_FILE);
+        assert!(config_path.exists());
+        let loaded_config: CollectionConfig = serde_json::from_reader(
+            std::fs::File::open(config_path).expect("Failed to open config file"),
+        )
+        .expect("Failed to parse collection config JSON");
+
+        assert_eq!(loaded_config.params, config.params);
+        assert_eq!(loaded_config.payload_schema, config.payload_schema);
+    }
+
+    #[tokio::test]
+    async fn test_collection_load() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
+        let path = temp_dir.path();
+        let collection_name = "test_collection".to_string();
+        let config = CollectionConfig {
+            params: "test_params".to_string(),
+            payload_schema: BTreeMap::from_iter([
+                ("field1".to_string(), IndexConfig::Int),
+                ("field2".to_string(), IndexConfig::Null),
+            ]),
+        };
+
+        config
+            .save(&path)
+            .expect("Failed to save collection config");
+
+        let collection = Collection::load(
+            collection_name.clone(),
+            &path,
+            Arc::new(ChannelService::empty(100)),
+        )
+        .expect("Failed to load collection");
+
+        assert_eq!(collection.id, collection_name);
+        assert_eq!(collection.config.params, config.params);
+        assert_eq!(collection.config.payload_schema, config.payload_schema);
+    }
+
+    #[tokio::test]
+    async fn test_collection_write_read_points() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
+        let path = temp_dir.path();
+        let collection_name = "test_collection".to_string();
+
+        let config = CollectionConfig {
+            params: "test_params".to_string(),
+            payload_schema: BTreeMap::from_iter([("age".to_string(), IndexConfig::Int)]),
+        };
+
+        let collection = Collection::init(
+            collection_name,
+            config,
+            path,
+            Arc::new(ChannelService::empty(100)),
+        )
+        .await
+        .expect("Failed to initialize collection");
+
+        let points = vec![
+            Point {
+                id: PointId::Id(1),
+                payload: json!({"field1": "value1", "age": 10}),
+            },
+            Point {
+                id: PointId::Id(2),
+                payload: json!({"field1": "value2", "age": 20}),
+            },
+            Point {
+                id: PointId::Id(3),
+                payload: json!({"field1": "value3", "age": 30}),
+            },
+        ];
+
+        collection
+            .upsert_points(points.clone(), false)
+            .await
+            .expect("Failed to upsert points");
+
+        let read_all_points = collection
+            .read_points(None, None, false)
+            .await
+            .expect("Failed to read all points");
+
+        assert_eq!(read_all_points, points);
+
+        let read_points = collection
+            .read_points(Some(vec![PointId::Id(1)]), None, false)
+            .await
+            .expect("Failed to read points");
+
+        assert_eq!(read_points.len(), 1);
+        assert_eq!(read_points[0], points[0]);
+
+        let query = Query {
+            filter: QueryFilter::new("age", "25", FilterOperator::Gte),
+        };
+
+        let queried_points = collection
+            .query_points(query)
+            .await
+            .expect("Failed to query points");
+
+        assert_eq!(queried_points.len(), 1);
+        assert_eq!(queried_points[0], points[2]);
+    }
+}

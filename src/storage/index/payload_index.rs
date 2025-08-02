@@ -104,7 +104,7 @@ pub enum FieldIndex {
     Null,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexConfig {
     Int,
@@ -227,18 +227,23 @@ impl PayloadIndex {
 
     pub fn query(&self, query: Query) -> Result<Vec<PointId>, sled::Error> {
         let mut results = HashSet::new();
-        for (index_name, index) in &self.indices {
-            if *index_name == query.filter.key {
-                match index {
-                    FieldIndex::Int(int_index) => {
-                        let value = query.filter.value.parse::<i64>().unwrap();
-                        let query_results = int_index.query(value, &query.filter.op)?;
-                        results.extend(query_results);
-                    }
-                    FieldIndex::Null => {
-                        unimplemented!("Null index queries are not implemented yet");
-                    }
-                }
+
+        // ToDo: Should allow querying for un-indexed fields to demonstrate/benchmark difference
+        let index = self.indices.get(&query.filter.key).ok_or_else(|| {
+            sled::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("No index found for key '{}'", query.filter.key),
+            ))
+        })?;
+
+        match index {
+            FieldIndex::Int(int_index) => {
+                let value = query.filter.value.parse::<i64>().unwrap();
+                let query_results = int_index.query(value, &query.filter.op)?;
+                results.extend(query_results);
+            }
+            FieldIndex::Null => {
+                unimplemented!("Null index queries are not implemented yet");
             }
         }
         Ok(results.into_iter().collect())
