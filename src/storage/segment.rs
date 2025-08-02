@@ -1,4 +1,4 @@
-use crate::error::StorageError;
+use crate::{error::StorageError, storage::index::payload_index::PayloadIndex};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -27,7 +27,8 @@ pub struct Point {
 pub struct Segment {
     pub path: PathBuf,
     pub db: sled::Db,
-    // ToDo: ID tracker, data storage, index, etc
+    // ToDo: ID tracker, data storage, etc
+    pub payload_index: PayloadIndex,
 }
 
 impl Segment {
@@ -40,7 +41,13 @@ impl Segment {
             StorageError::ServiceError(format!("Failed to open segment database: {e}"))
         })?;
 
-        Ok(Self { path, db })
+        let payload_index = PayloadIndex::get_or_create(&db);
+
+        Ok(Self {
+            path,
+            db,
+            payload_index,
+        })
     }
 
     pub fn load(path: &PathBuf) -> Result<Self, StorageError> {
@@ -51,10 +58,12 @@ impl Segment {
         }
 
         let db = sled::open(path).expect("Failed to open segment database");
+        let payload_index = PayloadIndex::get_or_create(&db);
 
         Ok(Self {
             path: path.to_owned(),
             db,
+            payload_index,
         })
     }
 
@@ -67,7 +76,12 @@ impl Segment {
             self.db.insert(key, value.as_str()).map_err(|e| {
                 StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
             })?;
+
+            self.payload_index.upsert(point).map_err(|e| {
+                StorageError::ServiceError(format!("Failed to update payload index: {e}"))
+            })?;
         }
+
         self.db
             .flush()
             .map_err(|e| StorageError::ServiceError(format!("Failed to flush segment db: {e}")))?;
