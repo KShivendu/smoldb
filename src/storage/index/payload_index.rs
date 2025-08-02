@@ -232,7 +232,7 @@ impl PayloadIndex {
                 match index {
                     FieldIndex::Int(int_index) => {
                         let value = query.filter.value.parse::<i64>().unwrap();
-                        let query_results = int_index.query(value, &query.filter.operator)?;
+                        let query_results = int_index.query(value, &query.filter.op)?;
                         results.extend(query_results);
                     }
                     FieldIndex::Null => {

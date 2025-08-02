@@ -14,5 +14,5 @@ pub enum FilterOperator {
 pub struct QueryFilter {
     pub key: String,
     pub value: String,
-    pub operator: FilterOperator,
+    pub op: FilterOperator,
 }
