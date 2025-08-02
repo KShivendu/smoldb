@@ -1,5 +1,5 @@
 use crate::{
-    api::points::{PointsOperation, Query},
+    api::points::Query,
     channel_service::ChannelService,
     error::StorageError,
     storage::{
@@ -148,31 +148,23 @@ impl TableOfContent {
         }
     }
 
-    pub async fn perform_points_op(
+    pub async fn upsert_points(
         &self,
         collection_name: &str,
-        operation: PointsOperation,
-    ) -> Result<bool, StorageError> {
-        // ToDo: Have independent read locks for each collection. It should improve perf?
+        points: Vec<Point>,
+    ) -> Result<(), StorageError> {
         let collections = self.collections.read().await;
         let collection = collections.get(collection_name).ok_or_else(|| {
             StorageError::BadInput(format!("Collection '{collection_name}' does not exist"))
         })?;
 
-        match operation {
-            PointsOperation::Upsert(upsert_points) => {
-                collection
-                    .upsert_points(upsert_points.points, false)
-                    .await
-                    .map_err(|e| {
-                        StorageError::ServiceError(format!(
-                            "Failed to upsert points in collection '{collection_name}': {e}"
-                        ))
-                    })?;
-            }
-        }
+        collection.upsert_points(points, false).await.map_err(|e| {
+            StorageError::ServiceError(format!(
+                "Failed to upsert points in collection '{collection_name}': {e}"
+            ))
+        })?;
 
-        Ok(true)
+        Ok(())
     }
 
     pub async fn read_points(

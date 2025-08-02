@@ -17,10 +17,6 @@ pub struct UpsertPoints {
     pub points: Vec<Point>,
 }
 
-pub enum PointsOperation {
-    Upsert(UpsertPoints),
-}
-
 #[derive(serde::Serialize)]
 pub struct UpsertPointsResponse {
     pub num_points: usize,
@@ -38,13 +34,17 @@ async fn upsert_points(
 
         let num_points = operation.points.len();
 
-        // ToDo: Return Created() or BadRequest() in HttpResponse?
-        let _result = dispatcher
+        let result = dispatcher
             .toc
-            .perform_points_op(&collection_name, PointsOperation::Upsert(operation))
-            .await?;
+            .upsert_points(&collection_name, operation.points)
+            .await;
 
-        Ok(UpsertPointsResponse { num_points })
+        match result {
+            Ok(()) => Ok(UpsertPointsResponse { num_points }),
+            Err(e) => Err(CollectionError::ServiceError(format!(
+                "Error upserting points in collection '{collection_name}': {e}"
+            ))),
+        }
     })
     .await
 }
