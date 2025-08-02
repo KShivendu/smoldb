@@ -428,9 +428,7 @@ mod tests {
             payload_schema: BTreeMap::new(),
         };
 
-        config
-            .save(&path)
-            .expect("Failed to save collection config");
+        config.save(path).expect("Failed to save collection config");
 
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         assert!(config_path.exists());
@@ -456,13 +454,11 @@ mod tests {
             ]),
         };
 
-        config
-            .save(&path)
-            .expect("Failed to save collection config");
+        config.save(path).expect("Failed to save collection config");
 
         let collection = Collection::load(
             collection_name.clone(),
-            &path,
+            path,
             Arc::new(ChannelService::empty(100)),
         )
         .expect("Failed to load collection");
