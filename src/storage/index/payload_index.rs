@@ -1,4 +1,5 @@
 use crate::storage::segment::{Point, PointId};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sled::Db;
 use std::collections::HashMap;
@@ -17,8 +18,8 @@ fn decoded_point_ids(data: &[u8]) -> Result<Vec<u64>, bincode::error::DecodeErro
     bincode::decode_from_slice(data, bincode::config::standard()).map(|(ids, _)| ids)
 }
 
-pub struct NumericIndex(sled::Tree);
-impl NumericIndex {
+pub struct IntegerIndex(sled::Tree);
+impl IntegerIndex {
     pub fn open(db: &Db, name: &str) -> Self {
         let tree = db
             .open_tree(format!("{name}_numeric_index"))
@@ -77,23 +78,25 @@ impl NumericIndex {
 }
 
 pub enum FieldIndex {
-    Numeric(NumericIndex),
+    Int(IntegerIndex),
     Null,
 }
 
-pub enum IndexType {
-    Numeric,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum IndexConfig {
+    Int,
     Null,
 }
 
 impl FieldIndex {
     pub fn numeric(db: &Db, name: &str) -> Self {
-        FieldIndex::Numeric(NumericIndex::open(db, name))
+        FieldIndex::Int(IntegerIndex::open(db, name))
     }
 
     pub fn add_point(&self, point_id: u64, value: &Value) -> Result<(), sled::Error> {
         match self {
-            FieldIndex::Numeric(index) => match value {
+            FieldIndex::Int(index) => match value {
                 Value::Number(num) if num.is_i64() => {
                     let num_value = num.as_i64().unwrap();
                     index.upsert(point_id, num_value)
@@ -118,29 +121,29 @@ impl PayloadIndex {
     pub fn get_or_create(db: &Db) -> Self {
         // Read from the database to get existing indices and their types:
         let schema_tree = db.open_tree("schema").expect("Failed to open schema tree");
-        let index_types: HashMap<String, String> = schema_tree
+        let index_configs: HashMap<String, String> = schema_tree
             .iter()
             .map(|item| {
                 let (key, value) = item.expect("Failed to read schema item");
                 // ToDo: Ensure that using utf8 will not cause problems
                 let index_name = String::from_utf8(key.to_vec()).expect("Invalid UTF-8 in key");
-                let index_type = String::from_utf8(value.to_vec()).expect("Invalid UTF-8 in value");
+                let index_config =
+                    String::from_utf8(value.to_vec()).expect("Invalid UTF-8 in value");
 
-                (index_name, index_type)
+                (index_name, index_config)
             })
             .collect();
 
         let mut indices = HashMap::new();
-        for (name, index_type) in index_types {
-            match index_type.as_str() {
-                "number" => {
+        for (name, index_config) in index_configs {
+            let index_config: IndexConfig =
+                serde_json::from_str(&index_config).expect("Failed to deserialize index config");
+            match index_config {
+                IndexConfig::Int => {
                     indices.insert(name.clone(), FieldIndex::numeric(db, &name));
                 }
-                "null" => {
+                IndexConfig::Null => {
                     indices.insert(name.clone(), FieldIndex::Null);
-                }
-                _ => {
-                    panic!("Unknown index type: {index_type}");
                 }
             }
         }
@@ -152,8 +155,12 @@ impl PayloadIndex {
         self.indices.keys().map(|k| k.as_str()).collect()
     }
 
-    #[allow(dead_code)]
-    fn add_index(&mut self, db: &Db, name: &str, index_type: IndexType) -> Result<(), sled::Error> {
+    pub fn add_index(
+        &mut self,
+        db: &Db,
+        name: &str,
+        index_config: IndexConfig,
+    ) -> Result<(), sled::Error> {
         if self.indices.contains_key(name) {
             return Err(sled::Error::Io(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
@@ -161,22 +168,20 @@ impl PayloadIndex {
             )));
         }
 
-        let index = match index_type {
-            IndexType::Numeric => FieldIndex::numeric(db, name),
-            IndexType::Null => FieldIndex::Null,
+        let index = match index_config {
+            IndexConfig::Int => FieldIndex::numeric(db, name),
+            IndexConfig::Null => FieldIndex::Null,
         };
 
-        let index_type_str = match index {
-            FieldIndex::Numeric(_) => "number",
-            FieldIndex::Null => "null",
-        };
+        let index_config_str =
+            serde_json::to_string(&index_config).expect("Failed to serialize index config");
 
         self.indices.insert(name.to_string(), index);
         // Now add to db schema so it's persisted:
 
         let schema_tree = db.open_tree("schema").expect("Failed to open schema tree");
         schema_tree
-            .insert(name.as_bytes(), index_type_str.as_bytes())
+            .insert(name.as_bytes(), index_config_str.as_bytes())
             .expect("Failed to insert into schema tree");
 
         Ok(())
@@ -209,7 +214,7 @@ mod test {
         let db = sled::open(&tmp_dir).expect("Failed to open sled database");
         let mut index = PayloadIndex::get_or_create(&db);
 
-        index.add_index(&db, "price", IndexType::Numeric).unwrap();
+        index.add_index(&db, "price", IndexConfig::Int).unwrap();
 
         assert!(index.get_index_names().len() == 1);
         assert!(index.indices.contains_key("price"));
@@ -225,7 +230,7 @@ mod test {
 
         let field_index = index.indices.get("price").unwrap();
 
-        if let FieldIndex::Numeric(numeric_index) = field_index {
+        if let FieldIndex::Int(numeric_index) = field_index {
             let results = numeric_index.query_gte(40).unwrap();
             assert_eq!(results.len(), 6); // Points with ids 4, 5, 6, 7, 8, 9
             assert_eq!(results, (4..10).map(PointId::Id).collect::<Vec<_>>());
