@@ -308,3 +308,24 @@ pub async fn read_points(
         ApiResponse::Error(res) => Err(SmolBenchError::ReadPointsError(res.error)),
     }
 }
+
+pub async fn query_points(
+    url: &Uri,
+    collection_name: &str,
+    payload: Value,
+) -> Result<ApiSuccessResponse<Points>, SmolBenchError> {
+    let client = reqwest::Client::new();
+
+    let res = client
+        .post(format!("{url}/collections/{collection_name}/query"))
+        .json(&payload)
+        .send()
+        .await?;
+
+    let body: ApiResponse<Points> = res.json().await?;
+
+    match body {
+        ApiResponse::Success(body) => Ok(body),
+        ApiResponse::Error(res) => Err(SmolBenchError::QueryPointsError(res.error)),
+    }
+}

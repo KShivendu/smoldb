@@ -134,15 +134,7 @@ async fn query_points(
         let query = query.into_inner();
         let result = dispatcher.toc.query_points(&collection_name, query).await;
         match result {
-            Ok(points) => {
-                if points.is_empty() {
-                    Err(CollectionError::ServiceError(format!(
-                        "No points found in collection '{collection_name}'"
-                    )))
-                } else {
-                    Ok(ListPointsResponse { points })
-                }
-            }
+            Ok(points) => Ok(ListPointsResponse { points }),
             Err(e) => Err(CollectionError::ServiceError(format!(
                 "Error listing points in collection '{collection_name}': {e}"
             ))),

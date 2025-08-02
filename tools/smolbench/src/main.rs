@@ -14,6 +14,7 @@ use crate::{
 use args::parse_args;
 use error::SmolBenchError;
 use rand::Rng;
+use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<(), SmolBenchError> {
@@ -88,6 +89,40 @@ async fn main() -> Result<(), SmolBenchError> {
         );
 
         log_latencies(&responses, args.p9, "server-side read").await?;
+    }
+
+    if !args.skip_query {
+        let num_queries = args.num_points.min(1000) as u64;
+        let mut rnd = rand::rng();
+        let price_gte = (0..num_queries)
+            .map(|_| rnd.random::<i64>() % args.num_points as i64)
+            .collect::<Vec<_>>();
+
+        let mut responses = vec![];
+
+        for price_gte in price_gte {
+            let response = apis::query_points(
+                &args.uri,
+                &args.collection_name,
+                json!({
+                    "filter": {
+                        "key": "price",
+                        "value": format!("{}", price_gte * 10),
+                        "op": "gte",
+                    }
+                }),
+            )
+            .await?;
+            responses.push(response);
+        }
+
+        println!(
+            "Queried {} points from collection '{}' with price filter",
+            responses.len(),
+            args.collection_name,
+        );
+
+        log_latencies(&responses, args.p9, "server-side query").await?;
     }
 
     Ok(())
