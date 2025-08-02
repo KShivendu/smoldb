@@ -41,7 +41,7 @@ impl Segment {
             StorageError::ServiceError(format!("Failed to open segment database: {e}"))
         })?;
 
-        let payload_index = PayloadIndex::default(&db);
+        let payload_index = PayloadIndex::get_or_create(&db);
 
         Ok(Self {
             path,
@@ -58,7 +58,7 @@ impl Segment {
         }
 
         let db = sled::open(path).expect("Failed to open segment database");
-        let payload_index = PayloadIndex::load(&db);
+        let payload_index = PayloadIndex::get_or_create(&db);
 
         Ok(Self {
             path: path.to_owned(),

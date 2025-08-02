@@ -81,6 +81,11 @@ pub enum FieldIndex {
     Null,
 }
 
+pub enum IndexType {
+    Numeric,
+    Null,
+}
+
 impl FieldIndex {
     pub fn numeric(db: &Db, name: &str) -> Self {
         FieldIndex::Numeric(NumericIndex::open(db, name))
@@ -110,12 +115,35 @@ pub struct PayloadIndex {
 }
 
 impl PayloadIndex {
-    // ToDo: Take this from the collection config. Not default value
-    pub fn default(db: &Db) -> Self {
-        let indices = HashMap::from_iter(vec![(
-            "price".to_string(),
-            FieldIndex::numeric(db, "price"),
-        )]);
+    pub fn get_or_create(db: &Db) -> Self {
+        // Read from the database to get existing indices and their types:
+        let schema_tree = db.open_tree("schema").expect("Failed to open schema tree");
+        let index_types: HashMap<String, String> = schema_tree
+            .iter()
+            .map(|item| {
+                let (key, value) = item.expect("Failed to read schema item");
+                // ToDo: Ensure that using utf8 will not cause problems
+                let index_name = String::from_utf8(key.to_vec()).expect("Invalid UTF-8 in key");
+                let index_type = String::from_utf8(value.to_vec()).expect("Invalid UTF-8 in value");
+
+                (index_name, index_type)
+            })
+            .collect();
+
+        let mut indices = HashMap::new();
+        for (name, index_type) in index_types {
+            match index_type.as_str() {
+                "number" => {
+                    indices.insert(name.clone(), FieldIndex::numeric(&db, &name));
+                }
+                "null" => {
+                    indices.insert(name.clone(), FieldIndex::Null);
+                }
+                _ => {
+                    panic!("Unknown index type: {}", index_type);
+                }
+            }
+        }
 
         Self { indices }
     }
@@ -124,9 +152,28 @@ impl PayloadIndex {
         self.indices.keys().map(|k| k.as_str()).collect()
     }
 
-    pub fn load(db: &Db) -> Self {
-        // ToDo: Load indices from the database
-        Self::default(db)
+    fn add_index(&mut self, db: &Db, name: &str, index_type: IndexType) {
+        if self.indices.contains_key(name) {
+            panic!("Index with name {} already exists", name);
+        }
+
+        let index = match index_type {
+            IndexType::Numeric => FieldIndex::numeric(db, name),
+            IndexType::Null => FieldIndex::Null,
+        };
+
+        let index_type_str = match index {
+            FieldIndex::Numeric(_) => "number",
+            FieldIndex::Null => "null",
+        };
+
+        self.indices.insert(name.to_string(), index);
+        // Now add to db schema so it's persisted:
+
+        let schema_tree = db.open_tree("schema").expect("Failed to open schema tree");
+        schema_tree
+            .insert(name.as_bytes(), index_type_str.as_bytes())
+            .expect("Failed to insert into schema tree");
     }
 
     pub fn upsert(&self, point: &Point) -> Result<(), sled::Error> {
@@ -154,7 +201,9 @@ mod test {
     fn test_payload_index() {
         let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
         let db = sled::open(&tmp_dir).expect("Failed to open sled database");
-        let index = PayloadIndex::default(&db);
+        let mut index = PayloadIndex::get_or_create(&db);
+
+        index.add_index(&db, "price", IndexType::Numeric);
 
         assert!(index.get_index_names().len() == 1);
         assert!(index.indices.contains_key("price"));
