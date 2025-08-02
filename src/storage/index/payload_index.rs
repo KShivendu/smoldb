@@ -4,8 +4,17 @@ use sled::Db;
 use std::collections::HashMap;
 
 /// Converts the number into a big-endian value which is suitable for querying/storing in sled
-fn encoded_number(n: u64) -> Vec<u8> {
+/// This allows lexicographical ordering and hence numeric comparisons
+fn encoded_payload_value(n: u64) -> Vec<u8> {
     n.to_be_bytes().to_vec()
+}
+
+fn encoded_point_ids(point_ids: &[u64]) -> Result<Vec<u8>, bincode::error::EncodeError> {
+    bincode::encode_to_vec(point_ids, bincode::config::standard())
+}
+
+fn decoded_point_ids(data: &[u8]) -> Result<Vec<u64>, bincode::error::DecodeError> {
+    bincode::decode_from_slice(data, bincode::config::standard()).map(|(ids, _)| ids)
 }
 
 pub struct NumericIndex(sled::Tree);
@@ -19,17 +28,15 @@ impl NumericIndex {
 
     pub fn upsert(&self, point_id: u64, value: i64) -> Result<(), sled::Error> {
         // In numeric tree, the point value becomes tree's key, and the point ID is part of a list of values.
-        let tree_key = encoded_number(value as u64);
+        let tree_key = encoded_payload_value(value as u64);
 
         // Fetch existing point IDs for this value
         let mut point_ids: Vec<u64> = self
             .0
             .get(&tree_key)?
             .map(|data| {
-                let (decoded, cnt) =
-                    bincode::decode_from_slice(&data, bincode::config::standard()).unwrap();
-                println!("Decoded point IDs: {:?} with count {}", decoded, cnt);
-                decoded
+                decoded_point_ids(&data)
+                    .unwrap_or_else(|e| panic!("Failed to decode point IDs: {e}"))
             })
             .unwrap_or_default();
 
@@ -38,12 +45,13 @@ impl NumericIndex {
         point_ids.sort();
 
         // Store back
-        let serialized_ids = bincode::encode_to_vec(point_ids, bincode::config::standard())
-            .map_err(|e| {
-                sled::Error::Io(std::io::Error::other(format!("Failed to encode: {e}")))
-            })?;
+        let encoded_ids = encoded_point_ids(&point_ids).map_err(|e| {
+            sled::Error::Io(std::io::Error::other(format!(
+                "Failed to encode point IDs: {e}"
+            )))
+        })?;
 
-        self.0.insert(&tree_key, serialized_ids).map_err(|e| {
+        self.0.insert(&tree_key, encoded_ids).map_err(|e| {
             sled::Error::Io(std::io::Error::other(format!(
                 "Failed to insert into index tree: {e}"
             )))
@@ -53,17 +61,14 @@ impl NumericIndex {
     }
 
     pub fn query_gte(&self, value: i64) -> Result<Vec<PointId>, sled::Error> {
-        let min_key = encoded_number(value as u64);
+        let min_key = encoded_payload_value(value as u64);
 
         let mut results = Vec::new();
         for item in self.0.range(min_key..) {
             let (_gte_value, encoded_point_ids) = item?;
-            let point_ids: Vec<u64> =
-                bincode::decode_from_slice(&encoded_point_ids, bincode::config::standard())
-                    .map_err(|e| {
-                        sled::Error::Io(std::io::Error::other(format!("Failed to decode: {e}")))
-                    })?
-                    .0;
+            let point_ids = decoded_point_ids(&encoded_point_ids).map_err(|e| {
+                sled::Error::Io(std::io::Error::other(format!("Failed to decode: {e}")))
+            })?;
             results.extend_from_slice(&point_ids);
         }
 
