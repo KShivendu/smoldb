@@ -1,6 +1,13 @@
-use crate::{error::StorageError, storage::index::payload_index::PayloadIndex};
+use crate::{
+    api::points::Query,
+    error::StorageError,
+    storage::index::payload_index::{IndexConfig, PayloadIndex},
+};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 #[derive(Serialize, Deserialize, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
 #[serde(untagged)]
@@ -32,7 +39,10 @@ pub struct Segment {
 }
 
 impl Segment {
-    pub fn create(segments_dir: &Path) -> Result<Self, StorageError> {
+    pub fn create(
+        segments_dir: &Path,
+        payload_schema: BTreeMap<String, IndexConfig>,
+    ) -> Result<Self, StorageError> {
         // ToDo: Have uuid segment ID
         let path = segments_dir.join("0");
         std::fs::create_dir_all(&path).expect("Failed to create segment directory");
@@ -41,7 +51,13 @@ impl Segment {
             StorageError::ServiceError(format!("Failed to open segment database: {e}"))
         })?;
 
-        let payload_index = PayloadIndex::get_or_create(&db);
+        let mut payload_index = PayloadIndex::get_or_create(&db);
+
+        for (index_name, index_config) in payload_schema {
+            payload_index
+                .add_index(&db, &index_name, index_config)
+                .map_err(|e| StorageError::ServiceError(format!("Failed to add index: {e}")))?;
+        }
 
         Ok(Self {
             path,
@@ -123,6 +139,15 @@ impl Segment {
                 points.push(point);
             }
         }
+        Ok(points)
+    }
+
+    pub fn query_points(&self, query: Query) -> Result<Vec<Point>, StorageError> {
+        let point_ids = self.payload_index.query(query).map_err(|e| {
+            StorageError::ServiceError(format!("Failed to query payload index: {e}"))
+        })?;
+        let points = self.get_points(Some(point_ids))?;
+
         Ok(points)
     }
 

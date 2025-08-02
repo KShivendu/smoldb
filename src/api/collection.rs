@@ -1,7 +1,7 @@
 use crate::api::dispatcher::Dispatcher;
 use crate::api::helpers;
 use crate::error::CollectionError;
-use crate::storage::collection::{Collection, CollectionInfo};
+use crate::storage::collection::{Collection, CollectionConfig, CollectionInfo};
 use crate::storage::replicas::ShardState;
 use crate::storage::toc::CollectionOperation;
 use crate::types::{PeerId, ShardId};
@@ -9,7 +9,7 @@ use actix_web::{
     web::{self, Json},
     Responder,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 #[actix_web::get("/collections")]
 async fn get_collections(dispatcher: web::Data<Dispatcher>) -> impl Responder {
@@ -154,15 +154,10 @@ async fn get_collection_cluster_info(
     .await
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct CreateCollection {
-    pub params: String,
-}
-
 #[actix_web::put("/collections/{collection_name}")]
 async fn create_collection(
     collection_name: web::Path<String>,
-    operation: Json<CreateCollection>,
+    config: Json<CollectionConfig>,
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
     helpers::time(async {
@@ -171,7 +166,7 @@ async fn create_collection(
         dispatcher
             .submit_collection_op(CollectionOperation::CreateCollection {
                 collection_name: collection_name.clone(),
-                params: operation.params.clone(),
+                config: config.into_inner(),
             })
             .await?;
 

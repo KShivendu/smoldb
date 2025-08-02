@@ -60,6 +60,7 @@ async fn get_cluster_info(url: &Uri) -> Result<ApiResponse<Value>, SmolBenchErro
 pub async fn create_collection(
     url: &Uri,
     collection_name: &str,
+    skip_int_index: bool,
     wait: bool,
 ) -> Result<ApiSuccessResponse<bool>, SmolBenchError> {
     // First ensure that consensus is started
@@ -67,10 +68,19 @@ pub async fn create_collection(
 
     let client = reqwest::Client::new();
 
+    let payload_schema = if skip_int_index {
+        json!({})
+    } else {
+        json!({
+            "price": "int"
+        })
+    };
+
     let res = client
         .put(format!("{url}/collections/{collection_name}"))
         .json(&serde_json::json!({
-            "params": "..."
+            "params": "...",
+            "payload_schema": payload_schema,
         }))
         .send()
         .await?;
@@ -215,6 +225,7 @@ pub async fn upsert_points(
                 payload: json!({
                     "text": format!("Point {}", i),
                     "timestamp": batch_ts.to_rfc3339(),
+                    "price": i as i64 * 10,
                 }),
             })
             .collect();

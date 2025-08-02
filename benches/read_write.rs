@@ -31,6 +31,7 @@ pub fn single_write(c: &mut Criterion) {
             "test_collection".to_string(),
             CollectionConfig {
                 params: "...".to_string(),
+                payload_schema: Default::default(),
             },
             tempdir.path(),
             channel_service.clone(),
@@ -74,6 +75,7 @@ pub fn concurrent_write(c: &mut Criterion) {
             "test_collection".to_string(),
             CollectionConfig {
                 params: "...".to_string(),
+                payload_schema: Default::default(),
             },
             tempdir.path(),
             channel_service,
@@ -127,6 +129,7 @@ pub fn single_read(c: &mut Criterion) {
             "test_collection".to_string(),
             CollectionConfig {
                 params: "...".to_string(),
+                payload_schema: Default::default(),
             },
             tempdir.path(),
             channel_service,
@@ -190,6 +193,7 @@ fn concurrent_read(c: &mut Criterion) {
             "test_collection".to_string(),
             CollectionConfig {
                 params: "...".to_string(),
+                payload_schema: Default::default(),
             },
             tempdir.path(),
             channel_service,

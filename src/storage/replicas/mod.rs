@@ -1,6 +1,7 @@
 pub mod local_shard;
 pub mod remote_shard;
 
+use crate::api::points::Query;
 use crate::channel_service::ChannelService;
 use crate::error::{CollectionResult, StorageError};
 use crate::storage::replicas::{local_shard::LocalShard, remote_shard::RemoteShard};
@@ -23,6 +24,7 @@ pub struct UpdateResult {
 pub trait ShardOperationTrait {
     async fn get_points(&self, ids: Option<Vec<PointId>>) -> CollectionResult<Vec<Point>>;
     async fn upsert_points(&self, points: Vec<Point>) -> CollectionResult<()>;
+    async fn query_points(&self, query: Query) -> CollectionResult<Vec<Point>>;
 }
 
 #[derive(Serialize, PartialEq, Debug, Clone)]
@@ -228,8 +230,8 @@ mod tests {
         let tmp_dir = tempfile::tempdir().unwrap();
 
         let peer_id: PeerId = 100;
-        let s0 = LocalShard::init(tmp_dir.path().join("0"), 0);
-        let s1 = LocalShard::init(tmp_dir.path().join("1"), 1);
+        let s0 = LocalShard::init(tmp_dir.path().join("0"), 0, None);
+        let s1 = LocalShard::init(tmp_dir.path().join("1"), 1, None);
 
         let cs = Arc::new(ChannelService::empty(peer_id));
 

@@ -1,7 +1,10 @@
 use crate::{
     api::{dispatcher::Dispatcher, helpers},
     error::CollectionError,
-    storage::segment::{Point, PointId},
+    storage::{
+        index::filter::QueryFilter,
+        segment::{Point, PointId},
+    },
 };
 use actix_web::{
     web::{self, Json},
@@ -95,8 +98,41 @@ async fn list_points(
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
     helpers::time(async {
-        let collection_name = collection_name.into_inner();
+        let collection_name: String = collection_name.into_inner();
         let result = dispatcher.toc.read_points(&collection_name, None).await;
+        match result {
+            Ok(points) => {
+                if points.is_empty() {
+                    Err(CollectionError::ServiceError(format!(
+                        "No points found in collection '{collection_name}'"
+                    )))
+                } else {
+                    Ok(ListPointsResponse { points })
+                }
+            }
+            Err(e) => Err(CollectionError::ServiceError(format!(
+                "Error listing points in collection '{collection_name}': {e}"
+            ))),
+        }
+    })
+    .await
+}
+
+#[derive(Deserialize, Clone)]
+pub struct Query {
+    pub filter: QueryFilter,
+}
+
+#[actix_web::post("/collections/{collection_name}/query")]
+async fn query_points(
+    collection_name: web::Path<String>,
+    dispatcher: web::Data<Dispatcher>,
+    query: Json<Query>,
+) -> impl Responder {
+    helpers::time(async {
+        let collection_name: String = collection_name.into_inner();
+        let query = query.into_inner();
+        let result = dispatcher.toc.query_points(&collection_name, query).await;
         match result {
             Ok(points) => {
                 if points.is_empty() {

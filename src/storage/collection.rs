@@ -1,7 +1,9 @@
 use crate::{
+    api::points::Query,
     channel_service::ChannelService,
     error::{CollectionError, CollectionResult, StorageError},
     storage::{
+        index::payload_index::IndexConfig,
         replicas::{
             local_shard::LocalShard, ReplicaHolder, ReplicaSet, ShardOperationTrait, ShardState,
         },
@@ -56,7 +58,7 @@ impl Collection {
                 let shard_id = shard_id as ShardId;
                 // No remote replicas initially. They will be added by Collection::add_remote_replicas
                 let replica_set = ReplicaSet::new(
-                    LocalShard::init(shard_path, shard_id),
+                    LocalShard::init(shard_path, shard_id, Some(config.payload_schema.clone())),
                     id.clone(),
                     shard_id,
                     channel_service.clone(),
@@ -304,11 +306,26 @@ impl Collection {
             Ok(points)
         }
     }
+
+    pub async fn query_points(&self, query: Query) -> CollectionResult<Vec<Point>> {
+        let replica_holder = self.replica_holder.read().await;
+
+        let mut results = vec![];
+        for (_shard_id, replica_set) in replica_holder.shards.iter() {
+            let shard_results = replica_set.local.query_points(query.clone()).await?;
+            results.extend(shard_results);
+        }
+
+        // ToDo: Implement cluster level query
+
+        Ok(results)
+    }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CollectionConfig {
     pub params: String,
+    pub payload_schema: BTreeMap<String, IndexConfig>,
 }
 
 impl CollectionConfig {
