@@ -1,5 +1,5 @@
 use crate::{
-    api::points::PointsOperation,
+    api::points::{PointsOperation, Query},
     channel_service::ChannelService,
     error::StorageError,
     storage::{
@@ -25,7 +25,7 @@ pub struct TableOfContent {
 pub enum CollectionOperation {
     CreateCollection {
         collection_name: String,
-        params: String,
+        config: CollectionConfig,
     },
     DeleteCollection {
         collection_name: String,
@@ -101,14 +101,14 @@ impl TableOfContent {
         match operation {
             CollectionOperation::CreateCollection {
                 collection_name,
-                params,
+                config,
             } => {
                 println!("Creating collection {collection_name}");
                 let path = Self::mkdir_collection_dir(&collection_name).await?;
 
                 let collection = Collection::init(
                     collection_name.clone(),
-                    CollectionConfig { params },
+                    config,
                     &path,
                     self.channel_service.clone(),
                 )
@@ -188,6 +188,23 @@ impl TableOfContent {
         collection.read_points(ids, None, false).await.map_err(|e| {
             StorageError::ServiceError(format!(
                 "Failed to read points from collection '{collection_name}': {e}"
+            ))
+        })
+    }
+
+    pub async fn query_points(
+        &self,
+        collection_name: &str,
+        query: Query,
+    ) -> Result<Vec<Point>, StorageError> {
+        let collections = self.collections.read().await;
+        let collection = collections.get(collection_name).ok_or_else(|| {
+            StorageError::BadInput(format!("Collection '{collection_name}' does not exist"))
+        })?;
+
+        collection.query_points(query).await.map_err(|e| {
+            StorageError::ServiceError(format!(
+                "Failed to query points in collection '{collection_name}': {e}"
             ))
         })
     }

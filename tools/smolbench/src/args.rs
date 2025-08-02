@@ -55,6 +55,10 @@ pub struct Args {
     #[clap(long, default_value = "false")]
     pub skip_if_exists: bool,
 
+    /// Use integer index for payload
+    #[clap(long, default_value = "false")]
+    pub skip_int_index: bool,
+
     /// Use if you don't want to upsert points by default
     #[clap(long, default_value = "false")]
     pub skip_upsert: bool,

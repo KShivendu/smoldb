@@ -1,12 +1,21 @@
-use crate::storage::segment::{Point, PointId};
+use crate::{
+    api::points::Query,
+    storage::{
+        index::filter::FilterOperation,
+        segment::{Point, PointId},
+    },
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sled::Db;
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Bound,
+};
 
 /// Converts the number into a big-endian value which is suitable for querying/storing in sled
 /// This allows lexicographical ordering and hence numeric comparisons
-fn encoded_payload_value(n: u64) -> Vec<u8> {
+fn encoded_integer_value(n: i64) -> Vec<u8> {
     n.to_be_bytes().to_vec()
 }
 
@@ -29,7 +38,7 @@ impl IntegerIndex {
 
     pub fn upsert(&self, point_id: u64, value: i64) -> Result<(), sled::Error> {
         // In numeric tree, the point value becomes tree's key, and the point ID is part of a list of values.
-        let tree_key = encoded_payload_value(value as u64);
+        let tree_key = encoded_integer_value(value);
 
         // Fetch existing point IDs for this value
         let mut point_ids: Vec<u64> = self
@@ -61,11 +70,24 @@ impl IntegerIndex {
         Ok(())
     }
 
-    pub fn query_gte(&self, value: i64) -> Result<Vec<PointId>, sled::Error> {
-        let min_key = encoded_payload_value(value as u64);
-
+    pub fn query(
+        &self,
+        value: i64,
+        operation: &FilterOperation,
+    ) -> Result<Vec<PointId>, sled::Error> {
         let mut results = Vec::new();
-        for item in self.0.range(min_key..) {
+
+        let value = encoded_integer_value(value);
+
+        let bounds = match operation {
+            FilterOperation::Gte => (Bound::Included(value), Bound::Unbounded),
+            FilterOperation::Gt => (Bound::Excluded(value), Bound::Unbounded),
+            FilterOperation::Lt => (Bound::Unbounded, Bound::Excluded(value)),
+            FilterOperation::Lte => (Bound::Unbounded, Bound::Included(value)),
+            FilterOperation::Eq => (Bound::Included(value.clone()), Bound::Included(value)),
+        };
+
+        for item in self.0.range(bounds) {
             let (_gte_value, encoded_point_ids) = item?;
             let point_ids = decoded_point_ids(&encoded_point_ids).map_err(|e| {
                 sled::Error::Io(std::io::Error::other(format!("Failed to decode: {e}")))
@@ -103,7 +125,7 @@ impl FieldIndex {
                 }
                 _ => Err(sled::Error::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "Not a valid i64 value",
+                    format!("{value} is not a valid i64 value"),
                 ))),
             },
             FieldIndex::Null => {
@@ -202,6 +224,25 @@ impl PayloadIndex {
         }
         Ok(())
     }
+
+    pub fn query(&self, query: Query) -> Result<Vec<PointId>, sled::Error> {
+        let mut results = HashSet::new();
+        for (index_name, index) in &self.indices {
+            if *index_name == query.filter.key {
+                match index {
+                    FieldIndex::Int(int_index) => {
+                        let value = query.filter.value.parse::<i64>().unwrap();
+                        let query_results = int_index.query(value, &query.filter.operation)?;
+                        results.extend(query_results);
+                    }
+                    FieldIndex::Null => {
+                        unimplemented!("Null index queries are not implemented yet");
+                    }
+                }
+            }
+        }
+        Ok(results.into_iter().collect())
+    }
 }
 
 #[cfg(test)]
@@ -231,7 +272,7 @@ mod test {
         let field_index = index.indices.get("price").unwrap();
 
         if let FieldIndex::Int(numeric_index) = field_index {
-            let results = numeric_index.query_gte(40).unwrap();
+            let results = numeric_index.query(40, &FilterOperation::Gte).unwrap();
             assert_eq!(results.len(), 6); // Points with ids 4, 5, 6, 7, 8, 9
             assert_eq!(results, (4..10).map(PointId::Id).collect::<Vec<_>>());
         } else {

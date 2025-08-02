@@ -1,7 +1,10 @@
 use crate::{
-    api::grpc::schema::{
-        points_internal_client::PointsInternalClient, GetPointsRequest, Point as PointGrpc,
-        UpsertPointsRequest,
+    api::{
+        grpc::schema::{
+            points_internal_client::PointsInternalClient, GetPointsRequest, Point as PointGrpc,
+            UpsertPointsRequest,
+        },
+        points::Query,
     },
     channel_service::ChannelService,
     error::{CollectionError, CollectionResult},
@@ -139,5 +142,12 @@ impl ShardOperationTrait for RemoteShard {
             .into_inner();
 
         Ok(()) // Placeholder for actual remote shard logic
+    }
+
+    async fn query_points(&self, _query: Query) -> CollectionResult<Vec<Point>> {
+        // Remote shard does not support querying yet
+        Err(CollectionError::ServiceError(
+            "Remote shard does not support querying points".to_string(),
+        ))
     }
 }

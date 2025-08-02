@@ -13,7 +13,7 @@ use crate::api::{
         get_collections,
     },
     dispatcher::Dispatcher,
-    points::{get_point, list_points, upsert_points},
+    points::{get_point, list_points, query_points, upsert_points},
 };
 use crate::channel_service::ChannelService;
 use crate::consensus::{manager::ConsensusManager, Consensus, ConsensusState};
@@ -48,6 +48,7 @@ async fn start_http_server(url: Uri, dispatcher: Arc<Dispatcher>) -> std::io::Re
             .service(upsert_points)
             .service(get_point)
             .service(list_points)
+            .service(query_points)
             .app_data(dispatcher_app_data.clone())
     })
     .bind((host, port))?

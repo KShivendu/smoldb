@@ -1,12 +1,17 @@
 use crate::{
+    api::points::Query,
     error::{CollectionError, CollectionResult, StorageError},
     storage::{
+        index::payload_index::IndexConfig,
         replicas::{ShardOperationTrait, ShardState},
         segment::{Point, PointId, Segment},
     },
     types::{SegmentId, ShardId},
 };
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+};
 use tonic::async_trait;
 
 const SEGMENTS_DIR: &str = "segments";
@@ -46,14 +51,35 @@ impl ShardOperationTrait for LocalShard {
             ))
         }
     }
+
+    async fn query_points(&self, query: Query) -> CollectionResult<Vec<Point>> {
+        if let Some(segment) = self.segments.get(&0) {
+            segment.query_points(query).map_err(|e| {
+                CollectionError::StorageError(StorageError::ServiceError(format!(
+                    "Failed to query points from segment: {e}"
+                )))
+            })
+        } else {
+            Err(StorageError::ServiceError(
+                "No segments available".to_string(),
+            ))?
+        }
+    }
 }
 
 impl LocalShard {
-    pub fn init(path: PathBuf, id: ShardId) -> Self {
+    pub fn init(
+        path: PathBuf,
+        id: ShardId,
+        payload_schema: Option<BTreeMap<String, IndexConfig>>,
+    ) -> Self {
         let segments_dir = path.join(SEGMENTS_DIR);
         std::fs::create_dir_all(&segments_dir).expect("Failed to create segments directory");
 
-        let segment0 = Segment::create(&segments_dir).expect("Failed to create initial segment");
+        let payload_schema = payload_schema.unwrap_or_default();
+
+        let segment0 = Segment::create(&segments_dir, payload_schema)
+            .expect("Failed to create initial segment");
 
         LocalShard {
             id,
