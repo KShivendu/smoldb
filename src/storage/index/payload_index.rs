@@ -1,7 +1,7 @@
 use crate::{
     api::points::Query,
     storage::{
-        index::filter::FilterOperation,
+        index::filter::FilterOperator,
         segment::{Point, PointId},
     },
 };
@@ -73,18 +73,18 @@ impl IntegerIndex {
     pub fn query(
         &self,
         value: i64,
-        operation: &FilterOperation,
+        operation: &FilterOperator,
     ) -> Result<Vec<PointId>, sled::Error> {
         let mut results = Vec::new();
 
         let value = encoded_integer_value(value);
 
         let bounds = match operation {
-            FilterOperation::Gte => (Bound::Included(value), Bound::Unbounded),
-            FilterOperation::Gt => (Bound::Excluded(value), Bound::Unbounded),
-            FilterOperation::Lt => (Bound::Unbounded, Bound::Excluded(value)),
-            FilterOperation::Lte => (Bound::Unbounded, Bound::Included(value)),
-            FilterOperation::Eq => (Bound::Included(value.clone()), Bound::Included(value)),
+            FilterOperator::Gte => (Bound::Included(value), Bound::Unbounded),
+            FilterOperator::Gt => (Bound::Excluded(value), Bound::Unbounded),
+            FilterOperator::Lt => (Bound::Unbounded, Bound::Excluded(value)),
+            FilterOperator::Lte => (Bound::Unbounded, Bound::Included(value)),
+            FilterOperator::Eq => (Bound::Included(value.clone()), Bound::Included(value)),
         };
 
         for item in self.0.range(bounds) {
@@ -232,7 +232,7 @@ impl PayloadIndex {
                 match index {
                     FieldIndex::Int(int_index) => {
                         let value = query.filter.value.parse::<i64>().unwrap();
-                        let query_results = int_index.query(value, &query.filter.operation)?;
+                        let query_results = int_index.query(value, &query.filter.operator)?;
                         results.extend(query_results);
                     }
                     FieldIndex::Null => {
@@ -272,7 +272,7 @@ mod test {
         let field_index = index.indices.get("price").unwrap();
 
         if let FieldIndex::Int(numeric_index) = field_index {
-            let results = numeric_index.query(40, &FilterOperation::Gte).unwrap();
+            let results = numeric_index.query(40, &FilterOperator::Gte).unwrap();
             assert_eq!(results.len(), 6); // Points with ids 4, 5, 6, 7, 8, 9
             assert_eq!(results, (4..10).map(PointId::Id).collect::<Vec<_>>());
         } else {

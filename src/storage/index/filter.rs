@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
-pub enum FilterOperation {
+pub enum FilterOperator {
     Gte,
     Eq,
     Lte,
@@ -14,5 +14,5 @@ pub enum FilterOperation {
 pub struct QueryFilter {
     pub key: String,
     pub value: String,
-    pub operation: FilterOperation,
+    pub operator: FilterOperator,
 }
