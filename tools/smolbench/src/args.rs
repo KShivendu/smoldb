@@ -79,6 +79,10 @@ pub struct Args {
     /// Delay between requests (batches) in milliseconds
     #[clap(short, long, default_value = None, value_parser = parse_number)]
     pub delay: Option<usize>,
+
+    /// Number of concurrent queries to run
+    #[clap(long, default_value = "10", value_parser = parse_number)]
+    pub concurrent_queries: usize,
 }
 
 pub fn parse_args() -> Args {
