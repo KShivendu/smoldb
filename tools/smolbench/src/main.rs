@@ -13,6 +13,10 @@ use crate::{
 };
 use args::parse_args;
 use error::SmolBenchError;
+use futures::{
+    stream::{self, StreamExt},
+    TryStreamExt,
+};
 use rand::Rng;
 use serde_json::json;
 
@@ -92,33 +96,35 @@ async fn main() -> Result<(), SmolBenchError> {
     }
 
     if !args.skip_query {
-        let num_queries = args.num_points.min(1000) as u64;
+        let num_queries = args.num_points.min(100) as u64;
         let mut rnd = rand::rng();
-        let price_gte = (0..num_queries)
-            .map(|_| rnd.random::<i64>() % args.num_points as i64)
+
+        let futures = (0..num_queries)
+            .map(|_| {
+                let price_gte = rnd.random::<i64>() % args.num_points as i64;
+                apis::query_points(
+                    &args.uri,
+                    &args.collection_name,
+                    json!({
+                        "filter": {
+                            "key": "price",
+                            "value": format!("{}", price_gte * 10),
+                            "op": "gte",
+                        }
+                    }),
+                )
+            })
             .collect::<Vec<_>>();
 
-        let mut responses = vec![];
-
-        for price_gte in price_gte {
-            let response = apis::query_points(
-                &args.uri,
-                &args.collection_name,
-                json!({
-                    "filter": {
-                        "key": "price",
-                        "value": format!("{}", price_gte * 10),
-                        "op": "gte",
-                    }
-                }),
-            )
+        let responses = stream::iter(futures)
+            .buffered(args.concurrent_queries)
+            .try_collect::<Vec<_>>()
             .await?;
-            responses.push(response);
-        }
 
         println!(
-            "Queried {} points from collection '{}' with price filter",
+            "Queried {} points with concurrency of {} from collection '{}' with price filter",
             responses.len(),
+            args.concurrent_queries,
             args.collection_name,
         );
 
