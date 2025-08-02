@@ -134,13 +134,13 @@ impl PayloadIndex {
         for (name, index_type) in index_types {
             match index_type.as_str() {
                 "number" => {
-                    indices.insert(name.clone(), FieldIndex::numeric(&db, &name));
+                    indices.insert(name.clone(), FieldIndex::numeric(db, &name));
                 }
                 "null" => {
                     indices.insert(name.clone(), FieldIndex::Null);
                 }
                 _ => {
-                    panic!("Unknown index type: {}", index_type);
+                    panic!("Unknown index type: {index_type}");
                 }
             }
         }
@@ -152,9 +152,13 @@ impl PayloadIndex {
         self.indices.keys().map(|k| k.as_str()).collect()
     }
 
-    fn add_index(&mut self, db: &Db, name: &str, index_type: IndexType) {
+    #[allow(dead_code)]
+    fn add_index(&mut self, db: &Db, name: &str, index_type: IndexType) -> Result<(), sled::Error> {
         if self.indices.contains_key(name) {
-            panic!("Index with name {} already exists", name);
+            return Err(sled::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("Index with name '{name}' already exists"),
+            )));
         }
 
         let index = match index_type {
@@ -174,6 +178,8 @@ impl PayloadIndex {
         schema_tree
             .insert(name.as_bytes(), index_type_str.as_bytes())
             .expect("Failed to insert into schema tree");
+
+        Ok(())
     }
 
     pub fn upsert(&self, point: &Point) -> Result<(), sled::Error> {
@@ -203,7 +209,7 @@ mod test {
         let db = sled::open(&tmp_dir).expect("Failed to open sled database");
         let mut index = PayloadIndex::get_or_create(&db);
 
-        index.add_index(&db, "price", IndexType::Numeric);
+        index.add_index(&db, "price", IndexType::Numeric).unwrap();
 
         assert!(index.get_index_names().len() == 1);
         assert!(index.indices.contains_key("price"));
