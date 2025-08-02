@@ -8,7 +8,6 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
 };
-
 #[derive(Serialize, Deserialize, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
 #[serde(untagged)]
 pub enum PointId {

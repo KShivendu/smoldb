@@ -4,9 +4,7 @@ use crate::{
     error::{CollectionError, CollectionResult, StorageError},
     storage::{
         index::payload_index::IndexConfig,
-        replicas::{
-            local_shard::LocalShard, ReplicaHolder, ReplicaSet, ShardOperationTrait, ShardState,
-        },
+        replicas::{local_shard::LocalShard, ReplicaHolder, ReplicaSet, ShardState},
         segment::{Point, PointId},
     },
     types::{PeerId, ShardId},
@@ -43,8 +41,6 @@ impl Collection {
         path: &Path,
         channel_service: Arc<ChannelService>,
     ) -> Result<Self, StorageError> {
-        // ToDo: Create ShardHolder & ShardReplicaSet
-
         config.save(path)?;
 
         // ToDo: Initialize shards == num_cpus for max parallelism
@@ -167,26 +163,18 @@ impl Collection {
     ) -> CollectionResult<()> {
         let replica_holder_guard = self.replica_holder.read().await;
 
-        let point_ids: Vec<_> = points.iter().map(|point| point.id.clone()).collect();
-
-        let points_map: HashMap<PointId, Point> = points
-            .into_iter()
-            .map(|point| (point.id.clone(), point))
-            .collect();
-
         let mut replicas_to_mark_dead = vec![];
 
         // ToDo: Run this operation concurrently for each shard
-        for (shard_id, shard_point_ids) in replica_holder_guard.select_shards(&point_ids)? {
+        for (shard_id, points) in replica_holder_guard.group_by_shards(Some(points))? {
+            let Some(points) = points else {
+                continue; // No points for this shard
+            };
+
             let replica_set = replica_holder_guard
                 .shards
                 .get(&shard_id)
                 .ok_or_else(|| StorageError::BadInput(format!("Shard {shard_id} not found")))?;
-
-            let points = shard_point_ids
-                .iter()
-                .filter_map(|id| points_map.get(id).cloned())
-                .collect::<Vec<_>>();
 
             let results = replica_set
                 .execute_cluster_operation(
@@ -256,69 +244,76 @@ impl Collection {
         local_only: bool,
     ) -> CollectionResult<Vec<Point>> {
         let replica_holder = self.replica_holder.read().await;
+        let mut shard_id_to_point = replica_holder.group_by_shards(ids)?;
 
-        let Some(ids) = ids else {
-            // If no ids are provided, return all points from all shards
-            let mut all_points = BTreeMap::new();
-            for (current_shard_id, replica_set) in replica_holder.shards.iter() {
-                if let Some(desired_shard) = shard_id {
-                    if *current_shard_id != desired_shard {
-                        continue; // Skip shards that are not the desired shard
-                    }
-                }
-
-                let replica_results = replica_set
-                    .execute_cluster_operation(
-                        |shard| {
-                            let ids_cloned = ids.clone();
-                            async move { shard.get_points(ids_cloned).await }.boxed()
-                        },
-                        local_only,
-                    )
-                    .await
-                    .into_iter()
-                    .map(|(_peer_id, r)| r)
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                for point in replica_results.into_iter().flatten() {
-                    // We only insert if the point is not already present so that local shard takes precedence
-                    if let Entry::Vacant(e) = all_points.entry(point.id.clone()) {
-                        e.insert(point);
-                    }
-                }
-            }
-            return Ok(all_points.into_values().collect());
-        };
-
+        // If a shard id is provided, only query that particular shard
         if let Some(shard_id) = shard_id {
-            let replica_set = replica_holder.get_replica_set(shard_id).await?;
-            Ok(replica_set.local.get_points(Some(ids)).await?)
-        } else {
-            let mut points = vec![];
-
-            for (shard_id, shard_point_ids) in replica_holder.select_shards(&ids)? {
-                let replica_set = replica_holder.get_replica_set(shard_id).await?;
-
-                let collected_points = replica_set.local.get_points(Some(shard_point_ids)).await?;
-                points.extend(collected_points);
-            }
-
-            Ok(points)
+            shard_id_to_point.retain(|&id, _| id == shard_id);
         }
+
+        let mut all_points = BTreeMap::new();
+
+        for (shard_id, shard_point_ids) in shard_id_to_point {
+            let replica_set = replica_holder.get_replica_set(shard_id).await?;
+
+            let replica_results = replica_set
+                .execute_cluster_operation(
+                    |shard| {
+                        let ids_cloned = shard_point_ids.clone();
+                        async move { shard.get_points(ids_cloned).await }.boxed()
+                    },
+                    local_only,
+                )
+                .await
+                .into_iter()
+                .map(|(_peer_id, r)| r)
+                .collect::<Result<Vec<_>, _>>()?;
+
+            for point in replica_results.into_iter().flatten() {
+                // Insert if the point is not already present so that local shard takes precedence in case of conflicts
+                if let Entry::Vacant(e) = all_points.entry(point.id.clone()) {
+                    e.insert(point);
+                }
+            }
+        }
+
+        Ok(all_points.into_values().collect())
     }
 
-    pub async fn query_points(&self, query: Query) -> CollectionResult<Vec<Point>> {
+    pub async fn query_points(
+        &self,
+        query: Query,
+        local_only: bool,
+    ) -> CollectionResult<Vec<Point>> {
         let replica_holder = self.replica_holder.read().await;
+        let all_shards = replica_holder.group_by_shards::<PointId>(None)?; // query all shards
+        let mut all_points = BTreeMap::new();
 
-        let mut results = vec![];
-        for (_shard_id, replica_set) in replica_holder.shards.iter() {
-            let shard_results = replica_set.local.query_points(query.clone()).await?;
-            results.extend(shard_results);
+        for (shard_id, _query_all) in all_shards {
+            let replica_set = replica_holder.get_replica_set(shard_id).await?;
+
+            let replica_results = replica_set
+                .execute_cluster_operation(
+                    |shard| {
+                        let query_cloned = query.clone();
+                        async move { shard.query_points(query_cloned).await }.boxed()
+                    },
+                    local_only,
+                )
+                .await
+                .into_iter()
+                .map(|(_peer_id, r)| r)
+                .collect::<Result<Vec<_>, _>>()?;
+
+            for point in replica_results.into_iter().flatten() {
+                // Insert if the point is not already present so that local shard takes precedence in case of conflicts
+                if let Entry::Vacant(e) = all_points.entry(point.id.clone()) {
+                    e.insert(point);
+                }
+            }
         }
 
-        // ToDo: Implement cluster level query
-
-        Ok(results)
+        Ok(all_points.into_values().collect())
     }
 }
 
@@ -528,7 +523,7 @@ mod tests {
         };
 
         let queried_points = collection
-            .query_points(query)
+            .query_points(query, false)
             .await
             .expect("Failed to query points");
 

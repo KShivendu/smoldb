@@ -13,6 +13,7 @@ use log::{error, warn};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::vec;
 use tonic::async_trait;
 
 #[derive(Copy, Clone, Debug)]
@@ -127,6 +128,22 @@ impl ReplicaSet {
     }
 }
 
+pub trait HasPointId {
+    fn point_id(&self) -> PointId;
+}
+
+impl HasPointId for Point {
+    fn point_id(&self) -> PointId {
+        self.id.clone()
+    }
+}
+
+impl HasPointId for PointId {
+    fn point_id(&self) -> PointId {
+        self.clone()
+    }
+}
+
 pub struct ReplicaHolder {
     pub shards: HashMap<ShardId, ReplicaSet>,
     ring: hashring::HashRing<(ShardId, usize)>,
@@ -201,23 +218,41 @@ impl ReplicaHolder {
         Ok(())
     }
 
-    pub fn select_shards(
+    /// Find shards that are expected to hold the points based on the hash ring.
+    ///
+    /// If returned `point_ids` is `None`, it means the caller should read/write all shards.
+    /// If `point_ids` is `Some`, it contains the point IDs that should be routed to the respective shards.
+    pub fn group_by_shards<T: HasPointId>(
         &self,
-        point_ids: &[PointId],
-    ) -> Result<HashMap<ShardId, Vec<PointId>>, StorageError> {
+        points: Option<Vec<T>>,
+    ) -> Result<HashMap<ShardId, Option<Vec<T>>>, StorageError> {
+        let Some(points) = points else {
+            // If no point IDs are provided, return all shards with None
+            return Ok(self
+                .shards
+                .keys()
+                .map(|&shard_id| (shard_id, None))
+                .collect());
+        };
+
         let mut shards_to_point_ids = HashMap::new();
-        for point_id in point_ids {
-            let (shard_id, _virtual_shard_idx) = self
-                .ring
-                .get(&point_id)
-                .ok_or_else(|| StorageError::ServiceError("No shards found".to_string()))?;
+
+        for point in points {
+            let point_id = point.point_id();
+            let (shard_id, _virtual_shard_idx) = self.ring.get(&point_id).ok_or_else(|| {
+                StorageError::ServiceError("No shards found in hashring".to_string())
+            })?;
 
             shards_to_point_ids
                 .entry(*shard_id)
                 .or_insert_with(Vec::new)
-                .push(point_id.clone());
+                .push(point);
         }
-        Ok(shards_to_point_ids)
+
+        Ok(shards_to_point_ids
+            .into_iter()
+            .map(|(shard_id, ids)| (shard_id, Some(ids)))
+            .collect())
     }
 }
 
@@ -241,20 +276,23 @@ mod tests {
         ]));
 
         let shards_to_point_ids = shard_holder
-            .select_shards(&[
+            .group_by_shards(Some(vec![
                 PointId::Id(1),
                 PointId::Id(2),
                 PointId::Id(100),
                 PointId::Uuid("dummy-uuid".to_string()),
-            ])
+            ]))
             .unwrap();
 
         let expected_grouping = HashMap::from_iter([
             (
                 0,
-                vec![PointId::Id(100), PointId::Uuid("dummy-uuid".to_string())],
+                Some(vec![
+                    PointId::Id(100),
+                    PointId::Uuid("dummy-uuid".to_string()),
+                ]),
             ),
-            (1, vec![PointId::Id(1), PointId::Id(2)]),
+            (1, Some(vec![PointId::Id(1), PointId::Id(2)])),
         ]);
 
         assert_eq!(shards_to_point_ids, expected_grouping);
