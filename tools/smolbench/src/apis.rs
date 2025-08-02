@@ -60,7 +60,7 @@ async fn get_cluster_info(url: &Uri) -> Result<ApiResponse<Value>, SmolBenchErro
 pub async fn create_collection(
     url: &Uri,
     collection_name: &str,
-    skip_int_index: &bool,
+    skip_int_index: bool,
     wait: bool,
 ) -> Result<ApiSuccessResponse<bool>, SmolBenchError> {
     // First ensure that consensus is started
@@ -68,7 +68,7 @@ pub async fn create_collection(
 
     let client = reqwest::Client::new();
 
-    let payload_schema = if *skip_int_index {
+    let payload_schema = if skip_int_index {
         json!({})
     } else {
         json!({
