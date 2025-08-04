@@ -1,7 +1,8 @@
 use crate::{
     api::grpc::schema::{
         points_internal_server::PointsInternal, GetPointsRequest, GetPointsResponse,
-        Point as GrpcPoint, UpsertPointsRequest, UpsertPointsResponse,
+        Point as GrpcPoint, QueryPointsRequest, QueryPointsResponse, UpsertPointsRequest,
+        UpsertPointsResponse,
     },
     storage::{
         segment::{Point, PointId},
@@ -68,6 +69,21 @@ impl PointsInternal for PointsInternalService {
                     None // ignore UUIDs for now
                 })
                 .collect(),
+        }))
+    }
+
+    async fn query_points(
+        &self,
+        request: tonic::Request<QueryPointsRequest>,
+    ) -> Result<Response<QueryPointsResponse>, tonic::Status> {
+        let _query = request.into_inner();
+        // Assuming Query has a filter field, which is not defined in the original code
+        // let filter = _query.filter;
+
+        println!("Received internal request to query points");
+
+        Ok(Response::new(QueryPointsResponse {
+            points: vec![], // ToDo: Implement actual query logic
         }))
     }
 

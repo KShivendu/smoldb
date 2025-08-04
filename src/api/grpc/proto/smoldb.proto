@@ -64,8 +64,9 @@ message Uri {
 // Internal points service for syncing data between peers:
 
 service PointsInternal {
-  rpc GetPoints (GetPointsRequest) returns (GetPointsResponse) {}
   rpc UpsertPoints (UpsertPointsRequest) returns (UpsertPointsResponse) {}
+  rpc GetPoints (GetPointsRequest) returns (GetPointsResponse) {}
+  rpc QueryPoints (QueryPointsRequest) returns (QueryPointsResponse) {}
 }
 
 message UpsertPointsRequest {
@@ -87,6 +88,14 @@ message GetPointsRequest {
   repeated uint64 ids = 2;
   bool return_all = 3; // If true, return all points in the collection
   optional uint32 shard_id = 4;
+}
+
+message QueryPointsRequest {
+  string collection_name = 1;
+}
+
+message QueryPointsResponse {
+  repeated Point points = 1;
 }
 
 message Point {
