@@ -149,7 +149,7 @@ impl TableOfContent {
         }
     }
 
-    async fn get_collection(
+    pub async fn get_collection(
         &self,
         collection_name: &str,
     ) -> Result<RwLockReadGuard<Collection>, StorageError> {

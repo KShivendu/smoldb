@@ -144,16 +144,17 @@ impl ShardOperationTrait for RemoteShard {
         Ok(()) // Placeholder for actual remote shard logic
     }
 
-    async fn query_points(&self, _query: Query) -> CollectionResult<Vec<Point>> {
+    async fn query_points(&self, query: Query) -> CollectionResult<Vec<Point>> {
         let query_response = self
             .with_points_client(|mut client| {
+                let query = query.clone().into_grpc();
                 async move {
                     // Placeholder for actual query logic
                     // This should be replaced with the actual query implementation
                     client
                         .query_points(Request::new(QueryPointsRequest {
                             collection_name: self.collection.clone(),
-                            // filter: _query.filter, // Assuming Query has a filter field
+                            query,
                         }))
                         .await
                 }

@@ -78,9 +78,25 @@ pub struct GetPointsRequest {
     pub shard_id: ::core::option::Option<u32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryFilter {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub value: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub op: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryPointsParams {
+    #[prost(message, optional, tag = "1")]
+    pub filter: ::core::option::Option<QueryFilter>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryPointsRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub query: ::core::option::Option<QueryPointsParams>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryPointsResponse {

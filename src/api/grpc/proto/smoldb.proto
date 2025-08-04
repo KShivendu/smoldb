@@ -90,8 +90,19 @@ message GetPointsRequest {
   optional uint32 shard_id = 4;
 }
 
+message QueryFilter {
+  string key = 1;
+  string value = 2;
+  string op = 3;
+}
+
+message QueryPointsParams {
+  QueryFilter filter = 1;
+}
+
 message QueryPointsRequest {
   string collection_name = 1;
+  QueryPointsParams query = 2;
 }
 
 message QueryPointsResponse {

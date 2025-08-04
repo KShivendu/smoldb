@@ -1,8 +1,11 @@
 use crate::{
-    api::grpc::schema::{
-        points_internal_server::PointsInternal, GetPointsRequest, GetPointsResponse,
-        Point as GrpcPoint, QueryPointsRequest, QueryPointsResponse, UpsertPointsRequest,
-        UpsertPointsResponse,
+    api::{
+        grpc::schema::{
+            points_internal_server::PointsInternal, GetPointsRequest, GetPointsResponse,
+            Point as GrpcPoint, QueryPointsRequest, QueryPointsResponse, UpsertPointsRequest,
+            UpsertPointsResponse,
+        },
+        points::Query,
     },
     storage::{
         segment::{Point, PointId},
@@ -76,32 +79,63 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: tonic::Request<QueryPointsRequest>,
     ) -> Result<Response<QueryPointsResponse>, tonic::Status> {
-        let _query = request.into_inner();
-        // Assuming Query has a filter field, which is not defined in the original code
-        // let filter = _query.filter;
+        let QueryPointsRequest {
+            collection_name,
+            query,
+        } = request.into_inner();
 
         println!("Received internal request to query points");
 
+        let query = Query::from_grpc(query)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid query: {e}")))?;
+
+        let collection = self
+            .toc
+            .get_collection(&collection_name)
+            .await
+            .map_err(|e| {
+                tonic::Status::not_found(format!("Collection '{collection_name}' not found: {e}"))
+            })?;
+
+        let points = collection.query_points(query, true).await.map_err(|e| {
+            tonic::Status::internal(format!(
+                "Failed to query points in collection '{collection_name}': {e}"
+            ))
+        })?;
+
         Ok(Response::new(QueryPointsResponse {
-            points: vec![], // ToDo: Implement actual query logic
+            points: points
+                .into_iter()
+                .filter_map(|p| {
+                    if let PointId::Id(id) = p.id {
+                        // FixMe: This is a workaround for not being able to pass json just yet.
+                        let payload = p.payload.to_string();
+                        return Some(GrpcPoint { id, payload });
+                    }
+                    None // ignore UUIDs for now
+                })
+                .collect(),
         }))
     }
 
     async fn upsert_points(
         &self,
-        _request: tonic::Request<UpsertPointsRequest>,
+        request: tonic::Request<UpsertPointsRequest>,
     ) -> Result<Response<UpsertPointsResponse>, tonic::Status> {
         let UpsertPointsRequest {
             collection_name,
             points,
             shard_id: _, // ToDo: We should specify shard_id when upserting?
-        } = _request.into_inner();
+        } = request.into_inner();
         debug!("Received internal request to upsert points from collection: {collection_name}");
 
-        let collections = self.toc.collections.read().await;
-        let collection = collections.get(&collection_name).ok_or_else(|| {
-            tonic::Status::not_found(format!("Collection '{collection_name}' not found"))
-        })?;
+        let collection = self
+            .toc
+            .get_collection(&collection_name)
+            .await
+            .map_err(|e| {
+                tonic::Status::not_found(format!("Collection '{collection_name}' not found: {e}"))
+            })?;
 
         let points = points
             .into_iter()

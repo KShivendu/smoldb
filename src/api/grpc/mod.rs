@@ -1,6 +1,7 @@
 #[rustfmt::skip] // tonic uses `prettyplease` to format its output
 pub mod schema;
 
+mod conversion;
 mod points_service;
 mod raft_service;
 mod simple_service;
