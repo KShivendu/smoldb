@@ -149,7 +149,7 @@ impl TableOfContent {
         }
     }
 
-    async fn get_collection(
+    pub async fn get_collection(
         &self,
         collection_name: &str,
     ) -> Result<RwLockReadGuard<Collection>, StorageError> {
@@ -203,7 +203,7 @@ impl TableOfContent {
     ) -> Result<Vec<Point>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
 
-        collection.query_points(query).await.map_err(|e| {
+        collection.query_points(query, false).await.map_err(|e| {
             StorageError::ServiceError(format!(
                 "Failed to query points in collection '{collection_name}': {e}"
             ))
