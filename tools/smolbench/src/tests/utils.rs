@@ -52,10 +52,10 @@ pub async fn start_smoldb(
     let log_path = cwd.join(log_file); // ToDo: Add logging
 
     if !smoldb_path.exists() {
-        panic!("Smoldb executable not found at {:?}", smoldb_path);
+        panic!("Smoldb executable not found at {smoldb_path:?}");
     }
 
-    fs::create_dir_all(&peer_dir).expect("Failed to create peer directory");
+    fs::create_dir_all(peer_dir).expect("Failed to create peer directory");
 
     // Create and open log file
     let log_file = OpenOptions::new()
@@ -81,7 +81,7 @@ pub async fn start_smoldb(
     }
 
     let child = cmd
-        .current_dir(&peer_dir)
+        .current_dir(peer_dir)
         .stdout(Stdio::from(
             log_file
                 .try_clone()

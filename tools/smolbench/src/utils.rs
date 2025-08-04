@@ -8,7 +8,6 @@ pub async fn log_latencies<T>(
     let mut latencies = batch_responses
         .iter()
         .map(|res| res.time * 1000.0) // Convert s to ms
-        .map(|latency| latency as f64)
         .collect::<Vec<_>>();
 
     latencies.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
@@ -30,7 +29,7 @@ pub async fn log_latencies<T>(
         let index = ((latencies.len() as f64 * factor) as usize).min(latencies.len() - 1);
         let nines = "9".repeat(digits);
         let time = latencies[index];
-        println!("p{} {for_what} latency: {:.2} ms", nines, time);
+        println!("p{nines} {for_what} latency: {time:.2} ms");
     }
 
     println!("Max {for_what} latency: {max_latency:.2} ms");

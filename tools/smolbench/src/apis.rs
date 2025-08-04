@@ -64,7 +64,7 @@ pub async fn create_collection(
     wait: bool,
 ) -> Result<ApiSuccessResponse<bool>, SmolBenchError> {
     // First ensure that consensus is started
-    crate::apis::wait_consensus_ready(&url).await?;
+    crate::apis::wait_consensus_ready(url).await?;
 
     let client = reqwest::Client::new();
 
@@ -92,7 +92,7 @@ pub async fn create_collection(
         ApiResponse::Error(res) => Err(SmolBenchError::CreateCollectionError(res.error)),
     }?;
 
-    println!("Waiting for collection '{}' to be created", collection_name);
+    println!("Waiting for collection '{collection_name}' to be created");
     let now = std::time::Instant::now();
 
     if wait {
@@ -156,7 +156,7 @@ pub async fn delete_collection(
     wait: bool,
 ) -> Result<(), SmolBenchError> {
     // First ensure that consensus is started
-    crate::apis::wait_consensus_ready(&url).await?;
+    crate::apis::wait_consensus_ready(url).await?;
 
     let client = reqwest::Client::new();
 
@@ -166,12 +166,12 @@ pub async fn delete_collection(
         .await?;
 
     let body: ApiResponse<Value> = res.json().await?;
-    let success_res = match body {
-        ApiResponse::Success(_) => Ok(()),
+    match body {
+        ApiResponse::Success(_) => Ok(()), // ToDo: What if it isn't deleted?
         ApiResponse::Error(res) => Err(SmolBenchError::DeleteCollectionError(res.error)),
     }?;
 
-    println!("Waiting for collection '{}' to be deleted", collection_name);
+    println!("Waiting for collection '{collection_name}' to be deleted");
     let now = std::time::Instant::now();
 
     if wait {
@@ -179,7 +179,7 @@ pub async fn delete_collection(
             let deleted = !exists_collection(url, collection_name).await?;
 
             if deleted {
-                return Ok(success_res);
+                return Ok(());
             }
 
             if now.elapsed() >= WAIT_TIMEOUT {
@@ -192,7 +192,7 @@ pub async fn delete_collection(
         }
     }
 
-    Ok(success_res)
+    Ok(())
 }
 
 pub async fn upsert_points(
