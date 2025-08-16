@@ -54,7 +54,7 @@ impl Collection {
                 let shard_id = shard_id as ShardId;
                 // No remote replicas initially. They will be added by Collection::add_remote_replicas
                 let replica_set = ReplicaSet::new(
-                    LocalShard::init(shard_path, shard_id, Some(config.payload_schema.clone())),
+                    LocalShard::init(shard_path, shard_id, config.payload_schema.clone()),
                     id.clone(),
                     shard_id,
                     channel_service.clone(),
@@ -320,7 +320,8 @@ impl Collection {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CollectionConfig {
     pub params: String,
-    pub payload_schema: BTreeMap<String, IndexConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_schema: Option<BTreeMap<String, IndexConfig>>,
 }
 
 impl CollectionConfig {
