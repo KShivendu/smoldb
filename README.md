@@ -24,19 +24,33 @@ curl -X PUT http://localhost:9000/collections/test \
 curl -X PUT http://localhost:9000/collections/test/points \
   -H "Content-Type: application/json" \
   -d '{
-    "points": [ { "id": 0, "payload": { "msg": "hello world" } } ]
+    "points": [
+        { "id": 0, "payload": { "msg": "hello world" } },
+        { "id": 10, "payload": { "msg": "foo bar" } },
+        { "id": 123, "payload": { "msg": "bar baz" } }
+     ]
   }'
 
-# Get point (response below)
-curl -X GET http://localhost:9000/collections/test/points/0
+# Get all points (response below)
+curl -X GET http://localhost:9000/collections/test/points
 
-# Response:
 {
-  "id": 0,
-  "payload": {
-    "msg": "hello world"
-  }
+    "result": {
+        "points": [
+            {
+                "id": 0,
+                "payload": {
+                    "msg": "hello world"
+                }
+            },
+            # ...
+        ]
+    },
+    "time": 0.000211024
 }
+
+# Get specific point
+curl -X GET http://localhost:9000/collections/test/points/0
 
 # Get collection's cluster info (response below)
 curl -X GET http://localhost:9000/collections/test/cluster
@@ -48,12 +62,12 @@ curl -X GET http://localhost:9000/collections/test/cluster
     "local_shards": [
         {
             "shard_id": 1,
-            "point_count": 0,
+            "point_count": 1,
             "state": "Active"
         },
         {
             "shard_id": 0,
-            "point_count": 1,
+            "point_count": 2,
             "state": "Active"
         }
     ],
