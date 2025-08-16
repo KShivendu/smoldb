@@ -386,7 +386,7 @@ mod tests {
         let collection_name = "test_collection".to_string();
         let config = CollectionConfig {
             params: "test_params".to_string(),
-            payload_schema: BTreeMap::new(),
+            payload_schema: None,
         };
 
         let collection = Collection::init(
@@ -421,7 +421,7 @@ mod tests {
         let path = temp_dir.path();
         let config = CollectionConfig {
             params: "test_params".to_string(),
-            payload_schema: BTreeMap::new(),
+            payload_schema: None,
         };
 
         config.save(path).expect("Failed to save collection config");
@@ -444,10 +444,10 @@ mod tests {
         let collection_name = "test_collection".to_string();
         let config = CollectionConfig {
             params: "test_params".to_string(),
-            payload_schema: BTreeMap::from_iter([
+            payload_schema: Some(BTreeMap::from_iter([
                 ("field1".to_string(), IndexConfig::Int),
                 ("field2".to_string(), IndexConfig::Null),
-            ]),
+            ])),
         };
 
         config.save(path).expect("Failed to save collection config");
@@ -472,7 +472,7 @@ mod tests {
 
         let config = CollectionConfig {
             params: "test_params".to_string(),
-            payload_schema: BTreeMap::from_iter([("age".to_string(), IndexConfig::Int)]),
+            payload_schema: Some(BTreeMap::from_iter([("age".to_string(), IndexConfig::Int)])),
         };
 
         let collection = Collection::init(
