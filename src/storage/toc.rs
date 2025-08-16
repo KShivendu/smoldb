@@ -152,7 +152,7 @@ impl TableOfContent {
     pub async fn get_collection(
         &self,
         collection_name: &str,
-    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
+    ) -> Result<RwLockReadGuard<'_, Collection>, StorageError> {
         let collections = self.collections.read().await;
 
         if !collections.contains_key(collection_name) {
