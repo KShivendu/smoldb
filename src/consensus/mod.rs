@@ -1,4 +1,5 @@
 pub mod broker;
+pub mod consensus_wal;
 pub mod debuggables;
 pub mod manager;
 pub mod raft_storage;
@@ -10,16 +11,19 @@ use crate::{
         make_grpc_channel,
         schema::{raft_client::RaftClient, AddPeerToKnownMessage},
     },
-    consensus::{raft_storage::RaftStorage, utils::add_peer_to_toc_and_consensus_state},
+    consensus::{
+        manager::ConsensusManager, raft_storage::RaftStorage,
+        utils::add_peer_to_toc_and_consensus_state,
+    },
     error::ConsensusError,
-    storage::toc::{CollectionOperation, TableOfContent},
+    storage::toc::{CollectionOperation, TableOfContent, STORAGE_DIR},
     types::PeerId,
 };
 use http::Uri;
-use log::{error, info};
+use log::{debug, error, info};
 use raft::{
     prelude::{ConfChange, ConfChangeType, Entry, Message},
-    Config, RawNode,
+    Config, RaftState, RawNode,
 };
 use rand::Rng;
 use serde::Serialize;
@@ -27,8 +31,9 @@ use slog::{o, Drain};
 use std::{
     collections::{BTreeMap, HashMap},
     error::Error,
+    path::Path,
     sync::{
-        mpsc::{channel, Receiver, RecvTimeoutError, Sender},
+        mpsc::{Receiver, RecvTimeoutError},
         Arc,
     },
     thread::{self},
@@ -42,6 +47,8 @@ type ProposalId = u64;
 const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
 const RAFT_ELECTION_TICK_MS: usize = 10;
 const RAFT_HEARTBEAT_TICK_MS: usize = 3;
+pub const CONSENSUS_DIR: &str = "consensus";
+
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct Persistent {
@@ -49,6 +56,19 @@ pub struct Persistent {
     // Using instead of HashMap to keep peers sorted (consistent) across the nodes
     pub peers: BTreeMap<PeerId, String>,
     pub raft_info: ConsensusRaftInfo,
+}
+
+impl From<Persistent> for RaftState {
+    fn from(val: Persistent) -> RaftState {
+        // ToDo: Populate from persistent state
+        RaftState {
+            hard_state: Default::default(),
+            conf_state: raft::eraftpb::ConfState::from((
+                val.peers.keys().cloned().collect::<Vec<_>>(),
+                vec![],
+            )),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -171,7 +191,7 @@ impl Consensus {
             .await?
             .into_inner();
 
-        println!("Adding peers from bootstrap: {all_peers:?}");
+        debug!("Adding peers from bootstrap: {all_peers:?}");
         for peer in all_peers.all_peers {
             // Add peer to local state
             if peer.id == peer_id {
@@ -201,8 +221,21 @@ impl Consensus {
         consensus_state: Arc<ConsensusState>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
-    ) -> Result<Sender<Msg>, Box<dyn Error>> {
-        let (mut consensus, sender) = Self::new(peer_id, runtime, consensus_state.clone(), toc)?;
+    ) -> Result<Arc<ConsensusManager>, Box<dyn Error>> {
+        let consensus_dir = Path::new(STORAGE_DIR).join(CONSENSUS_DIR);
+        let (consensus_manager, receiver) =
+            ConsensusManager::init(consensus_dir.as_path(), consensus_state.clone());
+
+        let consensus_manager = Arc::new(consensus_manager);
+
+        let mut consensus = Self::new(
+            peer_id,
+            runtime,
+            consensus_state.clone(),
+            consensus_manager.clone(),
+            receiver,
+            toc,
+        )?;
 
         // ToDo: Send initial snapshot to new followers to speed up consensus
 
@@ -238,7 +271,7 @@ impl Consensus {
                 })
             })?;
 
-        Ok(sender)
+        Ok(consensus_manager)
     }
 
     /// Create a new Consensus instance with a Raft node, sender, and receiver.
@@ -246,11 +279,11 @@ impl Consensus {
         peer_id: PeerId,
         runtime: Handle,
         consensus_state: Arc<ConsensusState>,
+        consensus_manager: Arc<ConsensusManager>,
+        receiver: Receiver<Msg>,
         toc: Arc<TableOfContent>,
-    ) -> Result<(Self, Sender<Msg>), Box<dyn Error>> {
-        // let storage = MemStorage::default();
-
-        let storage = RaftStorage::new(peer_id);
+    ) -> Result<Self, Box<dyn Error>> {
+        let storage = RaftStorage::new(peer_id, consensus_manager.clone());
         let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!());
 
         let config = Config {
@@ -263,8 +296,6 @@ impl Consensus {
 
         info!("Created Raft node with ID: {peer_id}");
 
-        let (sender, receiver) = channel::<Msg>();
-
         let consensus = Consensus {
             peer_id,
             raft_node: raft,
@@ -274,7 +305,7 @@ impl Consensus {
             consensus_state,
         };
 
-        Ok((consensus, sender))
+        Ok(consensus)
     }
 
     /// Run the consensus loop at each tick.

@@ -6,17 +6,20 @@ mod points_service;
 mod raft_service;
 mod simple_service;
 
-use crate::api::{
-    dispatcher::Dispatcher,
-    grpc::{
-        points_service::PointsInternalService,
-        raft_service::RaftService,
-        schema::{
-            points_internal_server::PointsInternalServer, raft_server::RaftServer,
-            smol_server::SmolServer,
+use crate::{
+    api::{
+        dispatcher::Dispatcher,
+        grpc::{
+            points_service::PointsInternalService,
+            raft_service::RaftService,
+            schema::{
+                points_internal_server::PointsInternalServer, raft_server::RaftServer,
+                smol_server::SmolServer,
+            },
+            simple_service::SmolService,
         },
-        simple_service::SmolService,
     },
+    error::ConsensusError,
 };
 use http::Uri;
 use std::{
@@ -65,7 +68,7 @@ pub async fn init(
     host: String,
     grpc_port: u16,
     dispatcher: Arc<Dispatcher>,
-) -> std::io::Result<()> {
+) -> Result<(), ConsensusError> {
     let mut server = Server::builder();
     let socket = SocketAddr::from((
         host.parse::<IpAddr>()
@@ -77,7 +80,12 @@ pub async fn init(
 
     let points_service =
         PointsInternalServer::new(PointsInternalService::new(dispatcher.toc.clone()));
-    let raft_service = RaftServer::new(RaftService::new(dispatcher));
+
+    let consensus = dispatcher.get_consensus()?;
+    let sender = consensus.sender.clone();
+    let state = consensus.state.clone();
+
+    let raft_service = RaftServer::new(RaftService::new(state, sender));
 
     server
         .add_service(smol_service)
@@ -88,7 +96,7 @@ pub async fn init(
             wait_stop_signal("gRPC server").await;
         })
         .await
-        .map_err(|e| std::io::Error::other(format!("Failed to start gRPC server: {e}",)))?;
+        .map_err(|e| ConsensusError::ServiceError(format!("Failed to start gRPC server: {e}",)))?;
 
     Ok(())
 }

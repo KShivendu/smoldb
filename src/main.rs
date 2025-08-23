@@ -8,7 +8,7 @@ pub mod types;
 
 use crate::api::{dispatcher::Dispatcher, start_http_server, start_p2p_server};
 use crate::channel_service::ChannelService;
-use crate::consensus::{manager::ConsensusManager, Consensus, ConsensusState};
+use crate::consensus::{Consensus, ConsensusState};
 use crate::storage::toc::TableOfContent;
 use args::parse_args;
 use slog::{o, Drain};
@@ -55,7 +55,7 @@ async fn main() -> std::io::Result<()> {
     let toc = TableOfContent::load(channel_service);
     let toc_arc = Arc::new(toc);
 
-    let sender = Consensus::start(
+    let consensus_manager = Consensus::start(
         consensus_state.persistent.read().await.peer_id,
         args.bootstrap.clone(),
         consensus_state.clone(),
@@ -64,9 +64,7 @@ async fn main() -> std::io::Result<()> {
     )
     .expect("Failed to start consensus thread and loop");
 
-    let consensus_manager = ConsensusManager::new(consensus_state.clone(), sender);
-
-    let dispatcher = Dispatcher::from(toc_arc, Some(Arc::new(consensus_manager)));
+    let dispatcher = Dispatcher::from(toc_arc, Some(consensus_manager));
     let dispatcher_arc = Arc::new(dispatcher);
 
     let rt_http = rt.handle().clone();

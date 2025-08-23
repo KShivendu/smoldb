@@ -1,25 +1,24 @@
 use crate::{
-    api::{
-        dispatcher::{self, Dispatcher},
-        grpc::schema::{
-            raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
-            RaftMessage as RaftMessageBytes, Uri,
-        },
+    api::grpc::schema::{
+        raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
+        RaftMessage as RaftMessageBytes, Uri,
     },
-    consensus::{self},
+    consensus::{self, ConsensusState, Msg},
 };
 use prost_for_raft::Message as ProtocolBufferMessage; // this trait is required for .decode() to work
 use raft::eraftpb::Message as RaftMessageParsed;
-use std::sync::Arc;
+use std::sync::{mpsc::Sender, Arc};
 use tonic::{Request, Response, Status};
 
 pub struct RaftService {
-    dispatcher: Arc<dispatcher::Dispatcher>,
+    state: Arc<ConsensusState>,
+    sender: Sender<Msg>,
 }
 
 impl RaftService {
-    pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
-        RaftService { dispatcher }
+    pub fn new(state: Arc<ConsensusState>, sender: Sender<Msg>) -> Self {
+        // We can't pass Dispatcher directly because ConsensusManager has Wal that is not Send + Sync
+        RaftService { state, sender }
     }
 }
 
@@ -36,16 +35,12 @@ impl Raft for RaftService {
         // let msg = DebuggableMessage::from(&message);
         // msg.log("Received Raft message via gRPC");
 
-        let consensus = self
-            .dispatcher
-            .get_consensus()
-            .map_err(|e| Status::internal(format!("Failed to get consensus: {e}")))?;
-
-        consensus
-            .sender
+        self.sender
             .send(consensus::Msg::Raft(Box::new(message)))
             .map_err(|e| {
-                Status::internal(format!("Failed to send Raft message over channel: {e}"))
+                Status::internal(format!(
+                    "Failed to send Raft message to consensus manager: {e}"
+                ))
             })?;
 
         Ok(Response::new(()))
@@ -74,7 +69,7 @@ impl Raft for RaftService {
         let uri = peer_uri.map(|u| u.parse::<http::Uri>().unwrap()).unwrap();
 
         let (this_peer_id, all_peers) = self
-            .dispatcher
+            .state
             .add_peer(peer_id, uri)
             .await
             .map_err(|e| Status::internal(format!("Failed to add peer: {e}")))?;

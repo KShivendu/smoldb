@@ -16,6 +16,7 @@ use tokio::sync::RwLock;
 use tokio::sync::RwLockReadGuard;
 
 pub const COLLECTIONS_DIR: &str = "collections";
+pub const STORAGE_DIR: &str = "storage";
 
 pub struct TableOfContent {
     pub collections: Arc<RwLock<HashMap<CollectionName, Collection>>>,
@@ -35,7 +36,7 @@ pub enum CollectionOperation {
 
 impl TableOfContent {
     pub fn load(channel_service: ChannelService) -> Self {
-        let collections_path = Path::new("storage").join(COLLECTIONS_DIR);
+        let collections_path = Path::new(STORAGE_DIR).join(COLLECTIONS_DIR);
         std::fs::create_dir_all(&collections_path).expect("Failed to create collections directory");
         let channel_service = Arc::new(channel_service);
 
@@ -77,7 +78,7 @@ impl TableOfContent {
 
     /// Creates a new directory at the expected collection path.
     pub async fn mkdir_collection_dir(collection_name: &str) -> Result<PathBuf, StorageError> {
-        let path = Path::new("storage")
+        let path = Path::new(STORAGE_DIR)
             .join(COLLECTIONS_DIR)
             .join(collection_name);
 

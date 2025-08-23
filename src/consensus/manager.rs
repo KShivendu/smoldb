@@ -3,16 +3,36 @@ use crate::{
     error::ConsensusError,
 };
 use rand::Rng;
-use std::sync::{mpsc::Sender, Arc};
+use std::{
+    path::Path,
+    sync::{
+        mpsc::{channel, Receiver, Sender},
+        Arc, Mutex,
+    },
+};
+use wal::Wal;
 
 pub struct ConsensusManager {
+    pub wal: Mutex<Wal>, // This is important to ensure ConsensusManager remains thread safe (i.e. Send + Sync)
     pub state: Arc<ConsensusState>,
     pub sender: Sender<Msg>,
 }
 
+// unsafe impl Sync for ConsensusManager {}
+// unsafe impl Send for ConsensusManager {}
+
 impl ConsensusManager {
-    pub fn new(state: Arc<ConsensusState>, sender: Sender<Msg>) -> Self {
-        ConsensusManager { state, sender }
+    pub fn init(path: &Path, state: Arc<ConsensusState>) -> (Self, Receiver<Msg>) {
+        std::fs::create_dir_all(path).expect("Failed to create consensus storage directory");
+        let wal = Mutex::new(Wal::open(path).expect("Failed to open consensus WAL"));
+        // let wal = ConsensusWal::new(path).expect("Failed to open consensus WAL");
+        let (sender, receiver) = channel::<Msg>();
+
+        (ConsensusManager { wal, state, sender }, receiver)
+    }
+
+    pub fn wal(&self) -> std::sync::MutexGuard<'_, Wal> {
+        self.wal.lock().expect("Failed to lock WAL")
     }
 
     pub async fn is_ready(&self) -> bool {
@@ -25,6 +45,12 @@ impl ConsensusManager {
 
     pub async fn get_cluster_info(&self) -> Persistent {
         self.state.persistent.read().await.clone()
+    }
+
+    pub async fn send(&self, msg: Msg) -> Result<(), ConsensusError> {
+        self.sender.send(msg).map_err(|e| {
+            ConsensusError::ServiceError(format!("Failed to send message over channel: {e}"))
+        })
     }
 
     pub async fn propose_consensus_op(
