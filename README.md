@@ -77,3 +77,17 @@ curl -X GET http://localhost:9000/collections/test/cluster
 ```
 
 Check [roadmap](./ROADMAP.md) for details
+
+## citation
+
+if you find this work useful in your research, please consider citing:
+```bibtex
+@software{smoldb2025,
+  author = {kshivendu},
+  title = {kshivendu: a small distributed database built in Rust},
+  year = {2025},
+  publisher = {github},
+  journal = {github repository},
+  url = {https://github.com/kshivendu/smoldb}
+}
+```

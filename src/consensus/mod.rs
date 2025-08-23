@@ -1,5 +1,4 @@
 pub mod broker;
-pub mod consensus_wal;
 pub mod debuggables;
 pub mod manager;
 pub mod raft_storage;

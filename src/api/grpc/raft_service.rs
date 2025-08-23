@@ -1,24 +1,26 @@
 use crate::{
-    api::grpc::schema::{
-        raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
-        RaftMessage as RaftMessageBytes, Uri,
+    api::{
+        dispatcher::Dispatcher,
+        grpc::schema::{
+            raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
+            RaftMessage as RaftMessageBytes, Uri,
+        },
     },
-    consensus::{self, ConsensusState, Msg},
+    consensus::{self},
 };
 use prost_for_raft::Message as ProtocolBufferMessage; // this trait is required for .decode() to work
 use raft::eraftpb::Message as RaftMessageParsed;
-use std::sync::{mpsc::Sender, Arc};
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub struct RaftService {
-    state: Arc<ConsensusState>,
-    sender: Sender<Msg>,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl RaftService {
-    pub fn new(state: Arc<ConsensusState>, sender: Sender<Msg>) -> Self {
+    pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
         // We can't pass Dispatcher directly because ConsensusManager has Wal that is not Send + Sync
-        RaftService { state, sender }
+        RaftService { dispatcher }
     }
 }
 
@@ -35,7 +37,12 @@ impl Raft for RaftService {
         // let msg = DebuggableMessage::from(&message);
         // msg.log("Received Raft message via gRPC");
 
-        self.sender
+        let consensus = self
+            .dispatcher
+            .get_consensus()
+            .map_err(|e| Status::internal(format!("Failed to get consensus: {e}")))?;
+
+        consensus
             .send(consensus::Msg::Raft(Box::new(message)))
             .map_err(|e| {
                 Status::internal(format!(
@@ -69,7 +76,7 @@ impl Raft for RaftService {
         let uri = peer_uri.map(|u| u.parse::<http::Uri>().unwrap()).unwrap();
 
         let (this_peer_id, all_peers) = self
-            .state
+            .dispatcher
             .add_peer(peer_id, uri)
             .await
             .map_err(|e| Status::internal(format!("Failed to add peer: {e}")))?;

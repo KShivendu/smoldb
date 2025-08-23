@@ -81,11 +81,7 @@ pub async fn init(
     let points_service =
         PointsInternalServer::new(PointsInternalService::new(dispatcher.toc.clone()));
 
-    let consensus = dispatcher.get_consensus()?;
-    let sender = consensus.sender.clone();
-    let state = consensus.state.clone();
-
-    let raft_service = RaftServer::new(RaftService::new(state, sender));
+    let raft_service = RaftServer::new(RaftService::new(dispatcher));
 
     server
         .add_service(smol_service)

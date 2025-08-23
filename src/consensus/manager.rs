@@ -47,7 +47,7 @@ impl ConsensusManager {
         self.state.persistent.read().await.clone()
     }
 
-    pub async fn send(&self, msg: Msg) -> Result<(), ConsensusError> {
+    pub fn send(&self, msg: Msg) -> Result<(), ConsensusError> {
         self.sender.send(msg).map_err(|e| {
             ConsensusError::ServiceError(format!("Failed to send message over channel: {e}"))
         })
