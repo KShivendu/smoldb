@@ -1,5 +1,6 @@
 use crate::{
-    consensus::{ConsensusOperation, ConsensusState, Msg, Persistent},
+    consensus::state::Persistent,
+    consensus::{ConsensusOperation, ConsensusState, Msg},
     error::ConsensusError,
 };
 use rand::Rng;

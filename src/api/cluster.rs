@@ -1,6 +1,6 @@
 use crate::{
     api::{dispatcher::Dispatcher, helpers},
-    consensus::Persistent,
+    consensus::state::Persistent,
 };
 use actix_web::{get, web, Responder};
 

@@ -8,7 +8,7 @@ pub mod types;
 
 use crate::api::{dispatcher::Dispatcher, start_http_server, start_p2p_server};
 use crate::channel_service::ChannelService;
-use crate::consensus::{Consensus, ConsensusState};
+use crate::consensus::{state::ConsensusState, Consensus};
 use crate::storage::toc::TableOfContent;
 use args::parse_args;
 use slog::{o, Drain};

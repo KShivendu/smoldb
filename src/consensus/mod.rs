@@ -3,6 +3,7 @@ pub mod debuggables;
 pub mod manager;
 pub mod raft_storage;
 pub mod ready_processor;
+pub mod state;
 pub mod utils;
 
 use crate::{
@@ -11,10 +12,9 @@ use crate::{
         schema::{raft_client::RaftClient, AddPeerToKnownMessage},
     },
     consensus::{
-        manager::ConsensusManager, raft_storage::RaftStorage,
+        manager::ConsensusManager, raft_storage::RaftStorage, state::ConsensusState,
         utils::add_peer_to_toc_and_consensus_state,
     },
-    error::ConsensusError,
     storage::toc::{CollectionOperation, TableOfContent, STORAGE_DIR},
     types::PeerId,
 };
@@ -22,13 +22,11 @@ use http::Uri;
 use log::{debug, error, info};
 use raft::{
     prelude::{ConfChange, ConfChangeType, Entry, Message},
-    Config, RaftState, RawNode,
+    Config, RawNode,
 };
-use rand::Rng;
-use serde::Serialize;
 use slog::{o, Drain};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     error::Error,
     path::Path,
     sync::{
@@ -38,8 +36,7 @@ use std::{
     thread::{self},
     time::{Duration, Instant},
 };
-use tokio::{runtime::Handle, sync::RwLock};
-use utoipa::ToSchema;
+use tokio::runtime::Handle;
 
 type ProposalId = u64;
 
@@ -47,122 +44,6 @@ const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
 const RAFT_ELECTION_TICK_MS: usize = 10;
 const RAFT_HEARTBEAT_TICK_MS: usize = 3;
 pub const CONSENSUS_DIR: &str = "consensus";
-
-
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct Persistent {
-    pub peer_id: PeerId,
-    // Using instead of HashMap to keep peers sorted (consistent) across the nodes
-    pub peers: BTreeMap<PeerId, String>,
-    pub raft_info: ConsensusRaftInfo,
-}
-
-impl From<Persistent> for RaftState {
-    fn from(val: Persistent) -> RaftState {
-        // ToDo: Populate from persistent state
-        RaftState {
-            hard_state: Default::default(),
-            conf_state: raft::eraftpb::ConfState::from((
-                val.peers.keys().cloned().collect::<Vec<_>>(),
-                vec![],
-            )),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct ConsensusState {
-    // Can't use async RwLock (tokio) here because `raft::Storage` trait methods are not async
-    pub persistent: std::sync::RwLock<Persistent>,
-
-    // ToDo: This is redundant with `persistent.peers`. Consider removing it
-    // This is shared with `ChannelService`
-    pub peer_address_by_id: Arc<RwLock<HashMap<PeerId, Uri>>>,
-}
-
-impl ConsensusState {
-    pub fn get_peer_id(&self) -> PeerId {
-        let persistent = self
-            .persistent
-            .read()
-            .expect("Failed to read persistent state");
-        persistent.peer_id
-    }
-
-    /// Return a read lock on the persistent state
-    pub fn read_persistent(&self) -> std::sync::RwLockReadGuard<'_, Persistent> {
-        self.persistent
-            .read()
-            .expect("Failed to read persistent state")
-    }
-
-    /// Return a write lock on the persistent state
-    pub fn write_persistent(&self) -> std::sync::RwLockWriteGuard<'_, Persistent> {
-        self.persistent
-            .write()
-            .expect("Failed to acquire persistent state write lock")
-    }
-}
-
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct ConsensusRaftInfo {
-    pub term: u64,
-    pub commit: u64,
-    // ToDo: Introduce pending_operations field
-    pub role: String, // "leader", "follower", etc.
-    pub leader: PeerId,
-}
-
-impl ConsensusState {
-    /// Create a new ConsensusState with a given p2p URI and optional default peer ID.
-    pub fn new(p2p_uri: http::Uri, default_peer_id: Option<PeerId>) -> Self {
-        let mut rng = rand::rng();
-        // Do not generate too big peer ID, to avoid problems with serialization
-        let peer_id = default_peer_id.unwrap_or_else(|| rng.random::<PeerId>() % (1 << 53));
-
-        let p = Persistent {
-            peer_id,
-            peers: BTreeMap::from([(peer_id, p2p_uri.to_string())]),
-            raft_info: ConsensusRaftInfo {
-                term: 0,
-                commit: 0,
-                role: "".to_string(),
-                leader: 0,
-            },
-        };
-        ConsensusState {
-            persistent: std::sync::RwLock::new(p),
-            peer_address_by_id: Arc::new(RwLock::new(HashMap::from([(peer_id, p2p_uri)]))),
-        }
-    }
-
-    pub async fn add_peer(
-        &self,
-        peer_id: PeerId,
-        uri: Uri,
-    ) -> Result<(PeerId, Vec<(PeerId, String)>), ConsensusError> {
-        // Add a new peer to the consensus state
-        let mut peer_address_by_id = self.peer_address_by_id.write().await;
-        peer_address_by_id.insert(peer_id, uri.clone());
-        let mut persistent = self.write_persistent();
-        persistent.peers.insert(peer_id, uri.to_string());
-
-        // ToDo: Should return leader peer ID instead of current peer ID
-        let this_peer_id = persistent.peer_id;
-        let latest_peers = persistent.peers.clone().into_iter().collect();
-
-        Ok((this_peer_id, latest_peers))
-    }
-
-    pub async fn get_peer_uri(&self, peer_id: PeerId) -> Result<Uri, ConsensusError> {
-        let peer_address_by_id = self.peer_address_by_id.read().await;
-        peer_address_by_id
-            .get(&peer_id)
-            .cloned()
-            .ok_or_else(|| ConsensusError::ServiceError(format!("Peer ID {peer_id} not found")))
-    }
-}
-
 /// Holds raft consensus state and handles bootstrapping,
 /// adding peers, and running the consensus loop.
 pub struct Consensus {
@@ -407,7 +288,7 @@ impl Consensus {
                 continue; // No ready state to processing ticking, continue to the next iteration
             }
 
-            self.on_ready(&mut callbacks).await;
+            self.on_ready(&mut callbacks).await?;
         }
     }
 }

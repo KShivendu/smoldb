@@ -20,7 +20,7 @@ use crate::{
         },
         service::{root_api, RootApiResponse},
     },
-    consensus::Persistent,
+    consensus::state::Persistent,
     storage::{collection::CollectionInfo, segment::Point},
 };
 

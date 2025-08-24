@@ -1,6 +1,9 @@
-use crate::consensus::{
-    debuggables::DebuggableEntry, utils::add_peer_to_toc_and_consensus_state, Consensus,
-    ConsensusOperation, ProposalId,
+use crate::{
+    consensus::{
+        debuggables::DebuggableEntry, utils::add_peer_to_toc_and_consensus_state, Consensus,
+        ConsensusOperation, ProposalId,
+    },
+    error::ConsensusResult,
 };
 use http::Uri;
 use log::{info, warn};
@@ -17,10 +20,13 @@ impl Consensus {
     /// [`raft::Ready`] is the outstanding work that the application needs to handle.
     ///
     /// [`raft::LightReady`] is the result of processing the ready state that might need further processing.
-    pub async fn on_ready(&mut self, _cbs: &mut HashMap<ProposalId, Box<dyn Fn() + Send>>) {
+    pub async fn on_ready(
+        &mut self,
+        _cbs: &mut HashMap<ProposalId, Box<dyn Fn() + Send>>,
+    ) -> ConsensusResult<()> {
         loop {
             if !self.raft_node.has_ready() {
-                return;
+                return Ok(());
             }
 
             let store = self.raft_node.raft.raft_log.store.clone();
@@ -45,14 +51,14 @@ impl Consensus {
             }
 
             let mut last_apply_index = 0; // ToDo: Should be stored globally in a state?
-            self.handle_committed_entries(ready.take_committed_entries(), &mut last_apply_index);
+            self.handle_committed_entries(ready.take_committed_entries(), &mut last_apply_index)?;
 
             if !ready.entries().is_empty() {
                 store.append_entries(ready.entries()).unwrap();
             }
 
             if let Some(updated_hs) = ready.hs() {
-                self.handle_hard_state_change(updated_hs);
+                self.handle_hard_state_change(updated_hs)?;
             }
 
             if let Some(ss_change) = ready.ss() {
@@ -67,13 +73,13 @@ impl Consensus {
             let mut light_ready = self.raft_node.advance(ready);
             // Process the light ready state if it suggest further actions.
             if let Some(commit) = light_ready.commit_index() {
-                self.handle_hard_state_commit_change(commit);
+                self.handle_hard_state_commit_change(commit)?;
             }
             self.send_messages(light_ready.take_messages()).await;
             self.handle_committed_entries(
                 light_ready.take_committed_entries(),
                 &mut last_apply_index,
-            );
+            )?;
             self.raft_node.advance_apply();
         }
     }
@@ -81,7 +87,11 @@ impl Consensus {
     /// ToDo: This function should actually apply the committed entries to the state machine.
     ///
     /// However it currently pushes forwards ones to other peers via gRPC
-    fn handle_committed_entries(&mut self, entries: Vec<Entry>, last_apply_index: &mut u64) {
+    fn handle_committed_entries(
+        &mut self,
+        entries: Vec<Entry>,
+        last_apply_index: &mut u64,
+    ) -> ConsensusResult<()> {
         for entry in entries {
             // ToDo: Save the last apply index to resume applying after restart.
             // Here we just ignore this because we use a Memory storage.
@@ -96,8 +106,10 @@ impl Consensus {
                 EntryType::EntryNormal => self.handle_normal(entry),
                 EntryType::EntryConfChange => self.handle_conf_change(entry),
                 EntryType::EntryConfChangeV2 => self.handle_conf_change_v2(entry),
-            }
+            }?
         }
+
+        Ok(())
     }
 
     /// Handle soft state change.
@@ -116,7 +128,10 @@ impl Consensus {
         });
     }
 
-    fn handle_hard_state_change(&self, new_hard_state: &raft::eraftpb::HardState) {
+    fn handle_hard_state_change(
+        &self,
+        new_hard_state: &raft::eraftpb::HardState,
+    ) -> ConsensusResult<()> {
         info!("Raft hard state changed to: {new_hard_state:?}");
 
         // Update consensus state with new hard state
@@ -130,10 +145,10 @@ impl Consensus {
             // consensus_state.raft_info.last_applied = ; // ToDo??
         });
 
-        self.raft_node.store().set_hardstate(new_hard_state.clone());
+        self.raft_node.store().set_hardstate(new_hard_state.clone())
     }
 
-    fn handle_hard_state_commit_change(&self, commit: u64) {
+    fn handle_hard_state_commit_change(&self, commit: u64) -> ConsensusResult<()> {
         info!("Raft hard state commit changed to: {commit}");
 
         // Update consensus state with new commit index
@@ -147,10 +162,10 @@ impl Consensus {
             consensus_state.raft_info.commit = commit;
         });
 
-        self.raft_node.store().set_hardstate_commit(commit);
+        self.raft_node.store().set_hardstate_commit(commit)
     }
 
-    fn handle_normal(&self, entry: Entry) {
+    fn handle_normal(&self, entry: Entry) -> ConsensusResult<()> {
         let operation =
             ConsensusOperation::from_entry(&entry).expect("Entry data should be decodable");
         info!("Operation to apply: {operation:?}");
@@ -178,19 +193,22 @@ impl Consensus {
                 warn!("Ignored consensus operation: {operation:?}");
             }),
         };
+
+        Ok(())
     }
 
-    fn handle_conf_change(&mut self, entry: Entry) {
+    fn handle_conf_change(&mut self, entry: Entry) -> ConsensusResult<()> {
         let debuggable_entry = DebuggableEntry::from(&entry);
         debuggable_entry.log("Handling conf change entry");
 
         let mut cc = ConfChange::default();
         ProtobufMessage::merge_from_bytes(&mut cc, &entry.data).unwrap();
         let cs = self.raft_node.apply_conf_change(&cc).unwrap();
-        self.raft_node.raft.store().set_conf_state(cs);
+        self.raft_node.raft.store().set_conf_state(cs)?;
+        Ok(())
     }
 
-    fn handle_conf_change_v2(&self, _entry: Entry) {
+    fn handle_conf_change_v2(&self, _entry: Entry) -> ConsensusResult<()> {
         unimplemented!("Not implemented yet for conf change v2");
     }
 }

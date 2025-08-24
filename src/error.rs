@@ -18,6 +18,12 @@ pub enum ConsensusError {
     NotEnabled,
     #[error("Consensus is not ready yet")]
     NotReady,
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("JSON error: {0}")]
+    JsonError(#[from] serde_json::Error),
+    #[error("Raft error: {0}")]
+    RaftError(#[from] raft::Error),
     #[error("Service error: {0}")]
     ServiceError(String),
 }
@@ -46,3 +52,4 @@ impl From<tonic::Status> for CollectionError {
 }
 
 pub type CollectionResult<T> = Result<T, CollectionError>;
+pub type ConsensusResult<T> = Result<T, ConsensusError>;
