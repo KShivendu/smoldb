@@ -110,7 +110,7 @@ impl Consensus {
         let extra_runtime = self.runtime.clone();
         let consensus_state = self.consensus_state.clone();
         extra_runtime.spawn(async move {
-            let mut consensus_state = consensus_state.persistent.write().await;
+            let mut consensus_state = consensus_state.write_persistent();
             consensus_state.raft_info.role = new_role;
             consensus_state.raft_info.leader = new_leader;
         });
@@ -124,7 +124,7 @@ impl Consensus {
         let extra_runtime = self.runtime.clone();
         let consensus_state = self.consensus_state.clone();
         extra_runtime.spawn(async move {
-            let mut consensus_state = consensus_state.persistent.write().await;
+            let mut consensus_state = consensus_state.write_persistent();
             consensus_state.raft_info.term = hs.term;
             consensus_state.raft_info.commit = hs.commit;
             // consensus_state.raft_info.last_applied = ; // ToDo??
@@ -140,7 +140,10 @@ impl Consensus {
         let extra_runtime = self.runtime.clone();
         let consensus_state = self.consensus_state.clone();
         extra_runtime.spawn(async move {
-            let mut consensus_state = consensus_state.persistent.write().await;
+            let mut consensus_state = consensus_state
+                .persistent
+                .write()
+                .expect("Failed to acquire persistent state write lock");
             consensus_state.raft_info.commit = commit;
         });
 

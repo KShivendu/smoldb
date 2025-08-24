@@ -28,7 +28,7 @@ impl Dispatcher {
     }
 
     pub async fn get_peer_id(&self) -> Result<PeerId, ConsensusError> {
-        Ok(self.get_consensus()?.state.get_peer_id().await)
+        Ok(self.get_consensus()?.state.get_peer_id())
     }
 
     pub async fn submit_collection_op(

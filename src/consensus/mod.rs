@@ -72,8 +72,8 @@ impl From<Persistent> for RaftState {
 
 #[derive(Debug)]
 pub struct ConsensusState {
-    // ToDo: Replace with parking_lot::RwLock?
-    pub persistent: RwLock<Persistent>,
+    // Can't use async RwLock (tokio) here because `raft::Storage` trait methods are not async
+    pub persistent: std::sync::RwLock<Persistent>,
 
     // ToDo: This is redundant with `persistent.peers`. Consider removing it
     // This is shared with `ChannelService`
@@ -81,8 +81,26 @@ pub struct ConsensusState {
 }
 
 impl ConsensusState {
-    pub async fn get_peer_id(&self) -> PeerId {
-        self.persistent.read().await.peer_id
+    pub fn get_peer_id(&self) -> PeerId {
+        let persistent = self
+            .persistent
+            .read()
+            .expect("Failed to read persistent state");
+        persistent.peer_id
+    }
+
+    /// Return a read lock on the persistent state
+    pub fn read_persistent(&self) -> std::sync::RwLockReadGuard<'_, Persistent> {
+        self.persistent
+            .read()
+            .expect("Failed to read persistent state")
+    }
+
+    /// Return a write lock on the persistent state
+    pub fn write_persistent(&self) -> std::sync::RwLockWriteGuard<'_, Persistent> {
+        self.persistent
+            .write()
+            .expect("Failed to acquire persistent state write lock")
     }
 }
 
@@ -113,7 +131,7 @@ impl ConsensusState {
             },
         };
         ConsensusState {
-            persistent: RwLock::new(p),
+            persistent: std::sync::RwLock::new(p),
             peer_address_by_id: Arc::new(RwLock::new(HashMap::from([(peer_id, p2p_uri)]))),
         }
     }
@@ -126,7 +144,7 @@ impl ConsensusState {
         // Add a new peer to the consensus state
         let mut peer_address_by_id = self.peer_address_by_id.write().await;
         peer_address_by_id.insert(peer_id, uri.clone());
-        let mut persistent = self.persistent.write().await;
+        let mut persistent = self.write_persistent();
         persistent.peers.insert(peer_id, uri.to_string());
 
         // ToDo: Should return leader peer ID instead of current peer ID
@@ -172,7 +190,7 @@ impl Consensus {
         )
         .await?;
 
-        let persistent = consensus_state.persistent.read().await.clone();
+        let persistent = consensus_state.read_persistent().clone();
         let peer_id = persistent.peer_id;
         let peer_uri = persistent
             .peers

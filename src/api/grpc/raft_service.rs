@@ -19,7 +19,6 @@ pub struct RaftService {
 
 impl RaftService {
     pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
-        // We can't pass Dispatcher directly because ConsensusManager has Wal that is not Send + Sync
         RaftService { dispatcher }
     }
 }
@@ -45,9 +44,7 @@ impl Raft for RaftService {
         consensus
             .send(consensus::Msg::Raft(Box::new(message)))
             .map_err(|e| {
-                Status::internal(format!(
-                    "Failed to send Raft message to consensus manager: {e}"
-                ))
+                Status::internal(format!("Failed to send Raft message over channel: {e}"))
             })?;
 
         Ok(Response::new(()))

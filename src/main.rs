@@ -48,7 +48,7 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_state = Arc::new(ConsensusState::new(args.p2p_url.clone(), args.peer_id));
     let channel_service = ChannelService::new(
-        consensus_state.get_peer_id().await,
+        consensus_state.get_peer_id(),
         consensus_state.peer_address_by_id.clone(),
     );
 
@@ -56,7 +56,7 @@ async fn main() -> std::io::Result<()> {
     let toc_arc = Arc::new(toc);
 
     let consensus_manager = Consensus::start(
-        consensus_state.persistent.read().await.peer_id,
+        consensus_state.get_peer_id(),
         args.bootstrap.clone(),
         consensus_state.clone(),
         toc_arc.clone(),

@@ -18,14 +18,10 @@ pub struct ConsensusManager {
     pub sender: Sender<Msg>,
 }
 
-// unsafe impl Sync for ConsensusManager {}
-// unsafe impl Send for ConsensusManager {}
-
 impl ConsensusManager {
     pub fn init(path: &Path, state: Arc<ConsensusState>) -> (Self, Receiver<Msg>) {
         std::fs::create_dir_all(path).expect("Failed to create consensus storage directory");
         let wal = Mutex::new(Wal::open(path).expect("Failed to open consensus WAL"));
-        // let wal = ConsensusWal::new(path).expect("Failed to open consensus WAL");
         let (sender, receiver) = channel::<Msg>();
 
         (ConsensusManager { wal, state, sender }, receiver)
@@ -36,7 +32,7 @@ impl ConsensusManager {
     }
 
     pub async fn is_ready(&self) -> bool {
-        let p = self.state.persistent.read().await;
+        let p = self.state.read_persistent();
         // Intentionally didn't make it a Option because raft crate sets individual fields at a time
         // and doing that will complicate the logic with no benefit.
         // Downside of using a badly designed library 😢
@@ -44,7 +40,7 @@ impl ConsensusManager {
     }
 
     pub async fn get_cluster_info(&self) -> Persistent {
-        self.state.persistent.read().await.clone()
+        self.state.read_persistent().clone()
     }
 
     pub fn send(&self, msg: Msg) -> Result<(), ConsensusError> {
