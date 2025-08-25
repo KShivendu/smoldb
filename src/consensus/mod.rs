@@ -181,7 +181,7 @@ impl Consensus {
         receiver: Receiver<Msg>,
         toc: Arc<TableOfContent>,
     ) -> Result<Self, Box<dyn Error>> {
-        let storage = RaftStorage::new(peer_id, consensus_manager.clone());
+        let storage = RaftStorage::new(peer_id, consensus_manager.clone(), false);
         let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!());
 
         let config = Config {

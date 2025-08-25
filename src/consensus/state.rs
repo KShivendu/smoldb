@@ -81,7 +81,14 @@ impl Persistent {
                     role: "".to_string(),
                     leader: 0,
                 },
-                raft_state: RaftState::default(),
+                raft_state: RaftState {
+                    hard_state: HardState {
+                        term: 1,
+                        vote: 1,
+                        commit: 1,
+                    },
+                    conf_state: ConfState::from((vec![peer_id], vec![])),
+                },
             };
             default.save()?;
             default

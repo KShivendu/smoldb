@@ -56,6 +56,9 @@ rusty-hook = "0.11.2"
 [features]
 default = []
 
+[profile.dev]
+debug = true # important for debugging deps with lldb
+
 [profile.bench]
 debug = true
 

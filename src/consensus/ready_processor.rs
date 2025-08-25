@@ -54,7 +54,7 @@ impl Consensus {
             self.handle_committed_entries(ready.take_committed_entries(), &mut last_apply_index)?;
 
             if !ready.entries().is_empty() {
-                store.append_entries(ready.entries()).unwrap();
+                store.append_entries(ready.entries())?;
             }
 
             if let Some(updated_hs) = ready.hs() {
