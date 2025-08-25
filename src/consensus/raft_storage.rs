@@ -52,7 +52,7 @@ impl RaftStorage {
         }
 
         info!("Appending {} entries to Raft log", entries.len());
-        info!("Entries: {:?}", entries);
+        info!("Entries: {entries:?}");
 
         if let Some(mem_storage) = &self.mem_storage {
             mem_storage.wl().append(entries)?;
@@ -238,11 +238,11 @@ impl Storage for RaftStorage {
 // WAL index starts from 0
 // But raft Entry index starts from 1
 impl ConsensusManager {
-    fn to_raft_index(&self, wal_index: u64) -> u64 {
+    fn to_raft_index(wal_index: u64) -> u64 {
         wal_index + 1
     }
 
-    fn from_raft_index(&self, raft_index: u64) -> u64 {
+    fn from_raft_index(raft_index: u64) -> u64 {
         raft_index.saturating_sub(1)
     }
 }
@@ -277,7 +277,9 @@ impl Storage for ConsensusManager {
             .persistent
             .read()
             .map_err(|_| {
-                raft::Error::ConfigInvalid(format!("Failed to read persistent state from the lock"))
+                raft::Error::ConfigInvalid(
+                    "Failed to read persistent state from the lock".to_string(),
+                )
             })?
             .clone();
 
@@ -296,18 +298,15 @@ impl Storage for ConsensusManager {
     ) -> raft::Result<Vec<Entry>> {
         let mut entries = Vec::with_capacity((high - low) as usize);
 
-        let low_wal_index = self.from_raft_index(low);
-        let high_wal_index = self.from_raft_index(high);
+        let low_wal_index = Self::from_raft_index(low);
+        let high_wal_index = Self::from_raft_index(high);
 
         for i in low_wal_index..high_wal_index {
             if let Some(wal_entry) = self.wal().entry(i) {
                 let raft_entry: Entry = prost_for_raft::Message::decode(wal_entry.as_ref())
                     .map_err(|e| {
                         // Use a more suitable error here
-                        raft::Error::ConfigInvalid(format!(
-                            "Failed to decode entry from WAL: {}",
-                            e
-                        ))
+                        raft::Error::ConfigInvalid(format!("Failed to decode entry from WAL: {e}",))
                     })?;
 
                 entries.push(raft_entry);
@@ -333,7 +332,7 @@ impl Storage for ConsensusManager {
 
     fn last_index(&self) -> raft::Result<u64> {
         let wal_last_index = self.wal().last_index();
-        Ok(self.to_raft_index(wal_last_index))
+        Ok(Self::to_raft_index(wal_last_index))
     }
 
     fn snapshot(&self, _request_index: u64, _to: u64) -> raft::Result<Snapshot> {
@@ -353,7 +352,7 @@ impl Storage for ConsensusManager {
         //     return Ok(1);
         // }
 
-        let wal_index = self.from_raft_index(raft_index);
+        let wal_index = Self::from_raft_index(raft_index);
         info!("Fetching term for Raft index {raft_index} (wal index: {wal_index})");
 
         let wal_entry = self.wal().entry(wal_index);
@@ -364,8 +363,7 @@ impl Storage for ConsensusManager {
         } else {
             // todo: use better error
             Err(raft::Error::ConfigInvalid(format!(
-                "Unable to find term for raft index {}",
-                raft_index
+                "Unable to find term for raft index {raft_index}",
             )))
         }
     }
