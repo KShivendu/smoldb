@@ -68,7 +68,7 @@ pub struct Args {
     pub skip_read: bool,
 
     /// Check whether to query (with filter) points after upsert
-    #[clap(long, default_value = "true")]
+    #[clap(long, default_value = "false")]
     pub skip_query: bool,
 
     /// Number of 9 digits to show in p99* results

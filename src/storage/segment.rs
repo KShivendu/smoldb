@@ -3,6 +3,7 @@ use crate::{
     error::StorageError,
     storage::index::payload_index::{IndexConfig, PayloadIndex},
 };
+use futures::{stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -103,7 +104,7 @@ impl Segment {
         Ok(())
     }
 
-    pub fn get_points(&self, ids: Option<Vec<PointId>>) -> Result<Vec<Point>, StorageError> {
+    pub async fn get_points(&self, ids: Option<Vec<PointId>>) -> Result<Vec<Point>, StorageError> {
         let mut points = Vec::new();
 
         let Some(ids) = ids else {
@@ -127,25 +128,45 @@ impl Segment {
         };
 
         // If ids are provided, read only those points
-        for id in ids {
-            let key = id.into_string();
-            if let Some(value) = self.db.get(key).map_err(|e| {
-                StorageError::ServiceError(format!("Failed to get point from segment db: {e}"))
-            })? {
-                let point: Point = serde_json::from_slice(&value).map_err(|e| {
-                    StorageError::ServiceError(format!("Failed to deserialize point: {e}"))
-                })?;
-                points.push(point);
-            }
-        }
+        // We need to read them in parallel to speed up (esp since its reading from disk from random locations)
+        let db_inner = self.db.clone(); // sled Db is thread-safe
+        const MAX_CONCURRENT: usize = 10; // If you have too many concurrent tasks, it can hurt performance
+
+        let points: Vec<Point> = stream::iter(ids)
+            .map(|id| {
+                let db = db_inner.clone();
+                async move {
+                    tokio::task::spawn_blocking(move || -> Result<Option<Point>, StorageError> {
+                        let key = id.into_string();
+                        if let Some(value) = db.get(key)? {
+                            let point: Point = serde_json::from_slice(&value)?;
+                            Ok(Some(point))
+                        } else {
+                            Ok(None)
+                        }
+                    })
+                    .await
+                    .map_err(|e| StorageError::ServiceError(format!("Failed to join task: {e}")))?
+                }
+            })
+            .buffer_unordered(MAX_CONCURRENT)
+            .try_filter_map(|result| async move {
+                match result {
+                    Some(point) => Ok(Some(point)),
+                    None => Ok(None), // Point not found, filter out
+                }
+            })
+            .try_collect()
+            .await?;
+
         Ok(points)
     }
 
-    pub fn query_points(&self, query: Query) -> Result<Vec<Point>, StorageError> {
+    pub async fn query_points(&self, query: Query) -> Result<Vec<Point>, StorageError> {
         let point_ids = self.payload_index.query(query).map_err(|e| {
             StorageError::ServiceError(format!("Failed to query payload index: {e}"))
         })?;
-        let points = self.get_points(Some(point_ids))?;
+        let points = self.get_points(Some(point_ids)).await?;
 
         Ok(points)
     }

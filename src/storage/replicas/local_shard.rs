@@ -28,7 +28,7 @@ pub struct LocalShard {
 impl ShardOperationTrait for LocalShard {
     async fn get_points(&self, ids: Option<Vec<PointId>>) -> CollectionResult<Vec<Point>> {
         if let Some(segment) = self.segments.get(&0) {
-            segment.get_points(ids).map_err(|e| {
+            segment.get_points(ids).await.map_err(|e| {
                 CollectionError::StorageError(StorageError::ServiceError(format!(
                     "Failed to get points from segment: {e}"
                 )))
@@ -54,7 +54,7 @@ impl ShardOperationTrait for LocalShard {
 
     async fn query_points(&self, query: Query) -> CollectionResult<Vec<Point>> {
         if let Some(segment) = self.segments.get(&0) {
-            segment.query_points(query).map_err(|e| {
+            segment.query_points(query).await.map_err(|e| {
                 CollectionError::StorageError(StorageError::ServiceError(format!(
                     "Failed to query points from segment: {e}"
                 )))

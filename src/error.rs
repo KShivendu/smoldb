@@ -6,6 +6,10 @@ pub enum StorageError {
     BadInput(String),
     #[error("Service error: {0}")]
     ServiceError(String),
+    #[error("Sled segment error: {0}")]
+    SledError(#[from] sled::Error),
+    #[error("Serialization/Deserialization error: {0}")]
+    SerdeError(#[from] serde_json::Error),
 }
 
 #[derive(Error, Debug)]
