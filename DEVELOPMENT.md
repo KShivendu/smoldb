@@ -41,18 +41,12 @@ cargo flamegraph --bench upsert -o flamegraph.svg -- --bench
 ## Perf investigation:
 
 ```sh
-# Ensure cargo.toml has these:
-[profile.release]
-debug = 2
-strip = false
-force-frame-pointers = true
+# Terminal 1:
+cargo build --profile perf
+cargo build -r -p smolbench
 
 # Terminal 1:
-cargo build -r
-cargo buld -r -p smolbench
-
-# Terminal 1:
-sudo perf record --call-graph dwarf -F 4000 -g ./target/release/smoldb
+sudo perf record --call-graph dwarf -F 4000 -g ./target/perf/smoldb
 
 # Terminal 2:
 ./target/release/smolbench --skip-create --skip-upsert --skip-read
