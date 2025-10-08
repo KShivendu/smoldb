@@ -62,6 +62,11 @@ async fn main() -> Result<(), SmolBenchError> {
     }
 
     if !args.skip_upsert {
+        println!(
+            "Upserting {} points in batches of {} into collection '{}':",
+            args.num_points, args.batch_size, args.collection_name
+        );
+
         let batch_responses = upsert_points(
             &args.uri,
             &args.collection_name,
@@ -71,34 +76,33 @@ async fn main() -> Result<(), SmolBenchError> {
         )
         .await?;
 
-        println!(
-            "Upserted {} points in batches of {} into collection '{}':",
-            args.num_points, args.batch_size, args.collection_name
-        );
-
         log_latencies(&batch_responses, args.p9, "server-side batched upsert").await?;
     }
 
     if !args.skip_read {
         let num_queries = args.num_points.min(1000) as u64;
+        println!(
+            "Reading {} points from collection '{}':",
+            num_queries, args.collection_name,
+        );
+
         let mut rnd = rand::rng();
         let ids = (0..num_queries)
             .map(|_| rnd.random::<u64>() % args.num_points as u64) // Assume that IDs in the range [0, num_points) have been upserted
             .collect::<Vec<_>>();
         let responses = read_point(&args.uri, &args.collection_name, ids).await?;
-        println!(
-            "Read {} points from collection '{}':",
-            responses.len(),
-            args.collection_name,
-        );
 
         log_latencies(&responses, args.p9, "server-side read").await?;
     }
 
     if !args.skip_query {
-        let num_queries = args.num_points.min(100) as u64;
-        let mut rnd = rand::rng();
+        let num_queries = (args.num_points as f32 * 0.01).max(100_f32) as u64;
+        println!(
+            "Querying {} points with concurrency of {} from collection '{}' with price filter",
+            num_queries, args.concurrent_queries, args.collection_name,
+        );
 
+        let mut rnd = rand::rng();
         let futures = (0..num_queries)
             .map(|_| {
                 let price_gte = rnd.random::<i64>() % args.num_points as i64;
@@ -120,13 +124,6 @@ async fn main() -> Result<(), SmolBenchError> {
             .buffered(args.concurrent_queries)
             .try_collect::<Vec<_>>()
             .await?;
-
-        println!(
-            "Queried {} points with concurrency of {} from collection '{}' with price filter",
-            responses.len(),
-            args.concurrent_queries,
-            args.collection_name,
-        );
 
         log_latencies(&responses, args.p9, "server-side query").await?;
     }
