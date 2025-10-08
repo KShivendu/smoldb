@@ -71,7 +71,7 @@ if you find this work useful in your research, please consider citing:
 ```bibtex
 @software{smoldb2025,
   author = {kshivendu},
-  title = {kshivendu: a small distributed database built in Rust},
+  title = {smoldb: a smol distributed database built in Rust},
   year = {2025},
   publisher = {github},
   journal = {github repository},
