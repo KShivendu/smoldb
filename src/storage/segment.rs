@@ -137,8 +137,9 @@ impl Segment {
                 let db = db_inner.clone();
                 async move {
                     tokio::task::spawn_blocking(move || -> Result<Option<Point>, StorageError> {
-                        let key = id.into_string();
+                        let key = id.into_string(); // this is taking small time
                         if let Some(value) = db.get(key)? {
+                            // this takes insane amount of time
                             let point: Point = serde_json::from_slice(&value)?;
                             Ok(Some(point))
                         } else {

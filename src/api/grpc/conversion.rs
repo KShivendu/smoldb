@@ -16,6 +16,7 @@ impl Query {
                 value: filter.value,
                 op: filter.op.into(),
             },
+            limit: None, // ToDo
         })
     }
 
