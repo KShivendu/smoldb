@@ -521,6 +521,7 @@ mod tests {
 
         let query = Query {
             filter: QueryFilter::new("age", "25", FilterOperator::Gte),
+            limit: None,
         };
 
         let queried_points = collection
