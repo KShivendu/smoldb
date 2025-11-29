@@ -121,6 +121,7 @@ async fn list_points(
 #[derive(Deserialize, Clone)]
 pub struct Query {
     pub filter: QueryFilter,
+    pub limit: Option<usize>,
 }
 
 #[actix_web::post("/collections/{collection_name}/query")]
@@ -131,7 +132,13 @@ async fn query_points(
 ) -> impl Responder {
     helpers::time(async {
         let collection_name: String = collection_name.into_inner();
-        let query = query.into_inner();
+        let mut query = query.into_inner();
+
+        // Set default limit if not provided
+        if query.limit.is_none() {
+            query.limit = Some(10); // Default limit
+        }
+
         let result = dispatcher.toc.query_points(&collection_name, query).await;
         match result {
             Ok(points) => Ok(ListPointsResponse { points }),

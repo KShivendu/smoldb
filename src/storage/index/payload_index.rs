@@ -74,6 +74,7 @@ impl IntegerIndex {
         &self,
         value: i64,
         operation: &FilterOperator,
+        limit: Option<usize>,
     ) -> Result<Vec<PointId>, sled::Error> {
         let mut results = Vec::new();
 
@@ -93,6 +94,13 @@ impl IntegerIndex {
                 sled::Error::Io(std::io::Error::other(format!("Failed to decode: {e}")))
             })?;
             results.extend_from_slice(&point_ids);
+
+            if let Some(limit) = limit {
+                if results.len() >= limit {
+                    results.truncate(limit);
+                    break;
+                }
+            }
         }
 
         Ok(results.into_iter().map(PointId::Id).collect())
@@ -239,7 +247,7 @@ impl PayloadIndex {
         match index {
             FieldIndex::Int(int_index) => {
                 let value = query.filter.value.parse::<i64>().unwrap();
-                let query_results = int_index.query(value, &query.filter.op)?;
+                let query_results = int_index.query(value, &query.filter.op, query.limit)?;
                 results.extend(query_results);
             }
             FieldIndex::Null => {
@@ -277,7 +285,7 @@ mod test {
         let field_index = index.indices.get("price").unwrap();
 
         if let FieldIndex::Int(numeric_index) = field_index {
-            let results = numeric_index.query(40, &FilterOperator::Gte).unwrap();
+            let results = numeric_index.query(40, &FilterOperator::Gte, None).unwrap();
             assert_eq!(results.len(), 6); // Points with ids 4, 5, 6, 7, 8, 9
             assert_eq!(results, (4..10).map(PointId::Id).collect::<Vec<_>>());
         } else {

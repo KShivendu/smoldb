@@ -37,3 +37,44 @@ python -m http.server .
 # For flame graph:
 cargo flamegraph --bench upsert -o flamegraph.svg -- --bench
 ```
+
+## Perf investigation:
+
+```sh
+# Terminal 1:
+cargo build --profile perf
+cargo build -r -p smolbench
+
+# Terminal 1:
+sudo perf record --call-graph dwarf -F 4000 -g ./target/perf/smoldb
+
+# Terminal 2:
+./target/release/smolbench --skip-create --skip-upsert --skip-read
+
+# Terminal 1:
+# Stop smoldb once smolbench runs
+sudo chown $USER:$USER perf.data
+hotspot perf.data # Install https://github.com/KDAB/hotspot
+```
+
+```sh
+perf annotate --tui
+```
+
+### Errors:
+
+By default, we use `color-backtrace` crate to show snippets.
+
+## citation
+
+if you find this work useful in your research, please consider citing:
+```bibtex
+@software{smoldb2025,
+  author = {kshivendu},
+  title = {smoldb: a smol distributed database built in Rust},
+  year = {2025},
+  publisher = {github},
+  journal = {github repository},
+  url = {https://github.com/kshivendu/smoldb}
+}
+```

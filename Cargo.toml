@@ -59,3 +59,9 @@ debug = true
 [[bench]]
 name = "read_write"
 harness = false
+
+[profile.perf] # for profiling
+inherits = "release"
+debug = 2
+strip = false
+# force-frame-pointers = true
