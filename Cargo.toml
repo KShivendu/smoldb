@@ -29,7 +29,7 @@ utoipa-swagger-ui = {version = "9.0.2", features = ["actix-web"]}
 # storage layer:
 hashring = "0.3.6"
 sled = { version = "0.34.7", default-features = false }
-wal = { git = "https://github.com/qdrant/wal.git", rev = "fad05934581585c18ff84712d6d4f5783b9b6a58" }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "baee8ba656743aee42b185d1aa344f2be23d7d1a" }
 
 # cli, logging, runtime, and other utilities:
 clap = { version = "4.5.38", features = ["derive"] }
