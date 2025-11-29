@@ -4,11 +4,10 @@ use crate::storage::index::filter::QueryFilter;
 
 impl Query {
     pub fn from_grpc(query: Option<GrpcQueryPointsParams>) -> Result<Self, String> {
-        let query = query.ok_or_else(|| "Query parameters are required".to_string())?;
+        let GrpcQueryPointsParams { filter, limit } =
+            query.ok_or_else(|| "Query parameters are required".to_string())?;
 
-        let filter = query
-            .filter
-            .ok_or_else(|| "Query filter is required".to_string())?;
+        let filter = filter.ok_or_else(|| "Query filter is required".to_string())?;
 
         Ok(Self {
             filter: QueryFilter {
@@ -16,7 +15,7 @@ impl Query {
                 value: filter.value,
                 op: filter.op.into(),
             },
-            limit: None, // ToDo
+            limit: limit.map(|l| l as usize),
         })
     }
 
@@ -27,6 +26,7 @@ impl Query {
                 value: self.filter.value,
                 op: self.filter.op.as_str().to_string(),
             }),
+            limit: self.limit.map(|l| l as u64),
         })
     }
 }
