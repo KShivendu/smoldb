@@ -1,5 +1,5 @@
 use crate::{
-    consensus::manager::ConsensusManager,
+    consensus::{debuggables::DebuggableEntry, manager::ConsensusManager},
     error::{ConsensusError, ConsensusResult},
     types::PeerId,
 };
@@ -52,7 +52,9 @@ impl RaftStorage {
         }
 
         info!("Appending {} entries to Raft log", entries.len());
-        info!("Entries: {entries:?}");
+        for entry in entries {
+            DebuggableEntry::from(entry).log("Appending entry");
+        }
 
         if let Some(mem_storage) = &self.mem_storage {
             mem_storage.wl().append(entries)?;

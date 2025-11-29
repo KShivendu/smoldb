@@ -19,3 +19,14 @@ async fn get_cluster(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     })
     .await
 }
+
+// #[actix_web::get("/cluster/consensus")]
+// async fn get_cluster(dispatcher: web::Data<Dispatcher>) -> impl Responder {
+//     helpers::time(async {
+//         let dispatcher = dispatcher.into_inner();
+//         let consensus = dispatcher.get_consensus()?;
+//         let consensus_top_10 = consensus.peek_consensus_wal(10).await;
+//         Ok(consensus_top_10)
+//     })
+//     .await
+// }

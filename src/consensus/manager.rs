@@ -44,6 +44,19 @@ impl ConsensusManager {
         self.state.read_persistent().clone()
     }
 
+    // pub async fn peek_consensus_wal(&self, n: usize) -> Vec<u8> {
+    //     let wal = self.wal.lock().expect("Failed to lock WAL");
+    //     let first_entry = wal.first_index();
+    //     let results = vec![];
+    //     for i in 0..n {
+    //         if let Some(entry) = wal.entry(first_entry + i as u64) {
+    //             results.extend_from_slice(&entry);
+    //         } else {
+    //             break;
+    //         }
+    //     }
+    // }
+
     pub fn send(&self, msg: Msg) -> Result<(), ConsensusError> {
         self.sender.send(msg).map_err(|e| {
             ConsensusError::ServiceError(format!("Failed to send message over channel: {e}"))

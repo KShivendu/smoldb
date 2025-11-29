@@ -20,7 +20,7 @@ impl From<&Entry> for DebuggableEntry {
             EntryType::EntryNormal => {
                 let data = ConsensusOperation::from_entry(entry)
                     .map(|e| format!("{e:?}"))
-                    .unwrap_or("EntryNormal data should be decodable".to_string());
+                    .unwrap_or("EntryNormal data should be decodable. It might be leader change and hence empty".to_string());
 
                 data
             }

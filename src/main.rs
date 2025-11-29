@@ -23,7 +23,7 @@ fn setup_logging() -> GlobalLoggerGuard {
     let logger = slog::Logger::root(drain, o!());
 
     let logger_guard = slog_scope::set_global_logger(logger);
-    slog_stdlog::init_with_level(log::Level::Info).unwrap();
+    slog_stdlog::init_with_level(log::Level::Debug).unwrap(); // Rely on environment variable RUST_LOG for level
 
     logger_guard
 }
