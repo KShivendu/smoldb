@@ -96,8 +96,8 @@ impl IntegerIndex {
             results.extend_from_slice(&point_ids);
 
             if let Some(limit) = limit {
-                if results.len() >= limit as usize {
-                    results.truncate(limit as usize);
+                if results.len() >= limit {
+                    results.truncate(limit);
                     break;
                 }
             }
