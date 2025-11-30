@@ -36,6 +36,7 @@ impl Consensus {
             // debuggable_ready.log("\n\n\n=====> Raft node is ready, processing ready state");
 
             if !ready.messages().is_empty() {
+                // Send out messages to other peers.
                 self.send_messages(ready.take_messages()).await;
             }
 
@@ -54,18 +55,22 @@ impl Consensus {
             self.handle_committed_entries(ready.take_committed_entries(), &mut last_apply_index)?;
 
             if !ready.entries().is_empty() {
+                // These are not committed entries yet, but need to be persisted to storage first.
                 store.append_entries(ready.entries())?;
             }
 
             if let Some(updated_hs) = ready.hs() {
+                // Handle hard state was updated probably because of new term or commit.
                 self.handle_hard_state_change(updated_hs)?;
             }
 
             if let Some(ss_change) = ready.ss() {
+                // Handle soft state change probably because of role or leader change.
                 self.handle_soft_state_change(ss_change);
             }
 
             if !ready.persisted_messages().is_empty() {
+                // Send out persisted messages to other peers.
                 self.send_messages(ready.take_persisted_messages()).await;
             }
 
@@ -140,8 +145,14 @@ impl Consensus {
         let consensus_state = self.consensus_state.clone();
         extra_runtime.spawn(async move {
             let mut consensus_state = consensus_state.write_persistent();
-            consensus_state.raft_info.term = hs.term;
-            consensus_state.raft_info.commit = hs.commit;
+            consensus_state
+                .apply_state_update(|s| {
+                    s.raft_info.term = hs.term;
+                    s.raft_info.commit = hs.commit;
+                })
+                .unwrap();
+            // consensus_state.raft_info.term = hs.term;
+            // consensus_state.raft_info.commit = hs.commit;
             // consensus_state.raft_info.last_applied = ; // ToDo??
         });
 
@@ -160,6 +171,9 @@ impl Consensus {
                 .write()
                 .expect("Failed to acquire persistent state write lock");
             consensus_state.raft_info.commit = commit;
+            consensus_state
+                .save()
+                .expect("Failed to save persistent state");
         });
 
         self.raft_node.store().set_hardstate_commit(commit)

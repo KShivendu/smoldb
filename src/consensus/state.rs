@@ -54,7 +54,7 @@ pub struct Persistent {
     pub peer_id: PeerId,
     // Using instead of HashMap to keep peers sorted (consistent) across the nodes
     pub peers: BTreeMap<PeerId, String>,
-    pub raft_info: ConsensusRaftInfo,
+    pub raft_info: ConsensusRaftInfo, // todo: Might be better to just infer this from RaftState? Why update both?
     #[serde(with = "RaftStateJson")]
     #[schema(value_type = RaftStateJson)]
     pub raft_state: RaftState,
@@ -112,6 +112,15 @@ impl Persistent {
         let data = serde_json::to_string_pretty(self)?;
         std::fs::write(path, data)?;
         Ok(())
+    }
+
+    /// todo: Decide if this should take self or just raft_info or raft_state
+    pub fn apply_state_update(
+        &mut self,
+        update: impl FnOnce(&mut Self),
+    ) -> Result<(), ConsensusError> {
+        update(self);
+        self.save()
     }
 }
 
