@@ -48,7 +48,7 @@ async fn main() -> std::io::Result<()> {
     let consensus_async_runtime = rt.handle().clone();
 
     let consensus_state = Arc::new(ConsensusState::new(
-        &Path::new(STORAGE_DIR),
+        Path::new(STORAGE_DIR),
         args.p2p_url.clone(),
         args.peer_id,
     ));
