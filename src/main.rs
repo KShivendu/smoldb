@@ -6,72 +6,14 @@ pub mod error;
 pub mod storage;
 pub mod types;
 
-use crate::api::{
-    cluster::get_cluster,
-    collection::{
-        create_collection, delete_collection, get_collection, get_collection_cluster_info,
-        get_collections,
-    },
-    dispatcher::Dispatcher,
-    points::{get_point, list_points, query_points, upsert_points},
-};
+use crate::api::{dispatcher::Dispatcher, start_http_server, start_p2p_server};
 use crate::channel_service::ChannelService;
 use crate::consensus::{manager::ConsensusManager, Consensus, ConsensusState};
 use crate::storage::toc::TableOfContent;
-use actix_web::{middleware, web::Data, App, HttpServer};
-use api::service::index;
 use args::parse_args;
-use http::Uri;
-use log::info;
 use slog::{o, Drain};
 use slog_scope::GlobalLoggerGuard;
 use std::sync::Arc;
-
-// Function to start the Actix Web server
-async fn start_http_server(url: Uri, dispatcher: Arc<Dispatcher>) -> std::io::Result<()> {
-    info!("Starting Actix Web server on {url}");
-
-    let dispatcher_app_data = Data::from(dispatcher);
-
-    let (host, port) = (url.host().unwrap(), url.port_u16().unwrap());
-
-    HttpServer::new(move || {
-        App::new()
-            .wrap(middleware::NormalizePath::trim())
-            .service(index)
-            .service(get_cluster)
-            .service(get_collections)
-            .service(get_collection_cluster_info)
-            .service(get_collection)
-            .service(delete_collection)
-            .service(create_collection)
-            .service(upsert_points)
-            .service(get_point)
-            .service(list_points)
-            .service(query_points)
-            .app_data(dispatcher_app_data.clone())
-    })
-    .bind((host, port))?
-    .run()
-    .await
-}
-
-// Function to start the Tonic internal (p2p) gRPC server
-async fn start_p2p_server(
-    p2p_uri: Uri,
-    dispatcher: Arc<Dispatcher>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let p2p_host = p2p_uri.host().unwrap().to_string();
-    let p2p_port = p2p_uri.port_u16().unwrap();
-
-    info!("Starting internal gRPC server on {p2p_host}:{p2p_port}");
-
-    if let Err(e) = api::grpc::init(p2p_host, p2p_port, dispatcher).await {
-        log::error!("Failed to start gRPC server: {e}");
-    }
-
-    Ok(())
-}
 
 fn setup_logging() -> GlobalLoggerGuard {
     let decorator = slog_term::TermDecorator::new().build();

@@ -1,7 +1,12 @@
 use crate::api::{dispatcher::Dispatcher, helpers};
-use actix_web::{web, Responder};
+use actix_web::{get, web, Responder};
 
-#[actix_web::get("/cluster")]
+#[utoipa::path(
+    responses(
+        (status = 200, description = "Get info about cluster consensus", body = Persistent),
+    ),
+)]
+#[get("/cluster")]
 async fn get_cluster(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     helpers::time(async {
         let dispatcher = dispatcher.into_inner();
