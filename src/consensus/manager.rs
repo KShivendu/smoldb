@@ -1,8 +1,10 @@
 use crate::{
-    consensus::state::Persistent,
-    consensus::{ConsensusOperation, ConsensusState, Msg},
+    consensus::{
+        debuggables::DebuggableEntry, state::Persistent, ConsensusOperation, ConsensusState, Msg,
+    },
     error::ConsensusError,
 };
+use raft::prelude::Entry;
 use rand::Rng;
 use std::{
     path::Path,
@@ -36,6 +38,22 @@ impl ConsensusManager {
     pub fn num_entries(&self) -> raft::Result<usize> {
         let num_entries = self.wal().num_entries();
         Ok(num_entries as usize)
+    }
+
+    pub fn peek_consensus_wal(&self, n: usize) -> Vec<DebuggableEntry> {
+        let wal = self.wal.lock().expect("Failed to lock WAL");
+        let first_entry = wal.first_index();
+        let mut results = vec![];
+        for i in 0..n {
+            if let Some(wal_entry) = wal.entry(first_entry + i as u64) {
+                let raft_entry: Entry =
+                    prost_for_raft::Message::decode(wal_entry.as_ref()).unwrap(); // todo: don't unwrap
+                results.push(DebuggableEntry::from(&raft_entry));
+            } else {
+                break;
+            }
+        }
+        results
     }
 
     pub async fn is_ready(&self) -> bool {

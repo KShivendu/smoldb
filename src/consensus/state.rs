@@ -58,6 +58,7 @@ pub struct Persistent {
     #[serde(with = "RaftStateJson")]
     #[schema(value_type = RaftStateJson)]
     pub raft_state: RaftState,
+    #[schema(value_type = String)]
     pub storage_path: std::path::PathBuf, // Not the best way but easier for now
 }
 
