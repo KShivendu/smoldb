@@ -1,12 +1,9 @@
 use crate::{
-    consensus::{
-        debuggables::{print_caller_stack, DebuggableEntry},
-        manager::ConsensusManager,
-    },
+    consensus::{debuggables::DebuggableEntry, manager::ConsensusManager},
     error::{ConsensusError, ConsensusResult},
     types::PeerId,
 };
-use log::{info, trace, warn};
+use log::{info, trace};
 use raft::{
     prelude::{Entry, Snapshot},
     storage::MemStorage,
@@ -310,24 +307,6 @@ impl Storage for RaftStorage {
     }
 }
 
-// Useful conversions between raft index and wal index because
-// WAL index starts from 0
-// But raft Entry index starts from 1
-impl ConsensusManager {
-    fn to_raft_index(wal_index: u64) -> u64 {
-        wal_index.saturating_add(1)
-        // if wal_index == 0 {
-        //     0
-        // } else {
-        //     wal_index + 1
-        // }
-    }
-
-    fn from_raft_index(raft_index: u64) -> u64 {
-        raft_index.saturating_sub(1)
-    }
-}
-
 // Raft storage traits methods for consensus manager
 impl Storage for ConsensusManager {
     fn initial_state(&self) -> Result<RaftState, raft::Error> {
@@ -379,8 +358,8 @@ impl Storage for ConsensusManager {
     ) -> raft::Result<Vec<Entry>> {
         let mut entries = Vec::with_capacity((high - low) as usize);
 
-        let low_wal_index = Self::from_raft_index(low);
-        let high_wal_index = Self::from_raft_index(high);
+        let low_wal_index = low.saturating_sub(1);
+        let high_wal_index = high.saturating_sub(1);
 
         for i in low_wal_index..high_wal_index {
             if let Some(wal_entry) = self.wal().entry(i) {
@@ -419,10 +398,10 @@ impl Storage for ConsensusManager {
         let last_entry = self.wal().entry(wal_last_index);
         if let Some(entry) = last_entry {
             let entry: Entry = prost_for_raft::Message::decode(entry.as_ref()).unwrap(); // todo: don't unwrap
-            return Ok(entry.index);
+            Ok(entry.index)
         } else {
             // If no entries, return 0
-            return Ok(0);
+            Ok(0)
         }
     }
 

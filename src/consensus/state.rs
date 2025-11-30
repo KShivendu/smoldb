@@ -1,7 +1,6 @@
 use crate::{
     consensus::CONSENSUS_DIR,
     error::{ConsensusError, ConsensusResult},
-    storage::toc::STORAGE_DIR,
     types::PeerId,
 };
 use http::Uri;

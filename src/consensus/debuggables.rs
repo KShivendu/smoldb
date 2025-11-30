@@ -1,5 +1,5 @@
 use backtrace::Backtrace;
-use log::{debug, trace};
+use log::debug;
 use prost_for_raft::Message;
 use raft::prelude::{ConfChange, ConfChangeV2, Entry, EntryType, Snapshot};
 
