@@ -19,7 +19,7 @@ use crate::{
     types::PeerId,
 };
 use http::Uri;
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use raft::{
     prelude::{ConfChange, ConfChangeType, Entry, Message},
     Config, RawNode,
@@ -280,6 +280,7 @@ impl Consensus {
 
             if t.elapsed() >= RAFT_TICK_INTERVAL {
                 // Tick the raft.
+                trace!("Ticking raft node");
                 raft_node.tick();
                 t = Instant::now();
             }

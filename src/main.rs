@@ -13,7 +13,8 @@ use crate::storage::toc::TableOfContent;
 use args::parse_args;
 use slog::{o, Drain};
 use slog_scope::GlobalLoggerGuard;
-use std::sync::Arc;
+use smoldb::storage::toc::STORAGE_DIR;
+use std::{path::Path, sync::Arc};
 
 fn setup_logging() -> GlobalLoggerGuard {
     let decorator = slog_term::TermDecorator::new().build();
@@ -23,7 +24,7 @@ fn setup_logging() -> GlobalLoggerGuard {
     let logger = slog::Logger::root(drain, o!());
 
     let logger_guard = slog_scope::set_global_logger(logger);
-    slog_stdlog::init_with_level(log::Level::Debug).unwrap(); // Rely on environment variable RUST_LOG for level
+    slog_stdlog::init_with_level(log::Level::Debug).unwrap(); // TODO: Rely on environment variable RUST_LOG for level
 
     logger_guard
 }
@@ -46,7 +47,11 @@ async fn main() -> std::io::Result<()> {
 
     let consensus_async_runtime = rt.handle().clone();
 
-    let consensus_state = Arc::new(ConsensusState::new(args.p2p_url.clone(), args.peer_id));
+    let consensus_state = Arc::new(ConsensusState::new(
+        &Path::new(STORAGE_DIR).to_path_buf(),
+        args.p2p_url.clone(),
+        args.peer_id,
+    ));
     let channel_service = ChannelService::new(
         consensus_state.get_peer_id(),
         consensus_state.peer_address_by_id.clone(),

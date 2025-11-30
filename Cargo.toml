@@ -45,6 +45,7 @@ slog-async = "2.8.0"
 slog-scope = "4.4.0"
 log = "0.4.27"
 bincode = "2.0.1"
+backtrace = "0.3.76"
 
 [build-dependencies]
 tonic-build = "0.13.1"

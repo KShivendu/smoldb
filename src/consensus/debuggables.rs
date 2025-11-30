@@ -1,4 +1,5 @@
-use log::debug;
+use backtrace::Backtrace;
+use log::{debug, trace};
 use prost_for_raft::Message;
 use raft::prelude::{ConfChange, ConfChangeV2, Entry, EntryType, Snapshot};
 
@@ -215,6 +216,35 @@ impl From<&raft::Ready> for DebuggableReady {
             snapshot,
             persisted_messages,
             // light_ready: ready,
+        }
+    }
+}
+
+pub fn print_caller_stack() {
+    let bt = Backtrace::new();
+
+    debug!("Called from:");
+    // Skip 1st frame which is this function itself
+    for (i, frame) in bt.frames().iter().skip(1).take(10).enumerate() {
+        for symbol in frame.symbols() {
+            if let Some(name) = symbol.name() {
+                let name_str = name.to_string();
+                if !name_str.contains("smoldb") {
+                    continue;
+                }
+                let line_info = if let Some(line) = symbol.lineno() {
+                    format!(":{}", line)
+                } else {
+                    "".to_string()
+                };
+                let file_info = if let Some(file) = symbol.filename() {
+                    format!(" ({}{})", file.display(), line_info)
+                } else {
+                    "".to_string()
+                };
+                debug!("  {}: {}{}", i, name_str, file_info);
+                // }
+            }
         }
     }
 }

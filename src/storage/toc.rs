@@ -7,6 +7,7 @@ use crate::{
         segment::{Point, PointId},
     },
 };
+use log::info;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -18,6 +19,7 @@ use tokio::sync::RwLockReadGuard;
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const STORAGE_DIR: &str = "storage";
 
+/// Holder for all local state: collections and channel service
 pub struct TableOfContent {
     pub collections: Arc<RwLock<HashMap<CollectionName, Collection>>>,
     pub channel_service: Arc<ChannelService>,
@@ -105,7 +107,7 @@ impl TableOfContent {
                 collection_name,
                 config,
             } => {
-                println!("Creating collection {collection_name}");
+                info!("Creating collection {collection_name} locally");
                 let path = Self::mkdir_collection_dir(&collection_name).await?;
 
                 let collection = Collection::init(

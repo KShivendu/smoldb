@@ -32,6 +32,12 @@ impl ConsensusManager {
         self.wal.lock().expect("Failed to lock WAL")
     }
 
+    /// For testing only
+    pub fn num_entries(&self) -> raft::Result<usize> {
+        let num_entries = self.wal().num_entries();
+        Ok(num_entries as usize)
+    }
+
     pub async fn is_ready(&self) -> bool {
         let p = self.state.read_persistent();
         // Intentionally didn't make it a Option because raft crate sets individual fields at a time

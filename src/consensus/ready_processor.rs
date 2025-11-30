@@ -149,7 +149,7 @@ impl Consensus {
     }
 
     fn handle_hard_state_commit_change(&self, commit: u64) -> ConsensusResult<()> {
-        info!("Raft hard state commit changed to: {commit}");
+        info!("Raft hard state commit changed to: {commit}"); // why not happening??
 
         // Update consensus state with new commit index
         let extra_runtime = self.runtime.clone();

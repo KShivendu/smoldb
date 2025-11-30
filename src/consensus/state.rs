@@ -59,11 +59,16 @@ pub struct Persistent {
     #[serde(with = "RaftStateJson")]
     #[schema(value_type = RaftStateJson)]
     pub raft_state: RaftState,
+    pub storage_path: std::path::PathBuf, // Not the best way but easier for now
 }
 
 impl Persistent {
-    fn load_or_create(peer_id: u64, p2p_uri: http::Uri) -> ConsensusResult<Self> {
-        let consensus_dir = Path::new(STORAGE_DIR).join(CONSENSUS_DIR);
+    fn load_or_create(
+        storage_dir: &Path,
+        peer_id: u64,
+        p2p_uri: http::Uri,
+    ) -> ConsensusResult<Self> {
+        let consensus_dir = storage_dir.join(CONSENSUS_DIR);
         fs::create_dir_all(&consensus_dir)?;
         let raft_state_path = consensus_dir.join("raft_state.json");
 
@@ -89,6 +94,7 @@ impl Persistent {
                     },
                     conf_state: ConfState::from((vec![peer_id], vec![])),
                 },
+                storage_path: storage_dir.to_path_buf(),
             };
             default.save()?;
             default
@@ -99,7 +105,8 @@ impl Persistent {
 
     // Dump to persistent storage
     pub fn save(&self) -> Result<(), ConsensusError> {
-        let path = Path::new(STORAGE_DIR)
+        let path = self
+            .storage_path
             .join(CONSENSUS_DIR)
             .join("raft_state.json");
         let data = serde_json::to_string_pretty(self)?;
@@ -157,12 +164,12 @@ impl ConsensusState {
 
 impl ConsensusState {
     /// Create a new ConsensusState with a given p2p URI and optional default peer ID.
-    pub fn new(p2p_uri: http::Uri, default_peer_id: Option<PeerId>) -> Self {
+    pub fn new(storage_dir: &Path, p2p_uri: http::Uri, default_peer_id: Option<PeerId>) -> Self {
         let mut rng = rand::rng();
         // Do not generate too big peer ID, to avoid problems with serialization
         let peer_id = default_peer_id.unwrap_or_else(|| rng.random::<PeerId>() % (1 << 53));
 
-        let p = Persistent::load_or_create(peer_id, p2p_uri.clone()).unwrap();
+        let p = Persistent::load_or_create(storage_dir, peer_id, p2p_uri.clone()).unwrap();
 
         // Read persistent state from disk if exists
 

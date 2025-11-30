@@ -1,5 +1,5 @@
 #!/bin/bash
 set -eoux pipefail
 
-cargo build
+cargo build -r
 cargo test -p smolbench -- --nocapture
