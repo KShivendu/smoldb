@@ -9,7 +9,8 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
 };
-#[derive(Serialize, Deserialize, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
+use utoipa::ToSchema;
+#[derive(Serialize, Deserialize, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug, ToSchema)]
 #[serde(untagged)]
 pub enum PointId {
     Id(u64),
@@ -25,7 +26,7 @@ impl PointId {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, ToSchema)]
 pub struct Point {
     pub id: PointId,
     pub payload: serde_json::Value,

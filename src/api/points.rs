@@ -12,18 +12,20 @@ use actix_web::{
     Responder,
 };
 use serde::Deserialize;
+use utoipa::ToSchema;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct UpsertPoints {
     pub points: Vec<Point>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ToSchema)]
 pub struct UpsertPointsResponse {
     pub num_points: usize,
 }
 
 #[utoipa::path(
+    tag = "Points",
     responses(
         (status = 200, description = "Upsert points into a collection", body = UpsertPointsResponse),
     ),
@@ -55,12 +57,13 @@ async fn upsert_points(
     .await
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ToSchema)]
 pub struct GetPointResponse {
     pub point: Point,
 }
 
 #[utoipa::path(
+    tag = "Points",
     responses(
         (status = 200, description = "Get a point from a collection", body = GetPointResponse),
     ),
@@ -98,12 +101,13 @@ pub async fn get_point(
     .await
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ToSchema)]
 pub struct ListPointsResponse {
     pub points: Vec<Point>,
 }
 
 #[utoipa::path(
+    tag = "Points",
     responses(
         (status = 200, description = "List all points in a collection", body = ListPointsResponse),
     ),
@@ -141,6 +145,7 @@ pub struct Query {
 }
 
 #[utoipa::path(
+    tag = "Points",
     responses(
         (status = 200, description = "Query points in a collection", body = ListPointsResponse),
     ),

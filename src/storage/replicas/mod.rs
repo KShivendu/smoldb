@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::vec;
 use tonic::async_trait;
+use utoipa::ToSchema;
 
 #[derive(Copy, Clone, Debug)]
 pub struct UpdateResult {
@@ -28,7 +29,7 @@ pub trait ShardOperationTrait {
     async fn query_points(&self, query: Query) -> CollectionResult<Vec<Point>>;
 }
 
-#[derive(Serialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, PartialEq, Debug, Clone, ToSchema)]
 pub enum ShardState {
     Active,
     Dead,

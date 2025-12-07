@@ -12,6 +12,7 @@ use std::{
     collections::{HashMap, HashSet},
     ops::Bound,
 };
+use utoipa::ToSchema;
 
 /// Converts the number into a big-endian value which is suitable for querying/storing in sled
 /// This allows lexicographical ordering and hence numeric comparisons
@@ -112,7 +113,7 @@ pub enum FieldIndex {
     Null,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexConfig {
     Int,

@@ -1,7 +1,11 @@
-use crate::api::{dispatcher::Dispatcher, helpers};
+use crate::{
+    api::{dispatcher::Dispatcher, helpers},
+    consensus::Persistent,
+};
 use actix_web::{get, web, Responder};
 
 #[utoipa::path(
+    tag = "Cluster",
     responses(
         (status = 200, description = "Get info about cluster consensus", body = Persistent),
     ),

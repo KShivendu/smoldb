@@ -11,6 +11,7 @@ pub struct RootApiResponse {
 }
 
 #[utoipa::path(
+    tag = "Service",
     responses(
         (status = 200, description = "Get info about the smoldb instance", body = RootApiResponse),
     ),

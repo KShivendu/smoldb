@@ -67,7 +67,7 @@ impl ConsensusState {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ConsensusRaftInfo {
     pub term: u64,
     pub commit: u64,

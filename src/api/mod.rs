@@ -11,13 +11,17 @@ use crate::{
         cluster::get_cluster,
         collection::{
             create_collection, delete_collection, get_collection, get_collection_cluster_info,
-            get_collections,
+            get_collections, CollectionClusterInfo,
         },
         dispatcher::Dispatcher,
-        points::{get_point, list_points, query_points, upsert_points},
+        points::{
+            get_point, list_points, query_points, upsert_points, GetPointResponse,
+            ListPointsResponse, UpsertPointsResponse,
+        },
         service::{root_api, RootApiResponse},
     },
     consensus::Persistent,
+    storage::{collection::CollectionInfo, segment::Point},
 };
 
 use cluster::__path_get_cluster;
@@ -51,7 +55,16 @@ pub mod service;
         list_points,
         query_points,
     ),
-    components(schemas(RootApiResponse, Persistent,))
+    components(schemas(
+        RootApiResponse,
+        Persistent,
+        UpsertPointsResponse,
+        GetPointResponse,
+        ListPointsResponse,
+        CollectionInfo,
+        CollectionClusterInfo,
+        Point
+    ))
 )]
 pub struct ApiDoc;
 

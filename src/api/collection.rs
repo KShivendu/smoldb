@@ -11,8 +11,10 @@ use actix_web::{
     Responder,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 
 #[utoipa::path(
+    tag = "Collections",
     responses(
         (status = 200, description = "Get list of collections", body = [String]),
     ),
@@ -34,6 +36,7 @@ async fn get_collections(dispatcher: web::Data<Dispatcher>) -> impl Responder {
 }
 
 #[utoipa::path(
+    tag = "Collections",
     responses(
         (status = 200, description = "Get collection info", body = CollectionInfo),
     ),
@@ -64,6 +67,7 @@ async fn get_collection(
 }
 
 #[utoipa::path(
+    tag = "Collections",
     responses(
         (status = 200, description = "Delete a collection", body = bool),
     ),
@@ -87,21 +91,21 @@ async fn delete_collection(
     .await
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CollectionClusterLocalShard {
     pub shard_id: ShardId,
     pub point_count: usize,
     pub state: ShardState,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CollectionClusterRemoteShard {
     pub peer_id: PeerId,
     pub shard_id: ShardId,
     pub state: ShardState,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CollectionClusterInfo {
     pub peer_id: PeerId,
     pub shard_count: usize,
@@ -145,6 +149,7 @@ impl CollectionClusterInfo {
 }
 
 #[utoipa::path(
+    tag = "Collections",
     responses(
         (status = 200, description = "Get collection's cluster level-info (shard placement)", body = CollectionClusterInfo),
     ),
@@ -176,6 +181,7 @@ async fn get_collection_cluster_info(
 }
 
 #[utoipa::path(
+    tag = "Collections",
     responses(
         (status = 200, description = "Create a new collection", body = bool),
     ),
