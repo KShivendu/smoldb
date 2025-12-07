@@ -19,6 +19,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::RwLock;
+use utoipa::ToSchema;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
@@ -317,7 +318,7 @@ impl Collection {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 pub struct CollectionConfig {
     pub params: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -348,7 +349,7 @@ impl CollectionConfig {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CollectionInfo {
     pub id: CollectionName,
     pub config: CollectionConfig,

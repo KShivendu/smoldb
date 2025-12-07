@@ -5,13 +5,21 @@ use crate::storage::collection::{Collection, CollectionConfig, CollectionInfo};
 use crate::storage::replicas::ShardState;
 use crate::storage::toc::CollectionOperation;
 use crate::types::{PeerId, ShardId};
+use actix_web::{delete, get, put};
 use actix_web::{
     web::{self, Json},
     Responder,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 
-#[actix_web::get("/collections")]
+#[utoipa::path(
+    tag = "Collections",
+    responses(
+        (status = 200, description = "Get list of collections", body = [String]),
+    ),
+)]
+#[get("/collections")]
 async fn get_collections(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     helpers::time(async {
         let collections = dispatcher
@@ -27,7 +35,13 @@ async fn get_collections(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     .await
 }
 
-#[actix_web::get("/collections/{collection_name}")]
+#[utoipa::path(
+    tag = "Collections",
+    responses(
+        (status = 200, description = "Get collection info", body = CollectionInfo),
+    ),
+)]
+#[get("/collections/{collection_name}")]
 async fn get_collection(
     collection_name: web::Path<String>,
     dispatcher: web::Data<Dispatcher>,
@@ -52,7 +66,13 @@ async fn get_collection(
     .await
 }
 
-#[actix_web::delete("/collections/{collection_name}")]
+#[utoipa::path(
+    tag = "Collections",
+    responses(
+        (status = 200, description = "Delete a collection", body = bool),
+    ),
+)]
+#[delete("/collections/{collection_name}")]
 async fn delete_collection(
     collection_name: web::Path<String>,
     dispatcher: web::Data<Dispatcher>,
@@ -71,21 +91,21 @@ async fn delete_collection(
     .await
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CollectionClusterLocalShard {
     pub shard_id: ShardId,
     pub point_count: usize,
     pub state: ShardState,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CollectionClusterRemoteShard {
     pub peer_id: PeerId,
     pub shard_id: ShardId,
     pub state: ShardState,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CollectionClusterInfo {
     pub peer_id: PeerId,
     pub shard_count: usize,
@@ -128,7 +148,13 @@ impl CollectionClusterInfo {
     }
 }
 
-#[actix_web::get("/collections/{collection_name}/cluster")]
+#[utoipa::path(
+    tag = "Collections",
+    responses(
+        (status = 200, description = "Get collection's cluster level-info (shard placement)", body = CollectionClusterInfo),
+    ),
+)]
+#[get("/collections/{collection_name}/cluster")]
 async fn get_collection_cluster_info(
     collection_name: web::Path<String>,
     dispatcher: web::Data<Dispatcher>,
@@ -154,7 +180,13 @@ async fn get_collection_cluster_info(
     .await
 }
 
-#[actix_web::put("/collections/{collection_name}")]
+#[utoipa::path(
+    tag = "Collections",
+    responses(
+        (status = 200, description = "Create a new collection", body = bool),
+    ),
+)]
+#[put("/collections/{collection_name}")]
 async fn create_collection(
     collection_name: web::Path<String>,
     config: Json<CollectionConfig>,

@@ -7,22 +7,30 @@ use crate::{
     },
 };
 use actix_web::{
+    get, post, put,
     web::{self, Json},
     Responder,
 };
 use serde::Deserialize;
+use utoipa::ToSchema;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct UpsertPoints {
     pub points: Vec<Point>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ToSchema)]
 pub struct UpsertPointsResponse {
     pub num_points: usize,
 }
 
-#[actix_web::put("/collections/{collection_name}/points")]
+#[utoipa::path(
+    tag = "Points",
+    responses(
+        (status = 200, description = "Upsert points into a collection", body = UpsertPointsResponse),
+    ),
+)]
+#[put("/collections/{collection_name}/points")]
 async fn upsert_points(
     collection_name: web::Path<String>,
     operation: Json<UpsertPoints>,
@@ -49,13 +57,19 @@ async fn upsert_points(
     .await
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ToSchema)]
 pub struct GetPointResponse {
     pub point: Point,
 }
 
-#[actix_web::get("/collections/{collection_name}/points/{id}")]
-async fn get_point(
+#[utoipa::path(
+    tag = "Points",
+    responses(
+        (status = 200, description = "Get a point from a collection", body = GetPointResponse),
+    ),
+)]
+#[get("/collections/{collection_name}/points/{id}")]
+pub async fn get_point(
     path: web::Path<(String, String)>,
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
@@ -87,13 +101,19 @@ async fn get_point(
     .await
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ToSchema)]
 pub struct ListPointsResponse {
     pub points: Vec<Point>,
 }
 
-#[actix_web::get("/collections/{collection_name}/points")]
-async fn list_points(
+#[utoipa::path(
+    tag = "Points",
+    responses(
+        (status = 200, description = "List all points in a collection", body = ListPointsResponse),
+    ),
+)]
+#[get("/collections/{collection_name}/points")]
+pub async fn list_points(
     collection_name: web::Path<String>,
     dispatcher: web::Data<Dispatcher>,
 ) -> impl Responder {
@@ -124,8 +144,14 @@ pub struct Query {
     pub limit: Option<usize>,
 }
 
-#[actix_web::post("/collections/{collection_name}/query")]
-async fn query_points(
+#[utoipa::path(
+    tag = "Points",
+    responses(
+        (status = 200, description = "Query points in a collection", body = ListPointsResponse),
+    ),
+)]
+#[post("/collections/{collection_name}/query")]
+pub async fn query_points(
     collection_name: web::Path<String>,
     dispatcher: web::Data<Dispatcher>,
     query: Json<Query>,

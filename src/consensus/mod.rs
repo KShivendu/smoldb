@@ -35,6 +35,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{runtime::Handle, sync::RwLock};
+use utoipa::ToSchema;
 
 type ProposalId = u64;
 
@@ -42,7 +43,7 @@ const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
 const RAFT_ELECTION_TICK_MS: usize = 10;
 const RAFT_HEARTBEAT_TICK_MS: usize = 3;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct Persistent {
     pub peer_id: PeerId,
     // Using instead of HashMap to keep peers sorted (consistent) across the nodes
@@ -66,7 +67,7 @@ impl ConsensusState {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ConsensusRaftInfo {
     pub term: u64,
     pub commit: u64,
