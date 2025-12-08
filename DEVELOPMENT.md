@@ -35,7 +35,8 @@ cargo bench upserts # Run all benches in upserts group
 python -m http.server .
 
 # For flame graph:
-cargo flamegraph --bench upsert -o flamegraph.svg -- --bench
+cargo flamegraph --bench read_write -o flamegraph.svg -- --bench
+chromium flamegraph.svg
 ```
 
 ## Perf investigation:
