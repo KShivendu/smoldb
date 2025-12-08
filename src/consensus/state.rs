@@ -10,7 +10,6 @@ use raft::{
 };
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
@@ -18,6 +17,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::RwLock;
+use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(remote = "HardState")]
@@ -47,7 +47,6 @@ struct RaftStateJson {
     #[schema(value_type = ConfStateJson)]
     pub conf_state: ConfState,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Persistent {
