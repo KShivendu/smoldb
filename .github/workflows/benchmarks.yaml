@@ -10,6 +10,9 @@ jobs:
   benchmarks:
     name: Benchmarks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - name: Install Protoc # for protobuf
@@ -194,5 +197,3 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: benchmark_summary.md
           edit-mode: replace
-          comment-tag: benchmark-results
-          delete-when-empty: false
