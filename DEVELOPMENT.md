@@ -29,13 +29,14 @@ watch -n1 'cargo run -p smolbench --  --skip-write -n 100M --delay 1000 -b 100'
 ```bash
 cargo bench -- --list # List benches
 cargo bench # Run all benches
-cargo bench upserts # Run all benches in upserts group
+cargo bench --bench collection # Run all collection benches
+cargo bench --bench collection -- read # Run all collection benches with substring 'read'
 
 # Access the reports at `target/criterion/report/index.html`
 python -m http.server .
 
 # For flame graph:
-cargo flamegraph --bench read_write -o flamegraph.svg -- --bench
+cargo flamegraph --bench collection -o flamegraph.svg -- --bench concurrent_read
 chromium flamegraph.svg
 ```
 
@@ -62,6 +63,17 @@ sudo hotspot perf.data --debugPaths /usr/lib/debug
 
 ```sh
 perf annotate --tui
+```
+
+### Investigating criterion benches with perf/hotspot:
+
+```sh
+# NOTE: This generates lots of perf data.
+cargo bench --bench collection --no-run  # Build the benchmark. It reveals the benchmark binary path.
+perf record --call-graph dwarf ./target/release/deps/collection-<hash> --bench <example:concurrent_read>
+# Now analyze perf.data with hotspot as usual
+# You can decrease file size by decreasing the sample freuency
+# perf record -F 99 --call-graph drawf ./target/release/deps/collection-<hash> --bench <example:concurrent_read>
 ```
 
 ### Errors:

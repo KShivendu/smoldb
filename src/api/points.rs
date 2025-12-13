@@ -141,6 +141,7 @@ pub async fn list_points(
 #[derive(Deserialize, Clone)]
 pub struct Query {
     pub filter: QueryFilter,
+    /// Warning: If not set, latency will be very high
     pub limit: Option<usize>,
 }
 

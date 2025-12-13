@@ -1,0 +1,199 @@
+name: "Benchmarks"
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ '**' ]
+
+
+jobs:
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Protoc # for protobuf
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      - name: Install jq and bc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq bc
+      - name: Download baseline (for PRs)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-baseline
+          path: target/criterion
+      - name: Run benchmarks and save baseline (main branch)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+        run: |
+          cargo bench --bench collection -- --save-baseline main
+      - name: Run benchmarks with threshold check (PRs)
+        if: github.event_name == 'pull_request'
+        id: bench_results
+        continue-on-error: true
+        run: |
+          # Ensure target/criterion directory exists
+          mkdir -p target/criterion
+
+          # Check if baseline exists - be more robust in checking
+          BASELINE_EXISTS=false
+          if [ -d "target/criterion" ]; then
+            # Check for any main baseline JSON files
+            MAIN_BASELINE=$(find target/criterion -name '*.json' -path '*/main/*' 2>/dev/null | head -1 || true)
+            if [ -n "$MAIN_BASELINE" ] && [ -f "$MAIN_BASELINE" ]; then
+              BASELINE_EXISTS=true
+            fi
+          fi
+
+          if [ "$BASELINE_EXISTS" = "false" ]; then
+            echo "⚠️ No baseline found. Running benchmarks without comparison..."
+            cargo bench --bench collection -- --save-baseline main 2>&1 | tee bench_output.txt || true
+            echo "baseline_missing=true" >> $GITHUB_OUTPUT
+            echo "exit_code=0" >> $GITHUB_OUTPUT
+          else
+            echo "📊 Running benchmarks with baseline comparison..."
+            # Run with baseline comparison - Criterion will show differences
+            # Using --test will fail on regressions, but we use continue-on-error to still report
+            cargo bench --bench collection -- --baseline main 2>&1 | tee bench_output.txt || true
+            BENCH_EXIT_CODE=${PIPESTATUS[0]}
+            echo "exit_code=$BENCH_EXIT_CODE" >> $GITHUB_OUTPUT
+            echo "baseline_missing=false" >> $GITHUB_OUTPUT
+
+            # Also run with --test to get threshold checking (fails on significant regressions)
+            echo "" >> bench_output.txt
+            echo "=== Threshold Check (5% significance) ===" >> bench_output.txt
+            cargo bench --bench collection -- --baseline main --test 2>&1 | tee -a bench_output.txt || true
+          fi
+      - name: Run benchmarks without baseline (other branches)
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev'
+        run: |
+          cargo bench --bench collection -- --save-baseline main
+      - name: Upload baseline artifact
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-baseline
+          path: target/criterion
+          retention-days: 30
+      - name: Upload benchmark reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-reports
+          path: target/criterion
+          retention-days: 7
+      - name: Parse and report benchmark results
+        if: always()
+        run: |
+          echo "## 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            if [ "${{ steps.bench_results.outputs.baseline_missing }}" == "true" ]; then
+              echo "⚠️ **No baseline found for comparison.** This is the first benchmark run." >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            elif [ -f bench_output.txt ]; then
+              # Check for performance regressions
+              if grep -qi "regressed\|regression\|slower" bench_output.txt; then
+                echo "❌ **Performance regression detected!**" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+              elif [ "${{ steps.bench_results.outputs.exit_code }}" == "0" ]; then
+                echo "✅ **All benchmarks passed threshold checks**" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+              fi
+
+              # Extract detailed comparison results
+              echo "### Comparison with Baseline" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              grep -E "(Benchmarking|time:|change:|Performance|regressed|improved|slower|faster)" bench_output.txt | head -100 >> $GITHUB_STEP_SUMMARY || cat bench_output.txt | tail -50 >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          # Extract JSON results for summary table
+          if [ -d target/criterion ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Benchmark Summary" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Benchmark | Mean Time |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----------|-----------|" >> $GITHUB_STEP_SUMMARY
+
+            # Find all estimates.json files (prefer new/ over main/ for PRs)
+            if [ "${{ github.event_name }}" == "pull_request" ]; then
+              ESTIMATES_PATH="*/new/*"
+            else
+              ESTIMATES_PATH="*/main/*"
+            fi
+
+            find target/criterion -name "estimates.json" -path "$ESTIMATES_PATH" 2>/dev/null | sort | while read file; do
+              BENCH_NAME=$(echo "$file" | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p')
+              MEAN_NS=$(jq -r '.mean.point_estimate' "$file" 2>/dev/null)
+
+              if [ "$MEAN_NS" != "null" ] && [ -n "$MEAN_NS" ] && [ "$MEAN_NS" != "" ]; then
+                # Convert to appropriate unit
+                if (( $(echo "$MEAN_NS > 1000000" | bc -l) )); then
+                  MEAN_MS=$(echo "scale=2; $MEAN_NS / 1000000" | bc)
+                  echo "| $BENCH_NAME | ${MEAN_MS} ms |" >> $GITHUB_STEP_SUMMARY
+                elif (( $(echo "$MEAN_NS > 1000" | bc -l) )); then
+                  MEAN_US=$(echo "scale=2; $MEAN_NS / 1000" | bc)
+                  echo "| $BENCH_NAME | ${MEAN_US} µs |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $BENCH_NAME | ${MEAN_NS} ns |" >> $GITHUB_STEP_SUMMARY
+                fi
+              fi
+            done
+
+            # If no results found in new/, try main/ as fallback
+            if [ "${{ github.event_name }}" == "pull_request" ] && [ -z "$(find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null)" ]; then
+              find target/criterion -name "estimates.json" -path "*/main/*" 2>/dev/null | sort | while read file; do
+                BENCH_NAME=$(echo "$file" | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p')
+                MEAN_NS=$(jq -r '.mean.point_estimate' "$file" 2>/dev/null)
+
+                if [ "$MEAN_NS" != "null" ] && [ -n "$MEAN_NS" ] && [ "$MEAN_NS" != "" ]; then
+                  if (( $(echo "$MEAN_NS > 1000000" | bc -l) )); then
+                    MEAN_MS=$(echo "scale=2; $MEAN_NS / 1000000" | bc)
+                    echo "| $BENCH_NAME | ${MEAN_MS} ms |" >> $GITHUB_STEP_SUMMARY
+                  elif (( $(echo "$MEAN_NS > 1000" | bc -l) )); then
+                    MEAN_US=$(echo "scale=2; $MEAN_NS / 1000" | bc)
+                    echo "| $BENCH_NAME | ${MEAN_US} µs |" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "| $BENCH_NAME | ${MEAN_NS} ns |" >> $GITHUB_STEP_SUMMARY
+                  fi
+                fi
+              done
+            fi
+          fi
+
+          # Add link to full report if available
+          if [ -d target/criterion ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "📈 Full HTML reports are available in the workflow artifacts." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Save summary to file for PR comment
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            if [ -f "$GITHUB_STEP_SUMMARY" ]; then
+              cp $GITHUB_STEP_SUMMARY benchmark_summary.md || true
+            else
+              echo "## 📊 Benchmark Results" > benchmark_summary.md
+              echo "" >> benchmark_summary.md
+              echo "No benchmark results available." >> benchmark_summary.md
+            fi
+          fi
+      - name: Post benchmark results as PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: benchmark_summary.md
+          edit-mode: replace

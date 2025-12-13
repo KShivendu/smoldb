@@ -59,7 +59,7 @@ default = []
 debug = true
 
 [[bench]]
-name = "read_write"
+name = "collection"
 harness = false
 
 [profile.perf] # for profiling
