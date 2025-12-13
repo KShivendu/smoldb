@@ -132,10 +132,9 @@ impl Segment {
     pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
         for point in points {
             let key = point.id.into_string();
-            let value =
-                bincode::encode_to_vec(&point, bincode::config::standard()).map_err(|e| {
-                    StorageError::ServiceError(format!("Failed to serialize point: {e}"))
-                })?;
+            let value = bincode::encode_to_vec(point, bincode_configuration()).map_err(|e| {
+                StorageError::ServiceError(format!("Failed to serialize point: {e}"))
+            })?;
             self.db.insert(key, value).map_err(|e| {
                 StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
             })?;
@@ -160,7 +159,7 @@ impl Segment {
                 match result {
                     Ok((point_id, value)) => {
                         let point: Point =
-                            bincode::decode_from_slice(&value, bincode::config::standard())
+                            bincode::decode_from_slice(&value, bincode_configuration())
                                 .map_err(|e| {
                                     StorageError::ServiceError(format!(
                                         "Failed to deserialize point {point_id:?}: {e}"
@@ -194,7 +193,7 @@ impl Segment {
                         if let Some(value) = db.get(key)? {
                             // this takes insane amount of time
                             let point: Point =
-                                bincode::decode_from_slice(&value, bincode::config::standard())
+                                bincode::decode_from_slice(&value, bincode_configuration())
                                     .map_err(|e| {
                                         StorageError::ServiceError(format!(
                                             "Failed to deserialize points: {e}"
