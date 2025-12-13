@@ -1,5 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use criterion::BenchmarkGroup;
+use criterion::Criterion;
 use serde_json::json;
 use smoldb::{
     channel_service::ChannelService,
@@ -73,4 +75,16 @@ pub async fn create_collection_with_points(
         create_collection("test_collection", tempdir, channel_service, payload_schema).await;
     collection.upsert_points(points, true).await.unwrap();
     collection
+}
+
+/// Creates a benchmark group with default configuration
+pub fn benchmark_group<'a>(
+    c: &'a mut Criterion,
+    name: &str,
+) -> BenchmarkGroup<'a, criterion::measurement::WallTime> {
+    let mut group = c.benchmark_group(name);
+    group.sample_size(20);
+    group.significance_level(0.05);
+    group.noise_threshold(0.05);
+    group
 }

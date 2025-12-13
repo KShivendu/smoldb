@@ -3,14 +3,14 @@ use std::sync::Arc;
 use criterion::Criterion;
 
 use crate::common::{
-    create_channel_service, create_collection, create_runtime, create_tempdir, generate_points,
+    benchmark_group, create_channel_service, create_collection, create_runtime, create_tempdir,
+    generate_points,
 };
 
 // Takes 619.19 ns on my machine
 // After hashring and tokio: 874.32 ns
 pub fn single_write(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Single write benchmarks");
-    group.sample_size(20);
+    let mut group = benchmark_group(c, "Single write benchmarks");
 
     let rt = create_runtime();
     let tempdir = create_tempdir();
@@ -35,8 +35,7 @@ pub fn single_write(c: &mut Criterion) {
 // Takes 68.347 ms on my machine
 // After hashring and tokio: 172.99ms
 pub fn concurrent_write(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Concurrent write benchmarks");
-    group.sample_size(20);
+    let mut group = benchmark_group(c, "Concurrent write benchmarks");
 
     let rt = create_runtime();
     let tempdir = create_tempdir();

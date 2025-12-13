@@ -1,15 +1,14 @@
 use criterion::Criterion;
 
 use crate::common::{
-    create_channel_service, create_collection_with_points, create_runtime, create_tempdir,
-    generate_points,
+    benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
+    create_tempdir, generate_points,
 };
 
 // Perf in the beginning: ???
 // Perf with hashring and tokio: 729.73 ns
 pub fn single_read(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Single read benchmarks");
-    group.sample_size(20);
+    let mut group = benchmark_group(c, "Single read benchmarks");
 
     let rt = create_runtime();
     let tempdir = create_tempdir();
@@ -36,8 +35,7 @@ pub fn single_read(c: &mut Criterion) {
 // Perf in the beginning: ???
 // Perf with hashring and tokio: 124.54ms (100_000 points, 4 threads, 2 shards; only 170x slower than single read)
 pub fn concurrent_read(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Concurrent read benchmarks");
-    group.sample_size(20);
+    let mut group = benchmark_group(c, "Concurrent read benchmarks");
 
     let rt = create_runtime();
     let tempdir = create_tempdir();

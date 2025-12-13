@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, sync::Arc};
 use criterion::Criterion;
 
 use crate::common::{
-    create_channel_service, create_collection_with_points, create_runtime, create_tempdir,
-    generate_points,
+    benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
+    create_tempdir, generate_points,
 };
 use smoldb::{
     api::points::Query,
@@ -16,8 +16,7 @@ use smoldb::{
 
 // Perf when bench was first implemented: 31.807 µs
 pub fn single_query(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Single query benchmarks");
-    group.sample_size(20);
+    let mut group = benchmark_group(c, "Single query benchmarks");
 
     let rt = create_runtime();
     let tempdir = create_tempdir();
@@ -52,8 +51,7 @@ pub fn single_query(c: &mut Criterion) {
 
 // Perf when bench was first implemented: 668.48 µs
 pub fn concurrent_query(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Concurrent query benchmarks");
-    group.sample_size(20);
+    let mut group = benchmark_group(c, "Concurrent query benchmarks");
 
     let rt = create_runtime();
     let tempdir = create_tempdir();
