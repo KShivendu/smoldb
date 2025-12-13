@@ -7,8 +7,8 @@ sudo apt install -y protobuf-compiler libprotobuf-dev
 
 # You can also interact with the p2p (internal) gRPC API like this:
 grpcurl -plaintext -import-path src/api/grpc/proto/ -proto smoldb.proto 0.0.0.0:5000 smoldb.Service/RootApi
+# Or better to just install https://github.com/felangga/chiko
 ```
-
 
 ## Running benchmarks:
 
