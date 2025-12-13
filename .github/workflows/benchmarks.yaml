@@ -176,3 +176,23 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "📈 Full HTML reports are available in the workflow artifacts." >> $GITHUB_STEP_SUMMARY
           fi
+
+          # Save summary to file for PR comment
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            if [ -f "$GITHUB_STEP_SUMMARY" ]; then
+              cp $GITHUB_STEP_SUMMARY benchmark_summary.md || true
+            else
+              echo "## 📊 Benchmark Results" > benchmark_summary.md
+              echo "" >> benchmark_summary.md
+              echo "No benchmark results available." >> benchmark_summary.md
+            fi
+          fi
+      - name: Post benchmark results as PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: benchmark_summary.md
+          edit-mode: replace
+          comment-tag: benchmark-results
+          delete-when-empty: false
