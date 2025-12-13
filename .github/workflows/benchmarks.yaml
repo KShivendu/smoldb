@@ -24,11 +24,11 @@ jobs:
           sudo apt-get install -y jq bc
       - name: Download baseline (for PRs)
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: benchmark-baseline
           path: target/criterion
-          continue-on-error: true
       - name: Run benchmarks and save baseline (main branch)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
         run: |
