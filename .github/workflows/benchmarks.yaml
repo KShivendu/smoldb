@@ -38,17 +38,29 @@ jobs:
         id: bench_results
         continue-on-error: true
         run: |
-          # Check if baseline exists
-          if [ ! -d "target/criterion" ] || [ -z "$(find target/criterion -name '*.json' -path '*/main/*' 2>/dev/null | head -1)" ]; then
+          # Ensure target/criterion directory exists
+          mkdir -p target/criterion
+
+          # Check if baseline exists - be more robust in checking
+          BASELINE_EXISTS=false
+          if [ -d "target/criterion" ]; then
+            # Check for any main baseline JSON files
+            MAIN_BASELINE=$(find target/criterion -name '*.json' -path '*/main/*' 2>/dev/null | head -1 || true)
+            if [ -n "$MAIN_BASELINE" ] && [ -f "$MAIN_BASELINE" ]; then
+              BASELINE_EXISTS=true
+            fi
+          fi
+
+          if [ "$BASELINE_EXISTS" = "false" ]; then
             echo "⚠️ No baseline found. Running benchmarks without comparison..."
-            cargo bench --bench collection -- --save-baseline main 2>&1 | tee bench_output.txt
+            cargo bench --bench collection -- --save-baseline main 2>&1 | tee bench_output.txt || true
             echo "baseline_missing=true" >> $GITHUB_OUTPUT
             echo "exit_code=0" >> $GITHUB_OUTPUT
           else
             echo "📊 Running benchmarks with baseline comparison..."
             # Run with baseline comparison - Criterion will show differences
             # Using --test will fail on regressions, but we use continue-on-error to still report
-            cargo bench --bench collection -- --baseline main 2>&1 | tee bench_output.txt
+            cargo bench --bench collection -- --baseline main 2>&1 | tee bench_output.txt || true
             BENCH_EXIT_CODE=${PIPESTATUS[0]}
             echo "exit_code=$BENCH_EXIT_CODE" >> $GITHUB_OUTPUT
             echo "baseline_missing=false" >> $GITHUB_OUTPUT
