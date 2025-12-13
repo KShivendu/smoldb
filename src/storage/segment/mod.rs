@@ -219,7 +219,8 @@ impl Segment {
             })
             .try_collect()
             .await?;
-        return Ok(points);
+
+        Ok(points)
     }
 
     pub async fn query_points(&self, query: Query) -> Result<Vec<Point>, StorageError> {
