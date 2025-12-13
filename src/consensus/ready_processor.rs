@@ -51,7 +51,12 @@ impl Consensus {
                 }
             }
 
-            let mut last_apply_index = 0; // ToDo: Should be stored globally in a state?
+            let mut last_apply_index = self
+                .consensus_state
+                .persistent
+                .read()
+                .unwrap()
+                .last_applied();
             self.handle_committed_entries(ready.take_committed_entries(), &mut last_apply_index)?;
 
             if !ready.entries().is_empty() {
@@ -89,9 +94,7 @@ impl Consensus {
         }
     }
 
-    /// ToDo: This function should actually apply the committed entries to the state machine.
-    ///
-    /// However it currently pushes forwards ones to other peers via gRPC
+    /// This function actually applies the committed entries to the local state machine.
     fn handle_committed_entries(
         &mut self,
         entries: Vec<Entry>,
@@ -100,7 +103,12 @@ impl Consensus {
         for entry in entries {
             // ToDo: Save the last apply index to resume applying after restart.
             // Here we just ignore this because we use a Memory storage.
-            *last_apply_index = entry.index;
+            *last_apply_index = entry.index; // for in-memory implementation
+            self.consensus_state
+                .persistent
+                .write()
+                .unwrap()
+                .set_last_applied(entry.index)?; // for persistent storage
 
             if entry.data.is_empty() {
                 // Empty entry found. This means a new leader was elected.

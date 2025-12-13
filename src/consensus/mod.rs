@@ -184,10 +184,13 @@ impl Consensus {
         let storage = RaftStorage::new(peer_id, consensus_manager.clone(), false);
         let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!());
 
+        // let last_applied = consensus_state.read_persistent().last_applied();
+
         let config = Config {
             id: peer_id,
             election_tick: RAFT_ELECTION_TICK_MS,
             heartbeat_tick: RAFT_HEARTBEAT_TICK_MS,
+            // applied: last_applied - 1,
             ..Default::default()
         };
         let raft = RawNode::new(&config, storage, &logger)?;

@@ -2,14 +2,17 @@ use backtrace::Backtrace;
 use log::debug;
 use prost_for_raft::Message;
 use raft::prelude::{ConfChange, ConfChangeV2, Entry, EntryType, Snapshot};
+use serde::Serialize;
+use serde_json::Value;
+use utoipa::ToSchema;
 
 use crate::consensus::ConsensusOperation;
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct DebuggableEntry {
     index: u64,
     term: u64,
-    data: String,
+    data: Value,
     context: String,
 }
 
@@ -17,27 +20,28 @@ impl From<&Entry> for DebuggableEntry {
     fn from(entry: &Entry) -> Self {
         let context = str::from_utf8(&entry.context).unwrap_or("Invalid UTF-8");
 
-        let data = match entry.get_entry_type() {
+        let data: Value = match entry.get_entry_type() {
             EntryType::EntryNormal => {
-                let data = ConsensusOperation::from_entry(entry)
-                    .map(|e| format!("{e:?}"))
-                    .unwrap_or("EntryNormal data should be decodable. It might be leader change and hence empty".to_string());
-
-                data
+                if let Ok(operation) = ConsensusOperation::from_entry(entry) {
+                    serde_json::to_value(&operation)
+                        .unwrap_or(Value::String("Failed to serialize operation".to_string()))
+                } else {
+                    Value::String("Leader change (empty data field)".to_string())
+                }
             }
             EntryType::EntryConfChange => {
                 let data = ConfChange::decode(&*entry.data)
                     .map(|cc| format!("{cc:?}"))
                     .unwrap_or("EntryConfChange data should be decodable".to_string());
 
-                data
+                Value::String(data)
             }
             EntryType::EntryConfChangeV2 => {
                 let data = ConfChangeV2::decode(&*entry.data)
                     .map(|cc| format!("{cc:?}"))
                     .unwrap_or("EntryConfChangeV2 data should be decodable".to_string());
 
-                data
+                Value::String(data)
             }
         };
 

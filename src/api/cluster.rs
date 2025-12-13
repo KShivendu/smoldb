@@ -3,6 +3,8 @@ use crate::{
     consensus::{debuggables::DebuggableEntry, state::Persistent},
 };
 use actix_web::{get, web, Responder};
+use serde::Serialize;
+use utoipa::ToSchema;
 
 #[utoipa::path(
     tag = "Cluster",
@@ -20,18 +22,24 @@ async fn get_cluster(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     .await
 }
 
-#[derive(serde::Serialize)]
-struct PeerkConsensusResponse {
+#[derive(Serialize, ToSchema)]
+struct PeekConsensusResponse {
     entries: Vec<DebuggableEntry>,
 }
 
-#[actix_web::get("/cluster/inspect")]
+#[utoipa::path(
+    tag = "Cluster",
+    responses(
+        (status = 200, description = "Get top 10 consensus log entries", body = PeekConsensusResponse),
+    ),
+)]
+#[get("/cluster/inspect")]
 async fn get_cluster_consensus(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     helpers::time(async {
         let dispatcher = dispatcher.into_inner();
         let consensus = dispatcher.get_consensus()?;
         let consensus_top_10 = consensus.peek_consensus_wal(10);
-        Ok(PeerkConsensusResponse {
+        Ok(PeekConsensusResponse {
             entries: consensus_top_10,
         })
     })

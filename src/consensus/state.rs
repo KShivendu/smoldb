@@ -4,6 +4,7 @@ use crate::{
     types::PeerId,
 };
 use http::Uri;
+use log::info;
 use raft::{
     prelude::{ConfState, HardState},
     RaftState,
@@ -76,20 +77,22 @@ impl Persistent {
                 std::fs::read_to_string(&raft_state_path).expect("Failed to read raft_state.json");
             serde_json::from_str(&data).expect("Failed to parse raft_state.json")
         } else {
+            info!("Persistent state not found, initializing new state");
             let default = Persistent {
                 peer_id,
                 peers: BTreeMap::from([(peer_id, p2p_uri.to_string())]),
                 raft_info: ConsensusRaftInfo {
                     term: 0,
                     commit: 0,
+                    last_applied: 0,
                     role: "".to_string(),
                     leader: 0,
                 },
                 raft_state: RaftState {
                     hard_state: HardState {
-                        term: 1,
-                        vote: 1,
-                        commit: 1,
+                        term: 1,   // FIXME??
+                        vote: 1,   // FIXME??
+                        commit: 1, // FIXME??
                     },
                     conf_state: ConfState::from((vec![peer_id], vec![])),
                 },
@@ -119,6 +122,19 @@ impl Persistent {
         update: impl FnOnce(&mut Self),
     ) -> Result<(), ConsensusError> {
         update(self);
+        self.save()
+    }
+
+    pub fn last_applied(&self) -> u64 {
+        // match self.raft_info.last_applied {
+        //     0 => 0,
+        //     v => v - 1,
+        // }
+        self.raft_info.last_applied
+    }
+
+    pub fn set_last_applied(&mut self, index: u64) -> Result<(), ConsensusError> {
+        self.raft_info.last_applied = index;
         self.save()
     }
 }
@@ -221,4 +237,6 @@ pub struct ConsensusRaftInfo {
     // ToDo: Introduce pending_operations field
     pub role: String, // "leader", "follower", etc.
     pub leader: PeerId,
+    /// Index of the last locally applied log entry on this peer
+    last_applied: u64,
 }

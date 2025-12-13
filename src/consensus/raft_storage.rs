@@ -3,7 +3,7 @@ use crate::{
     error::{ConsensusError, ConsensusResult},
     types::PeerId,
 };
-use log::{info, trace};
+use log::{debug, info, trace};
 use raft::{
     prelude::{Entry, Snapshot},
     storage::MemStorage,
@@ -116,7 +116,10 @@ impl RaftStorage {
             self.consensus_manager
                 .entries(low, high, None, GetEntriesContext::empty(false))?;
 
-        info!("ConsensusManager entries after append: {:?}", disk_entries);
+        info!(
+            "ConsensusManager entries within [{}, {}) after append: {:?}",
+            low, high, disk_entries
+        );
 
         if let Some(mem_storage) = &self.mem_storage {
             let mem_entries =
@@ -234,7 +237,7 @@ impl Storage for RaftStorage {
     ) -> RaftResult<Vec<Entry>> {
         trace!("Fetching entries between indices [{}, {})", low, high);
         let max_size: Option<u64> = max_size.into();
-        dbg!(&low, &high, &max_size); // called when actual raft storage is used and operations are applied
+        debug!("low = {low}, high = {high}, max_size = {max_size:?}"); // called when actual raft storage is used and operations are applied
 
         // UNSAFE: This assumes GetEntriesContext is just a wrapper around the enum
         let context2 = unsafe { core::mem::transmute_copy(&context) };
@@ -261,6 +264,8 @@ impl Storage for RaftStorage {
             debug_assert_eq!(mem_res, disk_res);
             return mem_res; // prefer in-memory state if available
         }
+
+        info!("Term for index {idx} is {:?}", &disk_res);
 
         disk_res
     }
