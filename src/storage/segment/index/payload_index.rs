@@ -16,15 +16,15 @@ use utoipa::ToSchema;
 
 /// Converts the number into a big-endian value which is suitable for querying/storing in sled
 /// This allows lexicographical ordering and hence numeric comparisons
-fn encoded_integer_value(n: i64) -> Vec<u8> {
+pub fn encoded_integer_value(n: i64) -> Vec<u8> {
     n.to_be_bytes().to_vec()
 }
 
-fn encoded_point_ids(point_ids: &[u64]) -> Result<Vec<u8>, bincode::error::EncodeError> {
+pub fn encoded_point_ids(point_ids: &[u64]) -> Result<Vec<u8>, bincode::error::EncodeError> {
     bincode::encode_to_vec(point_ids, bincode::config::standard())
 }
 
-fn decoded_point_ids(data: &[u8]) -> Result<Vec<u64>, bincode::error::DecodeError> {
+pub fn decoded_point_ids(data: &[u8]) -> Result<Vec<u64>, bincode::error::DecodeError> {
     bincode::decode_from_slice(data, bincode::config::standard()).map(|(ids, _)| ids)
 }
 
@@ -149,8 +149,8 @@ pub struct PayloadIndex {
 }
 
 impl PayloadIndex {
+    /// Read from the database to get existing indices and their types. If no indices are found, create a new empty index.
     pub fn get_or_create(db: &Db) -> Self {
-        // Read from the database to get existing indices and their types:
         let schema_tree = db
             .open_tree("schema")
             .expect("Failed to open segment schema tree");
@@ -249,6 +249,8 @@ impl PayloadIndex {
 
 #[cfg(test)]
 mod test {
+    use serde_json::json;
+
     use super::*;
 
     #[test]
@@ -266,7 +268,7 @@ mod test {
             index
                 .upsert(&Point {
                     id: PointId::Id(i),
-                    payload: serde_json::json!({"price": i * 10}),
+                    payload: json!({"price": i * 10}),
                 })
                 .unwrap();
         }

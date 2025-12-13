@@ -14,7 +14,7 @@ impl Query {
             filter: QueryFilter {
                 key: filter.key,
                 value: filter.value,
-                op: filter.op.into(),
+                op: filter.op.try_into()?,
             },
             limit: None, // ToDo
         })
