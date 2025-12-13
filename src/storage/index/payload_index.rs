@@ -151,32 +151,20 @@ pub struct PayloadIndex {
 impl PayloadIndex {
     pub fn get_or_create(db: &Db) -> Self {
         // Read from the database to get existing indices and their types:
-        let schema_tree = db.open_tree("schema").expect("Failed to open schema tree");
-        let index_configs: HashMap<String, String> = schema_tree
-            .iter()
-            .map(|item| {
-                let (key, value) = item.expect("Failed to read schema item");
-                // ToDo: Ensure that using utf8 will not cause problems
-                let index_name = String::from_utf8(key.to_vec()).expect("Invalid UTF-8 in key");
-                let index_config =
-                    String::from_utf8(value.to_vec()).expect("Invalid UTF-8 in value");
-
-                (index_name, index_config)
-            })
-            .collect();
-
+        let schema_tree = db
+            .open_tree("schema")
+            .expect("Failed to open segment schema tree");
         let mut indices = HashMap::new();
-        for (name, index_config) in index_configs {
+        for item in schema_tree.iter() {
+            let (key, value) = item.expect("Failed to read schema item");
+            let name = String::from_utf8(key.to_vec()).expect("Invalid UTF-8 in key");
             let index_config: IndexConfig =
-                serde_json::from_str(&index_config).expect("Failed to deserialize index config");
-            match index_config {
-                IndexConfig::Int => {
-                    indices.insert(name.clone(), FieldIndex::numeric(db, &name));
-                }
-                IndexConfig::Null => {
-                    indices.insert(name.clone(), FieldIndex::Null);
-                }
-            }
+                serde_json::from_slice(&value).expect("Failed to deserialize index config");
+            let field_index = match index_config {
+                IndexConfig::Int => FieldIndex::numeric(db, &name),
+                IndexConfig::Null => FieldIndex::Null,
+            };
+            indices.insert(name, field_index);
         }
 
         Self { indices }
