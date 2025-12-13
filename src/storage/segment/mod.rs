@@ -1,86 +1,25 @@
 pub mod index;
+pub mod point;
 
 use crate::{
     api::points::Query,
     error::StorageError,
     storage::index::payload_index::{IndexConfig, PayloadIndex},
 };
-use bincode::{config::Configuration, Decode, Encode};
 use futures::{stream, StreamExt, TryStreamExt};
-use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
 };
-use utoipa::ToSchema;
-#[derive(
-    Serialize,
-    Deserialize,
-    Clone,
-    Hash,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Debug,
-    ToSchema,
-    Encode,
-    Decode,
-)]
-#[serde(untagged)]
-pub enum PointId {
-    Id(u64),
-    Uuid(String),
-}
 
-impl PointId {
-    pub fn into_string(&self) -> String {
-        match self {
-            PointId::Id(id) => id.to_string(),
-            PointId::Uuid(uuid) => uuid.clone(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, ToSchema)]
-pub struct Point {
-    pub id: PointId,
-    pub payload: serde_json::Value,
-}
-
-impl Encode for Point {
-    fn encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> Result<(), bincode::error::EncodeError> {
-        self.id.encode(encoder)?;
-        let json_string = self.payload.to_string();
-        json_string.encode(encoder)?;
-        Ok(())
-    }
-}
-
-impl Decode<()> for Point {
-    fn decode<D: bincode::de::Decoder>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let id = PointId::decode(decoder)?;
-        let json_string = String::decode(decoder)?;
-        let payload = serde_json::from_str(&json_string)
-            .map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))?;
-        Ok(Self { id, payload })
-    }
-}
+// re-export point imports
+pub use point::{Point, PointId};
 
 pub struct Segment {
     pub path: PathBuf,
     pub db: sled::Db,
     // ToDo: ID tracker, data storage, etc
     pub payload_index: PayloadIndex,
-}
-
-pub fn bincode_configuration() -> Configuration {
-    bincode::config::standard().with_variable_int_encoding()
 }
 
 impl Segment {
@@ -132,7 +71,7 @@ impl Segment {
     pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
         for point in points {
             let key = point.id.into_string();
-            let value = bincode::encode_to_vec(point, bincode_configuration()).map_err(|e| {
+            let value = point.encode().map_err(|e| {
                 StorageError::ServiceError(format!("Failed to serialize point: {e}"))
             })?;
             self.db.insert(key, value).map_err(|e| {
@@ -157,16 +96,8 @@ impl Segment {
             // If no ids are provided, return all points
             for result in self.db.iter() {
                 match result {
-                    Ok((point_id, value)) => {
-                        let point: Point =
-                            bincode::decode_from_slice(&value, bincode_configuration())
-                                .map_err(|e| {
-                                    StorageError::ServiceError(format!(
-                                        "Failed to deserialize point {point_id:?}: {e}"
-                                    ))
-                                })?
-                                .0;
-
+                    Ok((_point_id, value)) => {
+                        let point: Point = Point::decode(&value)?;
                         points.push(point);
                     }
                     Err(e) => {
@@ -192,14 +123,7 @@ impl Segment {
                         let key = id.into_string(); // this is taking small time
                         if let Some(value) = db.get(key)? {
                             // this takes insane amount of time
-                            let point: Point =
-                                bincode::decode_from_slice(&value, bincode_configuration())
-                                    .map_err(|e| {
-                                        StorageError::ServiceError(format!(
-                                            "Failed to deserialize points: {e}"
-                                        ))
-                                    })?
-                                    .0;
+                            let point: Point = Point::decode(&value)?;
                             Ok(Some(point))
                         } else {
                             Ok(None)
@@ -266,23 +190,5 @@ mod test {
         // Read all points:
         let all_points = segment.get_points(None).await.unwrap();
         assert_eq!(all_points, vec![p1, p2]);
-    }
-
-    #[test]
-    fn test_bincode_serialization() {
-        let point = Point {
-            id: PointId::Id(1),
-            payload: json!({ "price": 100 }),
-        };
-        let serialized = bincode::encode_to_vec(&point, bincode_configuration()).unwrap();
-        assert_eq!(
-            serialized,
-            vec![0, 1, 13, 123, 34, 112, 114, 105, 99, 101, 34, 58, 49, 48, 48, 125]
-        );
-
-        let deserialized: Point = bincode::decode_from_slice(&serialized, bincode_configuration())
-            .unwrap()
-            .0;
-        assert_eq!(deserialized, point);
     }
 }
