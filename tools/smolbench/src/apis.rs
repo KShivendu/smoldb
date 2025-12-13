@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::time::sleep;
 
-const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub async fn wait_consensus_ready(url: &Uri) -> Result<(), SmolBenchError> {
     let now = std::time::Instant::now();

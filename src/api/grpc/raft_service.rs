@@ -1,6 +1,6 @@
 use crate::{
     api::{
-        dispatcher::{self, Dispatcher},
+        dispatcher::Dispatcher,
         grpc::schema::{
             raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
             RaftMessage as RaftMessageBytes, Uri,
@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 pub struct RaftService {
-    dispatcher: Arc<dispatcher::Dispatcher>,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl RaftService {
@@ -42,7 +42,6 @@ impl Raft for RaftService {
             .map_err(|e| Status::internal(format!("Failed to get consensus: {e}")))?;
 
         consensus
-            .sender
             .send(consensus::Msg::Raft(Box::new(message)))
             .map_err(|e| {
                 Status::internal(format!("Failed to send Raft message over channel: {e}"))

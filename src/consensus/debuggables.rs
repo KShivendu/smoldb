@@ -1,14 +1,18 @@
+use backtrace::Backtrace;
 use log::debug;
 use prost_for_raft::Message;
 use raft::prelude::{ConfChange, ConfChangeV2, Entry, EntryType, Snapshot};
+use serde::Serialize;
+use serde_json::Value;
+use utoipa::ToSchema;
 
 use crate::consensus::ConsensusOperation;
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct DebuggableEntry {
     index: u64,
     term: u64,
-    data: String,
+    data: Value,
     context: String,
 }
 
@@ -16,27 +20,28 @@ impl From<&Entry> for DebuggableEntry {
     fn from(entry: &Entry) -> Self {
         let context = str::from_utf8(&entry.context).unwrap_or("Invalid UTF-8");
 
-        let data = match entry.get_entry_type() {
+        let data: Value = match entry.get_entry_type() {
             EntryType::EntryNormal => {
-                let data = ConsensusOperation::from_entry(entry)
-                    .map(|e| format!("{e:?}"))
-                    .unwrap_or("EntryNormal data should be decodable".to_string());
-
-                data
+                if let Ok(operation) = ConsensusOperation::from_entry(entry) {
+                    serde_json::to_value(&operation)
+                        .unwrap_or(Value::String("Failed to serialize operation".to_string()))
+                } else {
+                    Value::String("Leader change (empty data field)".to_string())
+                }
             }
             EntryType::EntryConfChange => {
                 let data = ConfChange::decode(&*entry.data)
                     .map(|cc| format!("{cc:?}"))
                     .unwrap_or("EntryConfChange data should be decodable".to_string());
 
-                data
+                Value::String(data)
             }
             EntryType::EntryConfChangeV2 => {
                 let data = ConfChangeV2::decode(&*entry.data)
                     .map(|cc| format!("{cc:?}"))
                     .unwrap_or("EntryConfChangeV2 data should be decodable".to_string());
 
-                data
+                Value::String(data)
             }
         };
 
@@ -215,6 +220,35 @@ impl From<&raft::Ready> for DebuggableReady {
             snapshot,
             persisted_messages,
             // light_ready: ready,
+        }
+    }
+}
+
+pub fn print_caller_stack() {
+    let bt = Backtrace::new();
+
+    debug!("Called from:");
+    // Skip 1st frame which is this function itself
+    for (i, frame) in bt.frames().iter().skip(1).take(10).enumerate() {
+        for symbol in frame.symbols() {
+            if let Some(name) = symbol.name() {
+                let name_str = name.to_string();
+                if !name_str.contains("smoldb") {
+                    continue;
+                }
+                let line_info = if let Some(line) = symbol.lineno() {
+                    format!(":{}", line)
+                } else {
+                    "".to_string()
+                };
+                let file_info = if let Some(file) = symbol.filename() {
+                    format!(" ({}{})", file.display(), line_info)
+                } else {
+                    "".to_string()
+                };
+                debug!("  {}: {}{}", i, name_str, file_info);
+                // }
+            }
         }
     }
 }

@@ -8,7 +8,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     api::{
-        cluster::get_cluster,
+        cluster::{get_cluster, get_cluster_consensus},
         collection::{
             create_collection, delete_collection, get_collection, get_collection_cluster_info,
             get_collections, CollectionClusterInfo,
@@ -20,7 +20,7 @@ use crate::{
         },
         service::{root_api, RootApiResponse},
     },
-    consensus::Persistent,
+    consensus::state::Persistent,
     storage::{collection::CollectionInfo, segment::Point},
 };
 
@@ -85,6 +85,7 @@ pub async fn start_http_server(url: Uri, dispatcher: Arc<Dispatcher>) -> std::io
             .service(swagger_ui.clone())
             .service(root_api)
             .service(get_cluster)
+            .service(get_cluster_consensus)
             .service(get_collections)
             .service(get_collection_cluster_info)
             .service(get_collection)

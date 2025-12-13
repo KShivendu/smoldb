@@ -29,6 +29,7 @@ utoipa-swagger-ui = {version = "9.0.2", features = ["actix-web"]}
 # storage layer:
 hashring = "0.3.6"
 sled = { version = "0.34.7", default-features = false }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "baee8ba656743aee42b185d1aa344f2be23d7d1a" }
 
 # cli, logging, runtime, and other utilities:
 clap = { version = "4.5.38", features = ["derive"] }
@@ -44,6 +45,7 @@ slog-async = "2.8.0"
 slog-scope = "4.4.0"
 log = "0.4.27"
 bincode = "2.0.1"
+backtrace = "0.3.76"
 
 [build-dependencies]
 tonic-build = "0.13.1"
@@ -54,6 +56,9 @@ rusty-hook = "0.11.2"
 
 [features]
 default = []
+
+[profile.dev]
+debug = true # important for debugging deps with lldb
 
 [profile.bench]
 debug = true

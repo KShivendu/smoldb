@@ -3,6 +3,7 @@ pub mod debuggables;
 pub mod manager;
 pub mod raft_storage;
 pub mod ready_processor;
+pub mod state;
 pub mod utils;
 
 use crate::{
@@ -10,122 +11,39 @@ use crate::{
         make_grpc_channel,
         schema::{raft_client::RaftClient, AddPeerToKnownMessage},
     },
-    consensus::{raft_storage::RaftStorage, utils::add_peer_to_toc_and_consensus_state},
-    error::ConsensusError,
-    storage::toc::{CollectionOperation, TableOfContent},
+    consensus::{
+        manager::ConsensusManager, raft_storage::RaftStorage, state::ConsensusState,
+        utils::add_peer_to_toc_and_consensus_state,
+    },
+    storage::toc::{CollectionOperation, TableOfContent, STORAGE_DIR},
     types::PeerId,
 };
 use http::Uri;
-use log::{error, info};
+use log::{debug, error, info, trace};
 use raft::{
     prelude::{ConfChange, ConfChangeType, Entry, Message},
     Config, RawNode,
 };
-use rand::Rng;
-use serde::Serialize;
 use slog::{o, Drain};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     error::Error,
+    path::Path,
     sync::{
-        mpsc::{channel, Receiver, RecvTimeoutError, Sender},
+        mpsc::{Receiver, RecvTimeoutError},
         Arc,
     },
     thread::{self},
     time::{Duration, Instant},
 };
-use tokio::{runtime::Handle, sync::RwLock};
-use utoipa::ToSchema;
+use tokio::runtime::Handle;
 
 type ProposalId = u64;
 
 const RAFT_TICK_INTERVAL: Duration = Duration::from_millis(100);
 const RAFT_ELECTION_TICK_MS: usize = 10;
 const RAFT_HEARTBEAT_TICK_MS: usize = 3;
-
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct Persistent {
-    pub peer_id: PeerId,
-    // Using instead of HashMap to keep peers sorted (consistent) across the nodes
-    pub peers: BTreeMap<PeerId, String>,
-    pub raft_info: ConsensusRaftInfo,
-}
-
-#[derive(Debug)]
-pub struct ConsensusState {
-    // ToDo: Replace with parking_lot::RwLock?
-    pub persistent: RwLock<Persistent>,
-
-    // ToDo: This is redundant with `persistent.peers`. Consider removing it
-    // This is shared with `ChannelService`
-    pub peer_address_by_id: Arc<RwLock<HashMap<PeerId, Uri>>>,
-}
-
-impl ConsensusState {
-    pub async fn get_peer_id(&self) -> PeerId {
-        self.persistent.read().await.peer_id
-    }
-}
-
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct ConsensusRaftInfo {
-    pub term: u64,
-    pub commit: u64,
-    // ToDo: Introduce pending_operations field
-    pub role: String, // "leader", "follower", etc.
-    pub leader: PeerId,
-}
-
-impl ConsensusState {
-    /// Create a new ConsensusState with a given p2p URI and optional default peer ID.
-    pub fn new(p2p_uri: http::Uri, default_peer_id: Option<PeerId>) -> Self {
-        let mut rng = rand::rng();
-        // Do not generate too big peer ID, to avoid problems with serialization
-        let peer_id = default_peer_id.unwrap_or_else(|| rng.random::<PeerId>() % (1 << 53));
-
-        let p = Persistent {
-            peer_id,
-            peers: BTreeMap::from([(peer_id, p2p_uri.to_string())]),
-            raft_info: ConsensusRaftInfo {
-                term: 0,
-                commit: 0,
-                role: "".to_string(),
-                leader: 0,
-            },
-        };
-        ConsensusState {
-            persistent: RwLock::new(p),
-            peer_address_by_id: Arc::new(RwLock::new(HashMap::from([(peer_id, p2p_uri)]))),
-        }
-    }
-
-    pub async fn add_peer(
-        &self,
-        peer_id: PeerId,
-        uri: Uri,
-    ) -> Result<(PeerId, Vec<(PeerId, String)>), ConsensusError> {
-        // Add a new peer to the consensus state
-        let mut peer_address_by_id = self.peer_address_by_id.write().await;
-        peer_address_by_id.insert(peer_id, uri.clone());
-        let mut persistent = self.persistent.write().await;
-        persistent.peers.insert(peer_id, uri.to_string());
-
-        // ToDo: Should return leader peer ID instead of current peer ID
-        let this_peer_id = persistent.peer_id;
-        let latest_peers = persistent.peers.clone().into_iter().collect();
-
-        Ok((this_peer_id, latest_peers))
-    }
-
-    pub async fn get_peer_uri(&self, peer_id: PeerId) -> Result<Uri, ConsensusError> {
-        let peer_address_by_id = self.peer_address_by_id.read().await;
-        peer_address_by_id
-            .get(&peer_id)
-            .cloned()
-            .ok_or_else(|| ConsensusError::ServiceError(format!("Peer ID {peer_id} not found")))
-    }
-}
-
+pub const CONSENSUS_DIR: &str = "consensus";
 /// Holds raft consensus state and handles bootstrapping,
 /// adding peers, and running the consensus loop.
 pub struct Consensus {
@@ -153,7 +71,7 @@ impl Consensus {
         )
         .await?;
 
-        let persistent = consensus_state.persistent.read().await.clone();
+        let persistent = consensus_state.read_persistent().clone();
         let peer_id = persistent.peer_id;
         let peer_uri = persistent
             .peers
@@ -171,7 +89,7 @@ impl Consensus {
             .await?
             .into_inner();
 
-        println!("Adding peers from bootstrap: {all_peers:?}");
+        debug!("Adding peers from bootstrap: {all_peers:?}");
         for peer in all_peers.all_peers {
             // Add peer to local state
             if peer.id == peer_id {
@@ -201,8 +119,21 @@ impl Consensus {
         consensus_state: Arc<ConsensusState>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
-    ) -> Result<Sender<Msg>, Box<dyn Error>> {
-        let (mut consensus, sender) = Self::new(peer_id, runtime, consensus_state.clone(), toc)?;
+    ) -> Result<Arc<ConsensusManager>, Box<dyn Error>> {
+        let consensus_dir = Path::new(STORAGE_DIR).join(CONSENSUS_DIR);
+        let (consensus_manager, receiver) =
+            ConsensusManager::init(consensus_dir.as_path(), consensus_state.clone());
+
+        let consensus_manager = Arc::new(consensus_manager);
+
+        let mut consensus = Self::new(
+            peer_id,
+            runtime,
+            consensus_state.clone(),
+            consensus_manager.clone(),
+            receiver,
+            toc,
+        )?;
 
         // ToDo: Send initial snapshot to new followers to speed up consensus
 
@@ -238,7 +169,7 @@ impl Consensus {
                 })
             })?;
 
-        Ok(sender)
+        Ok(consensus_manager)
     }
 
     /// Create a new Consensus instance with a Raft node, sender, and receiver.
@@ -246,24 +177,25 @@ impl Consensus {
         peer_id: PeerId,
         runtime: Handle,
         consensus_state: Arc<ConsensusState>,
+        consensus_manager: Arc<ConsensusManager>,
+        receiver: Receiver<Msg>,
         toc: Arc<TableOfContent>,
-    ) -> Result<(Self, Sender<Msg>), Box<dyn Error>> {
-        // let storage = MemStorage::default();
-
-        let storage = RaftStorage::new(peer_id);
+    ) -> Result<Self, Box<dyn Error>> {
+        let storage = RaftStorage::new(peer_id, consensus_manager.clone(), false);
         let logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), o!());
+
+        // let last_applied = consensus_state.read_persistent().last_applied();
 
         let config = Config {
             id: peer_id,
             election_tick: RAFT_ELECTION_TICK_MS,
             heartbeat_tick: RAFT_HEARTBEAT_TICK_MS,
+            // applied: last_applied - 1,
             ..Default::default()
         };
         let raft = RawNode::new(&config, storage, &logger)?;
 
         info!("Created Raft node with ID: {peer_id}");
-
-        let (sender, receiver) = channel::<Msg>();
 
         let consensus = Consensus {
             peer_id,
@@ -274,7 +206,7 @@ impl Consensus {
             consensus_state,
         };
 
-        Ok((consensus, sender))
+        Ok(consensus)
     }
 
     /// Run the consensus loop at each tick.
@@ -351,6 +283,7 @@ impl Consensus {
 
             if t.elapsed() >= RAFT_TICK_INTERVAL {
                 // Tick the raft.
+                trace!("Ticking raft node");
                 raft_node.tick();
                 t = Instant::now();
             }
@@ -359,7 +292,7 @@ impl Consensus {
                 continue; // No ready state to processing ticking, continue to the next iteration
             }
 
-            self.on_ready(&mut callbacks).await;
+            self.on_ready(&mut callbacks).await?;
         }
     }
 }

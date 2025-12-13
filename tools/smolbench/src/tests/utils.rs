@@ -29,6 +29,12 @@ impl SmolDbNode {
     pub fn new(child: std::process::Child) -> Self {
         SmolDbNode { child }
     }
+
+    pub fn stop(&mut self) {
+        if let Err(e) = self.child.kill() {
+            eprintln!("Failed to kill Smoldb process: {e}");
+        }
+    }
 }
 
 impl Drop for SmolDbNode {
