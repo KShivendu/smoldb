@@ -79,7 +79,7 @@ pub fn concurrent_query(c: &mut Criterion) {
             Query {
                 filter: QueryFilter::new(
                     "price",
-                    &format!("{}", start_id * 10),
+                    format!("{}", start_id * 10),
                     FilterOperator::Gte,
                 ),
                 limit: Some(10),
