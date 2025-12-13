@@ -97,6 +97,7 @@ pub async fn start_http_server(url: Uri, dispatcher: Arc<Dispatcher>) -> std::io
             .app_data(dispatcher_app_data.clone())
     })
     .bind((host, port))?
+    .workers(8)
     .run()
     .await
 }

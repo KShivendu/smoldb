@@ -55,7 +55,9 @@ sudo perf record --call-graph dwarf -F 4000 -g ./target/perf/smoldb
 # Terminal 1:
 # Stop smoldb once smolbench runs
 sudo chown $USER:$USER perf.data
-hotspot perf.data # Install https://github.com/KDAB/hotspot
+sudo hotspot perf.data --debugPaths /usr/lib/debug
+# Install https://github.com/KDAB/hotspot
+# Tutorial: https://www.youtube.com/watch?v=6ogEkQ-vKt4
 ```
 
 ```sh

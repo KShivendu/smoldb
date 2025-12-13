@@ -206,10 +206,10 @@ impl Consensus {
 
         // ToDo: Send initial snapshot to new followers to speed up consensus
 
-        // Start a thread for consensus
-        // Note: we don't need to preserve the thread handle,
-        // as we are not going to join it later.
-        // The thread will run until the program exits.
+        // Start a thread for consensus that just keeps blocked on the consensus loop
+        // Note that the actual work is still running in general tokio async runtime threadpool.
+        // Note: we don't need to preserve the thread handle, as we are not going to join it later.
+        // The thread will run until consensus loop panics or the program exits.
         thread::Builder::new()
             .name("consensus".to_string())
             .spawn(move || {
@@ -228,7 +228,7 @@ impl Consensus {
 
                 let rt = consensus.runtime.clone();
 
-                // ToDo: Running loop inside async might not a good idea, figure out a way to run it in a blocking manner?
+                // ToDo: Consensus loop could run without async runtime. But I need to make send_messages() sync first.
                 rt.block_on(async {
                     if let Err(e) = consensus.run_loop().await {
                         error!("Consensus thread stopped with error: {e}");
