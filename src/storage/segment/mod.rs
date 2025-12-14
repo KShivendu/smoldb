@@ -71,8 +71,8 @@ impl Segment {
     /// Insert a batch of points into the segment
     pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
         for point in points {
-            let key = point.id.into_string();
-            let value = point.encode()?;
+            let key = point.id.encode()?;
+            let value = point.encode_payload()?;
             self.db.insert(key, value).map_err(|e| {
                 StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
             })?;
@@ -99,7 +99,7 @@ impl Segment {
                         let points = db_clone
                             .iter()
                             .map(|result| match result {
-                                Ok((_point_id, value)) => Ok(Point::decode(&value)?),
+                                Ok((key, value)) => Ok(Point::decode(&key, &value)?),
                                 Err(e) => Err(StorageError::ServiceError(format!(
                                     "Failed to iterate over segment db: {e}"
                                 ))),
@@ -118,11 +118,11 @@ impl Segment {
             Some(ids) => {
                 // If we have a single item to read, we don't need to add overhead of chunking and parallelizing
                 if ids.len() == 1 {
-                    let key = ids[0].into_string();
+                    let key = ids[0].encode()?;
                     // db.get is a blocking call in async runtime, but it's only a single item so it should be okay
                     // todo: can be optimized later when we have io_uring?
-                    if let Some(value) = self.db.get(key)? {
-                        return Ok(vec![Point::decode(&value)?]);
+                    if let Some(value) = self.db.get(&key)? {
+                        return Ok(vec![Point::decode(&key, &value)?]);
                     }
                 }
 
@@ -140,10 +140,9 @@ impl Segment {
                     tokio::task::spawn_blocking(move || -> Result<Vec<Point>, StorageError> {
                         let mut found_points = Vec::with_capacity(chunk.len());
                         for id in chunk {
-                            let key = id.into_string();
-                            if let Some(value) = db.get(key)? {
-                                let point = Point::decode(&value)?;
-                                found_points.push(point);
+                            let key = id.encode()?;
+                            if let Some(value) = db.get(&key)? {
+                                found_points.push(Point::decode(&key, &value)?);
                             }
                         }
                         Ok(found_points)

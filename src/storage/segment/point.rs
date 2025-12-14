@@ -13,7 +13,9 @@ pub struct Point {
 #[serde(untagged)]
 pub enum PointId {
     Id(u64),
-    Uuid(String),
+    // Represent as String in API:
+    #[schema(value_type = String, example = "550e8400-e29b-41d4-a716-446655440000")]
+    Uuid(uuid::Uuid),
 }
 
 impl From<u64> for PointId {
@@ -22,30 +24,73 @@ impl From<u64> for PointId {
     }
 }
 
-impl From<String> for PointId {
-    fn from(uuid: String) -> Self {
-        PointId::Uuid(uuid)
+impl TryFrom<&str> for PointId {
+    type Error = StorageError;
+
+    fn try_from(uuid: &str) -> Result<Self, Self::Error> {
+        let uuid = uuid::Uuid::parse_str(uuid)
+            .map_err(|e| StorageError::CodecError(format!("Invalid UUID: {e}")))?;
+        Ok(PointId::Uuid(uuid))
     }
 }
 
 impl PointId {
-    pub fn into_string(&self) -> String {
-        match self {
-            PointId::Id(id) => id.to_string(),
-            PointId::Uuid(uuid) => uuid.clone(),
+    pub fn encode(&self) -> Result<Vec<u8>, StorageError> {
+        let res = match self {
+            PointId::Id(id) => {
+                let mut key = Vec::with_capacity(9);
+                key.push(0x00); // discriminant for numeric ID
+                key.extend_from_slice(&id.to_be_bytes());
+                key
+            }
+            PointId::Uuid(uuid) => {
+                // ToDo: Check if bincode is more performant for uuid than uuid.as_bytes()?
+                // u64 is clearly more performant with .to_be_bytes() than bincode
+                // Ref: https://github.com/KShivendu/smoldb/pull/82#issuecomment-3650742246
+                let mut key = Vec::with_capacity(17);
+                key.push(0x01); // discriminant for UUID
+                key.extend_from_slice(uuid.as_bytes()); // 16 bytes in big-endian
+                key
+            }
+        };
+        Ok(res)
+    }
+
+    pub fn decode(data: &[u8]) -> Result<PointId, StorageError> {
+        match data.first() {
+            Some(&0x00) if data.len() == 9 => {
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(&data[1..9]);
+                Ok(PointId::Id(u64::from_be_bytes(buf)))
+            }
+            Some(&0x01) if data.len() == 17 => {
+                let mut buf = [0u8; 16];
+                buf.copy_from_slice(&data[1..17]);
+                Ok(PointId::Uuid(uuid::Uuid::from_bytes(buf)))
+            }
+            _ => Err(StorageError::CodecError(format!(
+                "Invalid PointId key: {data:?}"
+            ))),
         }
     }
 }
 
 impl Point {
-    pub fn encode(&self) -> Result<Vec<u8>, StorageError> {
-        serde_cbor::to_vec(self)
-            .map_err(|e| StorageError::ServiceError(format!("Failed to serialize point: {e}")))
+    pub fn encode_payload(&self) -> Result<Vec<u8>, StorageError> {
+        serde_cbor::to_vec(&self.payload)
+            .map_err(|e| StorageError::CodecError(format!("Failed to serialize point: {e}")))
     }
 
-    pub fn decode(data: &[u8]) -> Result<Self, StorageError> {
+    pub fn decode_payload(data: &[u8]) -> Result<serde_json::Value, StorageError> {
         serde_cbor::from_slice(data)
-            .map_err(|e| StorageError::ServiceError(format!("Failed to deserialize point: {e}")))
+            .map_err(|e| StorageError::CodecError(format!("Failed to deserialize point: {e}")))
+    }
+
+    pub fn decode(key: &[u8], value: &[u8]) -> Result<Point, StorageError> {
+        Ok(Point {
+            id: PointId::decode(key)?,
+            payload: Point::decode_payload(value)?,
+        })
     }
 }
 
@@ -61,7 +106,7 @@ mod test {
             id: PointId::Id(1),
             payload: json!({ "price": 100 }),
         };
-        let encoded = point.encode().unwrap();
+        let encoded = point.encode_payload().unwrap();
         assert_eq!(
             encoded,
             vec![
@@ -69,7 +114,7 @@ mod test {
                 105, 99, 101, 24, 100
             ]
         );
-        let decoded = Point::decode(&encoded).unwrap();
+        let decoded = Point::decode(&point.id.encode().unwrap(), &encoded).unwrap();
         assert_eq!(point, decoded);
     }
 }

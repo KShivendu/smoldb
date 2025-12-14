@@ -278,10 +278,10 @@ mod tests {
 
         let shards_to_point_ids = shard_holder
             .group_by_shards(Some(vec![
-                PointId::Id(1),
-                PointId::Id(2),
-                PointId::Id(100),
-                PointId::Uuid("dummy-uuid".to_string()),
+                PointId::from(1),
+                PointId::from(2),
+                PointId::from(100),
+                PointId::try_from("550e8400-e29b-41d4-a716-446655440000").unwrap(),
             ]))
             .unwrap();
 
@@ -289,8 +289,8 @@ mod tests {
             (
                 0,
                 Some(vec![
-                    PointId::Id(100),
-                    PointId::Uuid("dummy-uuid".to_string()),
+                    PointId::from(100),
+                    PointId::try_from("550e8400-e29b-41d4-a716-446655440000").unwrap(),
                 ]),
             ),
             (1, Some(vec![PointId::Id(1), PointId::Id(2)])),

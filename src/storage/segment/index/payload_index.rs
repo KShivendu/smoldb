@@ -210,7 +210,7 @@ impl PayloadIndex {
         let PointId::Id(point_id) = point.id else {
             return Err(sled::Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "Invalid PointId type",
+                "Invalid PointId type: Only u64 point ID is supported for payload indexing (for now)",
             )));
         };
 
