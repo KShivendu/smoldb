@@ -16,6 +16,7 @@ use std::{
     },
     time::Instant,
 };
+use tracing::info_span;
 
 // re-export point imports
 pub use point::{Point, PointId};
@@ -82,6 +83,7 @@ impl Segment {
 
     /// Insert a batch of points into the segment
     pub fn insert_points(&self, points: &[Point]) -> StorageResult<()> {
+        let _span = info_span!("segment insert points", points = points.len()).entered();
         for point in points {
             let key = point.id.encode()?;
             let value = point.encode_payload()?;
@@ -96,9 +98,12 @@ impl Segment {
             .collect::<Vec<_>>();
         self.queue_for_indexing(point_ids)?;
 
-        self.db
-            .flush()
-            .map_err(|e| StorageError::ServiceError(format!("Failed to flush segment db: {e}")))?;
+        {
+            let _s = info_span!("segment flush db").entered();
+            self.db.flush().map_err(|e| {
+                StorageError::ServiceError(format!("Failed to flush segment db: {e}"))
+            })?;
+        }
         Ok(())
     }
 

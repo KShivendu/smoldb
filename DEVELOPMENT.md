@@ -86,6 +86,12 @@ sudo perf record --call-graph dwarf ./target/release/deps/collection-<hash> --be
 # perf record -F 99 --call-graph drawf ./target/release/deps/collection-<hash> --bench <example:concurrent_read>
 ```
 
+### Investigation using tracing:
+
+```
+RUST_LOG=trace cargo bench single_write -- --nocapture
+```
+
 ## TODO:
 - [ ] Figure out how to strip hashes from function execution entries in perf.data. It should merge blocks in flamegraph and make profiling smoother. Hotspot [supports it](https://github.com/KDAB/hotspot/commit/90b8633a91a3a5357211e9d697ca7ebfc1a47810), I need to compile locally.
 

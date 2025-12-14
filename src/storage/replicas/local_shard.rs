@@ -15,6 +15,7 @@ use std::{
     thread::JoinHandle,
 };
 use tonic::async_trait;
+use tracing::info_span;
 
 const SEGMENTS_DIR: &str = "segments";
 
@@ -44,6 +45,7 @@ impl ShardOperationTrait for LocalShard {
     }
 
     async fn upsert_points(&self, points: Vec<Point>) -> CollectionResult<()> {
+        let _span = info_span!("local shard upsert points", points = points.len()).entered();
         // ToDo: Select segment based on point id or some other criteria
         if let Some(segment) = self.segments.get(&0) {
             segment.insert_points(&points)?;
