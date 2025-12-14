@@ -276,23 +276,19 @@ mod tests {
             (1, ReplicaSet::new(s1, "c1".to_string(), 1, cs)),
         ]));
 
+        let point_uuid = PointId::try_from("04d90043-873a-40d1-85e3-2cb589acf7eb").unwrap();
+
         let shards_to_point_ids = shard_holder
             .group_by_shards(Some(vec![
-                PointId::Id(1),
-                PointId::Id(2),
-                PointId::Id(100),
-                PointId::Uuid("dummy-uuid".to_string()),
+                PointId::from(1),
+                PointId::from(2),
+                PointId::from(100),
+                point_uuid.clone(),
             ]))
             .unwrap();
 
         let expected_grouping = HashMap::from_iter([
-            (
-                0,
-                Some(vec![
-                    PointId::Id(100),
-                    PointId::Uuid("dummy-uuid".to_string()),
-                ]),
-            ),
+            (0, Some(vec![PointId::Id(100), point_uuid])),
             (1, Some(vec![PointId::Id(1), PointId::Id(2)])),
         ]);
 

@@ -78,7 +78,7 @@ pub async fn get_point(
 
         let point_id = match id.parse::<u64>() {
             Ok(id) => PointId::Id(id),
-            Err(_) => PointId::Uuid(id.clone()),
+            Err(_) => PointId::try_from(id.as_str())?,
         };
 
         let result = dispatcher

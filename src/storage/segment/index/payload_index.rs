@@ -16,15 +16,15 @@ use utoipa::ToSchema;
 
 /// Converts the number into a big-endian value which is suitable for querying/storing in sled
 /// This allows lexicographical ordering and hence numeric comparisons
-fn encoded_integer_value(n: i64) -> Vec<u8> {
+pub fn encoded_integer_value(n: i64) -> Vec<u8> {
     n.to_be_bytes().to_vec()
 }
 
-fn encoded_point_ids(point_ids: &[u64]) -> Result<Vec<u8>, bincode::error::EncodeError> {
+pub fn encoded_point_ids(point_ids: &[u64]) -> Result<Vec<u8>, bincode::error::EncodeError> {
     bincode::encode_to_vec(point_ids, bincode::config::standard())
 }
 
-fn decoded_point_ids(data: &[u8]) -> Result<Vec<u64>, bincode::error::DecodeError> {
+pub fn decoded_point_ids(data: &[u8]) -> Result<Vec<u64>, bincode::error::DecodeError> {
     bincode::decode_from_slice(data, bincode::config::standard()).map(|(ids, _)| ids)
 }
 
@@ -149,34 +149,22 @@ pub struct PayloadIndex {
 }
 
 impl PayloadIndex {
+    /// Read from the database to get existing indices and their types. If no indices are found, create a new empty index.
     pub fn get_or_create(db: &Db) -> Self {
-        // Read from the database to get existing indices and their types:
-        let schema_tree = db.open_tree("schema").expect("Failed to open schema tree");
-        let index_configs: HashMap<String, String> = schema_tree
-            .iter()
-            .map(|item| {
-                let (key, value) = item.expect("Failed to read schema item");
-                // ToDo: Ensure that using utf8 will not cause problems
-                let index_name = String::from_utf8(key.to_vec()).expect("Invalid UTF-8 in key");
-                let index_config =
-                    String::from_utf8(value.to_vec()).expect("Invalid UTF-8 in value");
-
-                (index_name, index_config)
-            })
-            .collect();
-
+        let schema_tree = db
+            .open_tree("schema")
+            .expect("Failed to open segment schema tree");
         let mut indices = HashMap::new();
-        for (name, index_config) in index_configs {
+        for item in schema_tree.iter() {
+            let (key, value) = item.expect("Failed to read schema item");
+            let name = String::from_utf8(key.to_vec()).expect("Invalid UTF-8 in key");
             let index_config: IndexConfig =
-                serde_json::from_str(&index_config).expect("Failed to deserialize index config");
-            match index_config {
-                IndexConfig::Int => {
-                    indices.insert(name.clone(), FieldIndex::numeric(db, &name));
-                }
-                IndexConfig::Null => {
-                    indices.insert(name.clone(), FieldIndex::Null);
-                }
-            }
+                serde_json::from_slice(&value).expect("Failed to deserialize index config");
+            let field_index = match index_config {
+                IndexConfig::Int => FieldIndex::numeric(db, &name),
+                IndexConfig::Null => FieldIndex::Null,
+            };
+            indices.insert(name, field_index);
         }
 
         Self { indices }
@@ -222,7 +210,7 @@ impl PayloadIndex {
         let PointId::Id(point_id) = point.id else {
             return Err(sled::Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "Invalid PointId type",
+                "Invalid PointId type: Only u64 point ID is supported for payload indexing (for now)",
             )));
         };
 
@@ -233,6 +221,8 @@ impl PayloadIndex {
         }
         Ok(())
     }
+
+    // Todo: Support deleting points from the index in case of update or deletes
 
     pub fn query(&self, query: Query) -> Result<Vec<PointId>, sled::Error> {
         let mut results = HashSet::new();
@@ -261,6 +251,8 @@ impl PayloadIndex {
 
 #[cfg(test)]
 mod test {
+    use serde_json::json;
+
     use super::*;
 
     #[test]
@@ -278,7 +270,7 @@ mod test {
             index
                 .upsert(&Point {
                     id: PointId::Id(i),
-                    payload: serde_json::json!({"price": i * 10}),
+                    payload: json!({"price": i * 10}),
                 })
                 .unwrap();
         }

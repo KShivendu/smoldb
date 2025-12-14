@@ -6,6 +6,8 @@ pub enum StorageError {
     BadInput(String),
     #[error("Service error: {0}")]
     ServiceError(String),
+    #[error("Encoding/Decoding error: {0}")]
+    CodecError(String),
     #[error("Sled segment error: {0}")]
     SledError(#[from] sled::Error),
     #[error("Serialization/Deserialization error: {0}")]

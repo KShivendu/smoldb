@@ -12,6 +12,14 @@ grpcurl -plaintext -import-path src/api/grpc/proto/ -proto smoldb.proto 0.0.0.0:
 
 ## Running benchmarks:
 
+### Comparing feature branch to dev
+
+```sh
+cargo bench --bench collection -- --save-baseline dev
+git checkout feat-branch
+cargo bench --bench collection -- --baseline dev
+```
+
 ### smolbench
 
 ```sh
@@ -33,7 +41,7 @@ cargo bench --bench collection # Run all collection benches
 cargo bench --bench collection -- read # Run all collection benches with substring 'read'
 
 # Access the reports at `target/criterion/report/index.html`
-python -m http.server .
+python -m http.server target/criterion
 
 # For flame graph:
 cargo flamegraph --bench collection -o flamegraph.svg -- --bench concurrent_read

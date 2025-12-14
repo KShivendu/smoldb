@@ -22,15 +22,17 @@ impl FilterOperator {
     }
 }
 
-impl From<String> for FilterOperator {
-    fn from(op: String) -> Self {
+impl std::convert::TryFrom<String> for FilterOperator {
+    type Error = String;
+
+    fn try_from(op: String) -> Result<Self, Self::Error> {
         match op.as_str() {
-            "gte" => FilterOperator::Gte,
-            "eq" => FilterOperator::Eq,
-            "lte" => FilterOperator::Lte,
-            "gt" => FilterOperator::Gt,
-            "lt" => FilterOperator::Lt,
-            _ => panic!("Unknown filter operator: {op}"),
+            "gte" => Ok(FilterOperator::Gte),
+            "eq" => Ok(FilterOperator::Eq),
+            "lte" => Ok(FilterOperator::Lte),
+            "gt" => Ok(FilterOperator::Gt),
+            "lt" => Ok(FilterOperator::Lt),
+            _ => Err(format!("Unknown filter operator: {op}")),
         }
     }
 }
