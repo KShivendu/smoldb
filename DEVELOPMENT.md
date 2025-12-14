@@ -12,6 +12,14 @@ grpcurl -plaintext -import-path src/api/grpc/proto/ -proto smoldb.proto 0.0.0.0:
 
 ## Running benchmarks:
 
+### Comparing feature branch to dev
+
+```sh
+cargo bench --bench collection -- --save-baseline dev
+git checkout feat-branch
+cargo bench --bench collection -- --baseline dev
+```
+
 ### smolbench
 
 ```sh
