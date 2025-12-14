@@ -44,7 +44,9 @@ cargo bench --bench collection -- read # Run all collection benches with substri
 python -m http.server target/criterion
 
 # For flame graph:
-cargo flamegraph --bench collection -o flamegraph.svg -- --bench concurrent_read
+
+sudo cargo flamegraph --bench collection -o flamegraph.svg -- --bench concurrent_read
+# Press Ctrl+C once you see "wrote X MB perf.data" in logs
 chromium flamegraph.svg
 ```
 
@@ -78,11 +80,14 @@ perf annotate --tui
 ```sh
 # NOTE: This generates lots of perf data.
 cargo bench --bench collection --no-run  # Build the benchmark. It reveals the benchmark binary path.
-perf record --call-graph dwarf ./target/release/deps/collection-<hash> --bench <example:concurrent_read>
+sudo perf record --call-graph dwarf ./target/release/deps/collection-<hash> --bench <example:concurrent_read>
 # Now analyze perf.data with hotspot as usual
 # You can decrease file size by decreasing the sample freuency
 # perf record -F 99 --call-graph drawf ./target/release/deps/collection-<hash> --bench <example:concurrent_read>
 ```
+
+## TODO:
+- [ ] Figure out how to strip hashes from function execution entries in perf.data. It should merge blocks in flamegraph and make profiling smoother. Hotspot [supports it](https://github.com/KDAB/hotspot/commit/90b8633a91a3a5357211e9d697ca7ebfc1a47810), I need to compile locally.
 
 ### Errors:
 
