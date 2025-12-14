@@ -200,6 +200,13 @@ impl PayloadIndex {
     /// ToDo: Decoupling indexing from upserts. So that we can upsert fast and index in the background.
     // todo: Use id tracker so that we can support different PointId types while being storage efficient.
     pub fn upsert(&self, point: &Point) -> StorageResult<()> {
+        if self.indices.is_empty() {
+            return Ok(()); // No indices defined
+        }
+        if point.payload.is_null() {
+            return Ok(()); // No payload to index
+        }
+
         let PointId::Id(point_id) = point.id else {
             return Err(StorageError::BadInput("Invalid PointId type: Only u64 point ID is supported for payload indexing (for now)".to_string()));
         };
