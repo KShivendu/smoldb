@@ -107,13 +107,7 @@ mod test {
             payload: json!({ "price": 100 }),
         };
         let encoded = point.encode_payload().unwrap();
-        assert_eq!(
-            encoded,
-            vec![
-                162, 98, 105, 100, 1, 103, 112, 97, 121, 108, 111, 97, 100, 161, 101, 112, 114,
-                105, 99, 101, 24, 100
-            ]
-        );
+        assert_eq!(encoded, vec![161, 101, 112, 114, 105, 99, 101, 24, 100]);
         let decoded = Point::decode(&point.id.encode().unwrap(), &encoded).unwrap();
         assert_eq!(point, decoded);
     }
