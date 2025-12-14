@@ -6,7 +6,7 @@ use crate::{
     error::StorageError,
     storage::index::payload_index::{IndexConfig, PayloadIndex},
 };
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::StreamExt;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -18,7 +18,8 @@ pub use point::{Point, PointId};
 pub struct Segment {
     pub path: PathBuf,
     pub db: sled::Db,
-    // ToDo: ID tracker, data storage, etc
+    // ToDo: ID tracker, vector storage?
+    // ID tracker is valuable for building immutable segments, so same point can exist in multiple segments while only the latest version is visible
     pub payload_index: PayloadIndex,
 }
 
@@ -71,9 +72,7 @@ impl Segment {
     pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
         for point in points {
             let key = point.id.into_string();
-            let value = point.encode().map_err(|e| {
-                StorageError::ServiceError(format!("Failed to serialize point: {e}"))
-            })?;
+            let value = point.encode()?;
             self.db.insert(key, value).map_err(|e| {
                 StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
             })?;
@@ -90,60 +89,80 @@ impl Segment {
     }
 
     pub async fn get_points(&self, ids: Option<Vec<PointId>>) -> Result<Vec<Point>, StorageError> {
-        let mut points = Vec::new();
-
-        let Some(ids) = ids else {
-            // If no ids are provided, return all points
-            for result in self.db.iter() {
-                match result {
-                    Ok((_point_id, value)) => {
-                        let point: Point = Point::decode(&value)?;
-                        points.push(point);
-                    }
-                    Err(e) => {
-                        return Err(StorageError::ServiceError(format!(
-                            "Failed to iterate over segment db: {e}"
-                        )))
-                    }
-                }
-            }
-            return Ok(points);
-        };
-
-        // If ids are provided, read only those points
-        // We need to read them in parallel to speed up (esp since its reading from disk from random locations)
-        let db_inner = self.db.clone(); // sled Db is thread-safe
-        const MAX_CONCURRENT: usize = 10; // If you have too many concurrent tasks, it can hurt performance
-
-        let points: Vec<Point> = stream::iter(ids)
-            .map(|id| {
-                let db = db_inner.clone();
-                async move {
-                    tokio::task::spawn_blocking(move || -> Result<Option<Point>, StorageError> {
-                        let key = id.into_string(); // this is taking small time
-                        if let Some(value) = db.get(key)? {
-                            // this takes insane amount of time
-                            let point: Point = Point::decode(&value)?;
-                            Ok(Some(point))
-                        } else {
-                            Ok(None)
-                        }
+        match ids {
+            None => {
+                // This iteration will block the thread since sled iter is sequential
+                // So we should move it to a blocking context so it doesn't block the event loop
+                let db_clone = self.db.clone();
+                let points =
+                    tokio::task::spawn_blocking(move || -> Result<Vec<Point>, StorageError> {
+                        let points = db_clone
+                            .iter()
+                            .map(|result| match result {
+                                Ok((_point_id, value)) => Ok(Point::decode(&value)?),
+                                Err(e) => Err(StorageError::ServiceError(format!(
+                                    "Failed to iterate over segment db: {e}"
+                                ))),
+                            })
+                            .collect::<Result<Vec<Point>, StorageError>>()?;
+                        Ok(points)
                     })
                     .await
-                    .map_err(|e| StorageError::ServiceError(format!("Failed to join task: {e}")))?
-                }
-            })
-            .buffer_unordered(MAX_CONCURRENT)
-            .try_filter_map(|result| async move {
-                match result {
-                    Some(point) => Ok(Some(point)),
-                    None => Ok(None), // Point not found, filter out
-                }
-            })
-            .try_collect()
-            .await?;
+                    .map_err(|e| {
+                        StorageError::ServiceError(format!("Failed to join task: {e}"))
+                    })??;
 
-        Ok(points)
+                Ok(points)
+            }
+            Some(ids) if ids.is_empty() => Ok(Vec::new()),
+            Some(ids) => {
+                // If we have a single item to read, we don't need to add overhead of chunking and parallelizing
+                if ids.len() == 1 {
+                    let key = ids[0].into_string();
+                    // db.get is a blocking call in async runtime, but it's only a single item so it should be okay
+                    // todo: can be optimized later when we have io_uring?
+                    if let Some(value) = self.db.get(key)? {
+                        return Ok(vec![Point::decode(&value)?]);
+                    }
+                }
+
+                // Othewise, chunk ids and fetch in parallel threads
+                const MAX_CONCURRENT: usize = 10;
+                const CHUNK_SIZE: usize = 50; // tune as appropriate
+
+                // Convert chunks to owned vectors to satisfy 'static lifetime requirement of tokio::task::spawn_blocking
+                let chunks: Vec<Vec<PointId>> =
+                    ids.chunks(CHUNK_SIZE).map(|chunk| chunk.to_vec()).collect();
+
+                // Each chunk will read 50 points and we will read 10 chunks in parallel => 500 points in parallel
+                let point_chunks = futures::stream::iter(chunks.into_iter().map(|chunk| {
+                    let db = self.db.clone();
+                    tokio::task::spawn_blocking(move || -> Result<Vec<Point>, StorageError> {
+                        let mut found_points = Vec::with_capacity(chunk.len());
+                        for id in chunk {
+                            let key = id.into_string();
+                            if let Some(value) = db.get(key)? {
+                                let point = Point::decode(&value)?;
+                                found_points.push(point);
+                            }
+                        }
+                        Ok(found_points)
+                    })
+                }))
+                .buffer_unordered(MAX_CONCURRENT)
+                .collect::<Vec<_>>()
+                .await;
+
+                let mut all_points = Vec::new();
+                for res in point_chunks {
+                    let points = res.map_err(|e| {
+                        StorageError::ServiceError(format!("Failed to join task: {e}"))
+                    })??;
+                    all_points.extend(points);
+                }
+                Ok(all_points)
+            }
+        }
     }
 
     pub async fn query_points(&self, query: Query) -> Result<Vec<Point>, StorageError> {
@@ -158,6 +177,8 @@ impl Segment {
     pub fn count_points(&self) -> usize {
         self.db.len()
     }
+
+    // todo: Allow updating payload index schema on the fly
 }
 
 #[cfg(test)]

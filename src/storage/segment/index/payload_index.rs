@@ -222,6 +222,8 @@ impl PayloadIndex {
         Ok(())
     }
 
+    // Todo: Support deleting points from the index in case of update or deletes
+
     pub fn query(&self, query: Query) -> Result<Vec<PointId>, sled::Error> {
         let mut results = HashSet::new();
 

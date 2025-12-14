@@ -33,7 +33,7 @@ cargo bench --bench collection # Run all collection benches
 cargo bench --bench collection -- read # Run all collection benches with substring 'read'
 
 # Access the reports at `target/criterion/report/index.html`
-python -m http.server .
+python -m http.server target/criterion
 
 # For flame graph:
 cargo flamegraph --bench collection -o flamegraph.svg -- --bench concurrent_read
