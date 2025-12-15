@@ -29,6 +29,7 @@ pub fn decoded_point_ids(data: &[u8]) -> Result<Vec<u64>, bincode::error::Decode
 }
 
 pub struct IntegerIndex(sled::Tree);
+
 impl IntegerIndex {
     pub fn open(db: &Db, name: &str) -> Self {
         let tree = db
