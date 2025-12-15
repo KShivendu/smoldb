@@ -40,7 +40,8 @@ impl OnDiskPayloadStorage {
 
 impl PayloadStorageTrait for OnDiskPayloadStorage {
     fn len(&self) -> usize {
-        self.db.len()
+        self.payload.len()
+        // self.db.len()
     }
 
     fn flush(&self) -> Result<(), StorageError> {
