@@ -39,7 +39,7 @@ impl OnDiskPayloadStorage {
 }
 
 impl PayloadStorageTrait for OnDiskPayloadStorage {
-    fn len(&self) -> usize {
+    fn count(&self) -> usize {
         self.payload.len()
         // self.db.len()
     }

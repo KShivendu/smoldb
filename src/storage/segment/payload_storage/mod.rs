@@ -16,7 +16,7 @@ impl PayloadStorage {
 }
 
 pub trait PayloadStorageTrait {
-    fn len(&self) -> usize;
+    fn count(&self) -> usize;
     fn flush(&self) -> Result<(), StorageError>;
     fn insert(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), StorageError>;
     fn iter(&self) -> sled::Iter {
@@ -28,9 +28,9 @@ pub trait PayloadStorageTrait {
 }
 
 impl PayloadStorageTrait for PayloadStorage {
-    fn len(&self) -> usize {
+    fn count(&self) -> usize {
         match self {
-            PayloadStorage::OnDiskPayloadStorage(storage) => storage.len(),
+            PayloadStorage::OnDiskPayloadStorage(storage) => storage.count(),
         }
     }
 

@@ -177,7 +177,7 @@ impl Segment {
     }
 
     pub fn count_points(&self) -> usize {
-        self.payload_storage.len()
+        self.payload_storage.count()
     }
 
     // todo: Allow updating payload index schema on the fly
