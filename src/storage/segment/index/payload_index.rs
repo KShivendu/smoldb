@@ -1,17 +1,14 @@
 use crate::{
     api::points::Query,
     storage::{
-        index::filter::FilterOperator,
+        index::{filter::FilterOperator, integer::IntegerIndex, text::TextIndex},
         segment::{Point, PointId},
     },
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sled::Db;
-use std::{
-    collections::{HashMap, HashSet},
-    ops::Bound,
-};
+use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
 
 /// Converts the number into a big-endian value which is suitable for querying/storing in sled
@@ -28,89 +25,10 @@ pub fn decoded_point_ids(data: &[u8]) -> Result<Vec<u64>, bincode::error::Decode
     bincode::decode_from_slice(data, bincode::config::standard()).map(|(ids, _)| ids)
 }
 
-pub struct IntegerIndex(sled::Tree);
-impl IntegerIndex {
-    pub fn open(db: &Db, name: &str) -> Self {
-        let tree = db
-            .open_tree(format!("{name}_numeric_index"))
-            .expect("Failed to open sled tree");
-        Self(tree)
-    }
-
-    pub fn upsert(&self, point_id: u64, value: i64) -> Result<(), sled::Error> {
-        // In numeric tree, the point value becomes tree's key, and the point ID is part of a list of values.
-        let tree_key = encoded_integer_value(value);
-
-        // Fetch existing point IDs for this value
-        let mut point_ids: Vec<u64> = self
-            .0
-            .get(&tree_key)?
-            .map(|data| {
-                decoded_point_ids(&data)
-                    .unwrap_or_else(|e| panic!("Failed to decode point IDs: {e}"))
-            })
-            .unwrap_or_default();
-
-        // Add point and sort
-        point_ids.push(point_id);
-        point_ids.sort();
-
-        // Store back
-        let encoded_ids = encoded_point_ids(&point_ids).map_err(|e| {
-            sled::Error::Io(std::io::Error::other(format!(
-                "Failed to encode point IDs: {e}"
-            )))
-        })?;
-
-        self.0.insert(&tree_key, encoded_ids).map_err(|e| {
-            sled::Error::Io(std::io::Error::other(format!(
-                "Failed to insert into index tree: {e}"
-            )))
-        })?;
-
-        Ok(())
-    }
-
-    pub fn query(
-        &self,
-        value: i64,
-        operation: &FilterOperator,
-        limit: Option<usize>,
-    ) -> Result<Vec<PointId>, sled::Error> {
-        let mut results = Vec::new();
-
-        let value = encoded_integer_value(value);
-
-        let bounds = match operation {
-            FilterOperator::Gte => (Bound::Included(value), Bound::Unbounded),
-            FilterOperator::Gt => (Bound::Excluded(value), Bound::Unbounded),
-            FilterOperator::Lt => (Bound::Unbounded, Bound::Excluded(value)),
-            FilterOperator::Lte => (Bound::Unbounded, Bound::Included(value)),
-            FilterOperator::Eq => (Bound::Included(value.clone()), Bound::Included(value)),
-        };
-
-        for item in self.0.range(bounds) {
-            let (_gte_value, encoded_point_ids) = item?;
-            let point_ids = decoded_point_ids(&encoded_point_ids).map_err(|e| {
-                sled::Error::Io(std::io::Error::other(format!("Failed to decode: {e}")))
-            })?;
-            results.extend_from_slice(&point_ids);
-
-            if let Some(limit) = limit {
-                if results.len() >= limit {
-                    results.truncate(limit);
-                    break;
-                }
-            }
-        }
-
-        Ok(results.into_iter().map(PointId::Id).collect())
-    }
-}
-
 pub enum FieldIndex {
     Int(IntegerIndex),
     Null,
+    Text(TextIndex),
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, ToSchema)]
@@ -118,28 +36,25 @@ pub enum FieldIndex {
 pub enum IndexConfig {
     Int,
     Null,
+    Text,
 }
 
 impl FieldIndex {
-    pub fn numeric(db: &Db, name: &str) -> Self {
+    pub fn new_numeric(db: &Db, name: &str) -> Self {
         FieldIndex::Int(IntegerIndex::open(db, name))
+    }
+
+    pub fn new_text(db: &Db, name: &str) -> Self {
+        FieldIndex::Text(TextIndex::open(db, name))
     }
 
     pub fn add_point(&self, point_id: u64, value: &Value) -> Result<(), sled::Error> {
         match self {
-            FieldIndex::Int(index) => match value {
-                Value::Number(num) if num.is_i64() => {
-                    let num_value = num.as_i64().unwrap();
-                    index.upsert(point_id, num_value)
-                }
-                _ => Err(sled::Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("{value} is not a valid i64 value"),
-                ))),
-            },
+            FieldIndex::Int(index) => index.add_point(point_id, value),
             FieldIndex::Null => {
                 unimplemented!("Null index is not implemented yet");
             }
+            FieldIndex::Text(t) => t.add_point(point_id, value),
         }
     }
 }
@@ -161,8 +76,9 @@ impl PayloadIndex {
             let index_config: IndexConfig =
                 serde_json::from_slice(&value).expect("Failed to deserialize index config");
             let field_index = match index_config {
-                IndexConfig::Int => FieldIndex::numeric(db, &name),
+                IndexConfig::Int => FieldIndex::new_numeric(db, &name),
                 IndexConfig::Null => FieldIndex::Null,
+                IndexConfig::Text => FieldIndex::new_text(db, &name),
             };
             indices.insert(name, field_index);
         }
@@ -188,8 +104,9 @@ impl PayloadIndex {
         }
 
         let index = match index_config {
-            IndexConfig::Int => FieldIndex::numeric(db, name),
+            IndexConfig::Int => FieldIndex::new_numeric(db, name),
             IndexConfig::Null => FieldIndex::Null,
+            IndexConfig::Text => FieldIndex::new_text(db, name),
         };
 
         let index_config_str =
@@ -206,6 +123,8 @@ impl PayloadIndex {
         Ok(())
     }
 
+    /// ToDo: Support updating existing points in the index. This would require removing old values and adding new ones.
+    /// ToDo: Decoupling indexing from upserts. So that we can upsert fast and index in the background.
     pub fn upsert(&self, point: &Point) -> Result<(), sled::Error> {
         let PointId::Id(point_id) = point.id else {
             return Err(sled::Error::Io(std::io::Error::new(
@@ -244,9 +163,32 @@ impl PayloadIndex {
             FieldIndex::Null => {
                 unimplemented!("Null index queries are not implemented yet");
             }
+            FieldIndex::Text(t) => {
+                let value = &query.filter.value;
+                let query_results = t.query(
+                    &Value::String(value.to_string()),
+                    &FilterOperator::Eq,
+                    query.limit,
+                )?;
+                results.extend(query_results);
+            }
         }
         Ok(results.into_iter().collect())
     }
+}
+
+pub trait FieldIndexTrait {
+    /// Create or load an index from the DB
+    fn open(db: &Db, name: &str) -> Self;
+    /// Add a point to the index
+    fn add_point(&self, point_id: u64, value: &Value) -> Result<(), sled::Error>;
+    /// Query the index
+    fn query(
+        &self,
+        value: &Value,
+        operation: &FilterOperator,
+        limit: Option<usize>,
+    ) -> Result<Vec<PointId>, sled::Error>;
 }
 
 #[cfg(test)]

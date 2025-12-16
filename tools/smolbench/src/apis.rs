@@ -61,6 +61,7 @@ pub async fn create_collection(
     url: &Uri,
     collection_name: &str,
     skip_int_index: bool,
+    skip_text_index: bool,
     wait: bool,
 ) -> Result<ApiSuccessResponse<bool>, SmolBenchError> {
     // First ensure that consensus is started
@@ -68,13 +69,13 @@ pub async fn create_collection(
 
     let client = reqwest::Client::new();
 
-    let payload_schema = if skip_int_index {
-        json!({})
-    } else {
-        json!({
-            "price": "int"
-        })
-    };
+    let mut payload_schema = json!({});
+    if !skip_int_index {
+        payload_schema["price"] = json!("int");
+    }
+    if !skip_text_index {
+        payload_schema["text"] = json!("text");
+    }
 
     let res = client
         .put(format!("{url}/collections/{collection_name}"))
