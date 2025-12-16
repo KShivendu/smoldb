@@ -1,9 +1,12 @@
 use serde_json::Value;
 use sled::Db;
 
-use crate::storage::index::{
-    filter::FilterOperator,
-    payload_index::{decoded_point_ids, encoded_point_ids, FieldIndexTrait},
+use crate::storage::{
+    index::{
+        filter::FilterOperator,
+        payload_index::{decoded_point_ids, encoded_point_ids, FieldIndexTrait},
+    },
+    segment::PointId,
 };
 
 pub struct TextIndex(sled::Tree);
@@ -54,7 +57,7 @@ impl TextIndex {
     }
 }
 
-impl FieldIndexTrait for TextIndex {
+impl FieldIndexTrait<&str> for TextIndex {
     fn open(db: &Db, name: &str) -> Self {
         let tree = db
             .open_tree(format!("{name}_text_index"))
@@ -74,23 +77,16 @@ impl FieldIndexTrait for TextIndex {
 
     fn query(
         &self,
-        value: &serde_json::Value,
+        value: &str,
         _operation: &FilterOperator, // todo: Remove operation for text index?
         limit: Option<usize>,
-    ) -> Result<Vec<crate::storage::segment::PointId>, sled::Error> {
-        let Some(term) = value.as_str() else {
-            return Err(sled::Error::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Text index query value must be a string",
-            )));
-        };
-
+    ) -> Result<Vec<PointId>, sled::Error> {
         let mut results = Vec::new();
-        let term_key = term.as_bytes();
+        let query_key = value.as_bytes();
 
         let point_ids: Vec<u64> = self
             .0
-            .get(term_key)?
+            .get(query_key)?
             .map(|data| {
                 // Decode existing point IDs for this term
                 decoded_point_ids(&data)
@@ -99,7 +95,7 @@ impl FieldIndexTrait for TextIndex {
             .unwrap_or_default();
 
         for point_id in point_ids {
-            results.push(crate::storage::segment::PointId::Id(point_id));
+            results.push(PointId::Id(point_id));
             if let Some(lim) = limit {
                 if results.len() >= lim {
                     break;

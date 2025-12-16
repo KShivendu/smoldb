@@ -8,7 +8,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sled::Db;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use utoipa::ToSchema;
 
 /// Converts the number into a big-endian value which is suitable for querying/storing in sled
@@ -47,15 +47,56 @@ impl FieldIndex {
     pub fn new_text(db: &Db, name: &str) -> Self {
         FieldIndex::Text(TextIndex::open(db, name))
     }
+}
 
-    pub fn add_point(&self, point_id: u64, value: &Value) -> Result<(), sled::Error> {
+impl FieldIndexTrait<&Value> for FieldIndex {
+    fn add_point(&self, point_id: u64, value: &Value) -> Result<(), sled::Error> {
         match self {
             FieldIndex::Int(index) => index.add_point(point_id, value),
             FieldIndex::Null => {
                 unimplemented!("Null index is not implemented yet");
             }
-            FieldIndex::Text(t) => t.add_point(point_id, value),
+            FieldIndex::Text(index) => index.add_point(point_id, value),
         }
+    }
+
+    fn open(_db: &Db, _name: &str) -> Self {
+        unimplemented!("Use specific index constructors like new_numeric or new_text");
+    }
+
+    fn query(
+        &self,
+        value: &Value,
+        operation: &FilterOperator,
+        limit: Option<usize>,
+    ) -> Result<Vec<PointId>, sled::Error> {
+        let results = match self {
+            FieldIndex::Int(int_index) => {
+                let value = value.as_i64().ok_or_else(|| {
+                    sled::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Integer index query value must be an integer",
+                    ))
+                })?;
+
+                int_index.query(value, operation, limit)?
+            }
+            FieldIndex::Null => {
+                unimplemented!("Null index queries are not implemented yet");
+            }
+            FieldIndex::Text(t) => {
+                let Some(value) = value.as_str() else {
+                    return Err(sled::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Text index query value must be a string",
+                    )));
+                };
+
+                t.query(&value, &FilterOperator::Eq, limit)?
+            }
+        };
+
+        Ok(results)
     }
 }
 
@@ -105,7 +146,7 @@ impl PayloadIndex {
 
         let index = match index_config {
             IndexConfig::Int => FieldIndex::new_numeric(db, name),
-            IndexConfig::Null => FieldIndex::Null,
+            IndexConfig::Null => unimplemented!("Null index is not implemented yet"),
             IndexConfig::Text => FieldIndex::new_text(db, name),
         };
 
@@ -144,8 +185,6 @@ impl PayloadIndex {
     // Todo: Support deleting points from the index in case of update or deletes
 
     pub fn query(&self, query: Query) -> Result<Vec<PointId>, sled::Error> {
-        let mut results = HashSet::new();
-
         // ToDo: Should allow querying for un-indexed fields to demonstrate/benchmark difference
         let index = self.indices.get(&query.filter.key).ok_or_else(|| {
             sled::Error::Io(std::io::Error::new(
@@ -154,30 +193,19 @@ impl PayloadIndex {
             ))
         })?;
 
-        match index {
-            FieldIndex::Int(int_index) => {
-                let value = query.filter.value.parse::<i64>().unwrap();
-                let query_results = int_index.query(value, &query.filter.op, query.limit)?;
-                results.extend(query_results);
-            }
-            FieldIndex::Null => {
-                unimplemented!("Null index queries are not implemented yet");
-            }
-            FieldIndex::Text(t) => {
-                let value = &query.filter.value;
-                let query_results = t.query(
-                    &Value::String(value.to_string()),
-                    &FilterOperator::Eq,
-                    query.limit,
-                )?;
-                results.extend(query_results);
-            }
-        }
-        Ok(results.into_iter().collect())
+        // Todo: Support combining results from multiple indices for complex queries
+
+        let results = index.query(
+            &Value::String(query.filter.value),
+            &query.filter.op,
+            query.limit,
+        )?;
+
+        Ok(results)
     }
 }
 
-pub trait FieldIndexTrait {
+pub trait FieldIndexTrait<DataType> {
     /// Create or load an index from the DB
     fn open(db: &Db, name: &str) -> Self;
     /// Add a point to the index
@@ -185,7 +213,7 @@ pub trait FieldIndexTrait {
     /// Query the index
     fn query(
         &self,
-        value: &Value,
+        value: DataType,
         operation: &FilterOperator,
         limit: Option<usize>,
     ) -> Result<Vec<PointId>, sled::Error>;

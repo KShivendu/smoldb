@@ -51,6 +51,7 @@ impl Segment {
         })
     }
 
+    // Rename path to segment_path
     pub fn load(path: &PathBuf) -> Result<Self, StorageError> {
         if !path.exists() {
             return Err(StorageError::ServiceError(format!(
@@ -70,6 +71,7 @@ impl Segment {
 
     /// Insert a batch of points into the segment
     pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
+        // Todo: Batch insert with parallel threads?
         for point in points {
             let key = point.id.encode()?;
             let value = point.encode_payload()?;
