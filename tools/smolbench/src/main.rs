@@ -121,6 +121,7 @@ async fn main() -> Result<(), SmolBenchError> {
                 apis::query_points(
                     &args.uri,
                     &args.collection_name,
+                    // ToDo: Benchmark with multiple filters at once
                     json!({
                         "filter": {
                             "key": "price",

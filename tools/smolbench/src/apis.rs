@@ -74,7 +74,7 @@ pub async fn create_collection(
         payload_schema["price"] = json!("int");
     }
     if !skip_text_index {
-        payload_schema["text"] = json!("text");
+        payload_schema["description"] = json!("text");
     }
 
     let res = client
@@ -226,7 +226,7 @@ pub async fn upsert_points(
                 payload: json!({
                     "text": format!("Point {}", i),
                     "timestamp": batch_ts.to_rfc3339(),
-                    "price": i as i64 * 10,
+                    "description": i as i64 * 10,
                 }),
             })
             .collect();
