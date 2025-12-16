@@ -92,7 +92,7 @@ impl FieldIndexTrait<&Value> for FieldIndex {
                     )));
                 };
 
-                t.query(&value, &FilterOperator::Eq, limit)?
+                t.query(value, &FilterOperator::Eq, limit)?
             }
         };
 
