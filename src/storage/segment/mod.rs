@@ -3,7 +3,7 @@ pub mod point;
 
 use crate::{
     api::points::Query,
-    error::StorageError,
+    error::{StorageError, StorageResult},
     storage::index::payload_index::{IndexConfig, PayloadIndex},
 };
 use futures::StreamExt;
@@ -36,7 +36,7 @@ impl Segment {
             StorageError::ServiceError(format!("Failed to open segment database: {e}"))
         })?;
 
-        let mut payload_index = PayloadIndex::get_or_create(&db);
+        let mut payload_index = PayloadIndex::get_or_create(&db)?;
 
         for (index_name, index_config) in payload_schema {
             payload_index
@@ -51,8 +51,7 @@ impl Segment {
         })
     }
 
-    // Rename path to segment_path
-    pub fn load(path: &PathBuf) -> Result<Self, StorageError> {
+    pub fn load(path: &PathBuf) -> StorageResult<Self> {
         if !path.exists() {
             return Err(StorageError::ServiceError(format!(
                 "Segment path does not exist: {path:?}"
@@ -60,7 +59,7 @@ impl Segment {
         }
 
         let db = sled::open(path).expect("Failed to open segment database");
-        let payload_index = PayloadIndex::get_or_create(&db);
+        let payload_index = PayloadIndex::get_or_create(&db)?;
 
         Ok(Self {
             path: path.to_owned(),
@@ -70,8 +69,7 @@ impl Segment {
     }
 
     /// Insert a batch of points into the segment
-    pub fn insert_points(&self, points: &[Point]) -> Result<(), StorageError> {
-        // Todo: Batch insert with parallel threads?
+    pub fn insert_points(&self, points: &[Point]) -> StorageResult<()> {
         for point in points {
             let key = point.id.encode()?;
             let value = point.encode_payload()?;

@@ -1,5 +1,6 @@
 use crate::{
     api::points::Query,
+    error::{StorageError, StorageResult},
     storage::{
         index::{filter::FilterOperator, integer::IntegerIndex, text::TextIndex},
         segment::{Point, PointId},
@@ -17,12 +18,22 @@ pub fn encoded_integer_value(n: i64) -> Vec<u8> {
     n.to_be_bytes().to_vec()
 }
 
-pub fn encoded_point_ids(point_ids: &[u64]) -> Result<Vec<u8>, bincode::error::EncodeError> {
-    bincode::encode_to_vec(point_ids, bincode::config::standard())
+/// Reverse of `encoded_integer_value`
+pub fn decoded_integer_value(data: &[u8]) -> i64 {
+    let mut buf = [0u8; 8]; // 8 bytes for i64
+    buf.copy_from_slice(data);
+    i64::from_be_bytes(buf)
 }
 
-pub fn decoded_point_ids(data: &[u8]) -> Result<Vec<u64>, bincode::error::DecodeError> {
-    bincode::decode_from_slice(data, bincode::config::standard()).map(|(ids, _)| ids)
+pub fn encoded_point_ids(point_ids: &[u64]) -> StorageResult<Vec<u8>> {
+    bincode::encode_to_vec(point_ids, bincode::config::standard())
+        .map_err(|e| StorageError::CodecError(format!("Failed to encode point IDs: {e}")))
+}
+
+pub fn decoded_point_ids(data: &[u8]) -> StorageResult<Vec<u64>> {
+    bincode::decode_from_slice(data, bincode::config::standard())
+        .map(|(ids, _)| ids)
+        .map_err(|e| StorageError::CodecError(format!("Failed to decode point IDs: {e}")))
 }
 
 pub enum FieldIndex {
@@ -40,28 +51,28 @@ pub enum IndexConfig {
 }
 
 impl FieldIndex {
-    pub fn new_numeric(db: &Db, name: &str) -> Self {
-        FieldIndex::Int(IntegerIndex::open(db, name))
+    pub fn new_numeric(db: &Db, name: &str) -> StorageResult<Self> {
+        let index = IntegerIndex::open(db, name)?;
+        Ok(FieldIndex::Int(index))
     }
 
-    pub fn new_text(db: &Db, name: &str) -> Self {
-        FieldIndex::Text(TextIndex::open(db, name))
+    pub fn new_text(db: &Db, name: &str) -> StorageResult<Self> {
+        let index = TextIndex::open(db, name)?;
+        Ok(FieldIndex::Text(index))
     }
 }
 
 impl FieldIndexTrait<&Value> for FieldIndex {
-    fn add_point(&self, point_id: u64, value: &Value) -> Result<(), sled::Error> {
+    fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()> {
         match self {
             FieldIndex::Int(index) => index.add_point(point_id, value),
-            FieldIndex::Null => {
-                unimplemented!("Null index is not implemented yet");
-            }
+            FieldIndex::Null => Err(StorageError::BadInput("Null index is not supported yet".to_string())),
             FieldIndex::Text(index) => index.add_point(point_id, value),
         }
     }
 
-    fn open(_db: &Db, _name: &str) -> Self {
-        unimplemented!("Use specific index constructors like new_numeric or new_text");
+    fn open(_db: &Db, _name: &str) -> StorageResult<Self> {
+        Err(StorageError::BadInput("Use specific index constructors like new_numeric or new_text".to_string()))
     }
 
     fn query(
@@ -69,27 +80,21 @@ impl FieldIndexTrait<&Value> for FieldIndex {
         value: &Value,
         operation: &FilterOperator,
         limit: Option<usize>,
-    ) -> Result<Vec<PointId>, sled::Error> {
+    ) -> StorageResult<Vec<PointId>> {
         let results = match self {
             FieldIndex::Int(int_index) => {
                 let value = value.as_i64().ok_or_else(|| {
-                    sled::Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("Integer index query value must be an integer. Found {value}"),
-                    ))
+                    StorageError::BadInput(format!("Integer index query value must be an integer. Found {value}"))
                 })?;
 
                 int_index.query(value, operation, limit)?
             }
             FieldIndex::Null => {
-                unimplemented!("Null index queries are not implemented yet");
+                return Err(StorageError::BadInput("Null index queries are not supported yet".to_string()));
             }
             FieldIndex::Text(t) => {
                 let value = value.as_str().ok_or_else(|| {
-                    sled::Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("Text index query value must be a string. Found {value}"),
-                    ))
+                    StorageError::BadInput(format!("Text index query value must be a string. Found {value}"))
                 })?;
 
                 t.query(value, &FilterOperator::Eq, limit)?
@@ -106,7 +111,7 @@ pub struct PayloadIndex {
 
 impl PayloadIndex {
     /// Read from the database to get existing indices and their types. If no indices are found, create a new empty index.
-    pub fn get_or_create(db: &Db) -> Self {
+    pub fn get_or_create(db: &Db) -> StorageResult<Self> {
         let schema_tree = db
             .open_tree("schema")
             .expect("Failed to open segment schema tree");
@@ -118,13 +123,13 @@ impl PayloadIndex {
                 serde_json::from_slice(&value).expect("Failed to deserialize index config");
             let field_index = match index_config {
                 IndexConfig::Int => FieldIndex::new_numeric(db, &name),
-                IndexConfig::Null => FieldIndex::Null,
+                IndexConfig::Null => return Err(StorageError::BadInput("Null index is not implemented yet".to_string())),
                 IndexConfig::Text => FieldIndex::new_text(db, &name),
-            };
+            }?;
             indices.insert(name, field_index);
         }
 
-        Self { indices }
+        Ok(Self { indices })
     }
 
     pub fn get_index_names(&self) -> Vec<&str> {
@@ -136,18 +141,17 @@ impl PayloadIndex {
         db: &Db,
         name: &str,
         index_config: IndexConfig,
-    ) -> Result<(), sled::Error> {
+    ) -> StorageResult<()> {
         if self.indices.contains_key(name) {
-            return Err(sled::Error::Io(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                format!("Index with name '{name}' already exists"),
+            return Err(StorageError::BadInput(format!(
+                "Index with name '{name}' already exists",
             )));
         }
 
         let index = match index_config {
-            IndexConfig::Int => FieldIndex::new_numeric(db, name),
-            IndexConfig::Null => unimplemented!("Null index is not implemented yet"),
-            IndexConfig::Text => FieldIndex::new_text(db, name),
+            IndexConfig::Int => FieldIndex::new_numeric(db, name)?,
+            IndexConfig::Null => return Err(StorageError::BadInput("Null index is not implemented yet".to_string())),
+            IndexConfig::Text => FieldIndex::new_text(db, name)?,
         };
 
         let index_config_str =
@@ -166,13 +170,10 @@ impl PayloadIndex {
 
     /// ToDo: Support updating existing points in the index. This would require removing old values and adding new ones.
     /// ToDo: Decoupling indexing from upserts. So that we can upsert fast and index in the background.
-    pub fn upsert(&self, point: &Point) -> Result<(), sled::Error> {
-        // todo: Use id tracker so that we can support different PointId types while being storage efficient.
+    // todo: Use id tracker so that we can support different PointId types while being storage efficient.
+    pub fn upsert(&self, point: &Point) -> StorageResult<()> {
         let PointId::Id(point_id) = point.id else {
-            return Err(sled::Error::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Invalid PointId type: Only u64 point ID is supported for payload indexing (for now)",
-            )));
+            return Err(StorageError::BadInput("Invalid PointId type: Only u64 point ID is supported for payload indexing (for now)".to_string()));
         };
 
         for (index_key, index_tree) in &self.indices {
@@ -185,13 +186,10 @@ impl PayloadIndex {
 
     // Todo: Support deleting points from the index in case of update or deletes
 
-    pub fn query(&self, query: Query) -> Result<Vec<PointId>, sled::Error> {
+    pub fn query(&self, query: Query) -> StorageResult<Vec<PointId>> {
         // ToDo: Should allow querying for un-indexed fields to demonstrate/benchmark difference
         let index = self.indices.get(&query.filter.key).ok_or_else(|| {
-            sled::Error::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("No index found for key '{}'", query.filter.key),
-            ))
+            StorageError::BadInput(format!("No index found for key '{}'", query.filter.key))
         })?;
 
         // Todo: Support combining results from multiple indices for complex queries
@@ -204,21 +202,23 @@ impl PayloadIndex {
 
 pub trait FieldIndexTrait<DataType> {
     /// Create or load an index from the DB
-    fn open(db: &Db, name: &str) -> Self;
+    fn open(db: &Db, name: &str) -> StorageResult<Self> where Self: Sized;
     /// Add a point to the index
-    fn add_point(&self, point_id: u64, value: &Value) -> Result<(), sled::Error>;
+    fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()>;
     /// Query the index
     fn query(
         &self,
         value: DataType,
         operation: &FilterOperator,
         limit: Option<usize>,
-    ) -> Result<Vec<PointId>, sled::Error>;
+    ) -> StorageResult<Vec<PointId>>;
 }
 
 #[cfg(test)]
 mod test {
     use serde_json::json;
+
+    use crate::storage::index::filter::FilterOperator;
 
     use super::*;
 
@@ -226,7 +226,7 @@ mod test {
     fn test_payload_index() {
         let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
         let db = sled::open(&tmp_dir).expect("Failed to open sled database");
-        let mut index = PayloadIndex::get_or_create(&db);
+        let mut index = PayloadIndex::get_or_create(&db).unwrap();
 
         index.add_index(&db, "price", IndexConfig::Int).unwrap();
 

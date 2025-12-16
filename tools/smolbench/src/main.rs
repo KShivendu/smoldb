@@ -109,9 +109,10 @@ async fn main() -> Result<(), SmolBenchError> {
 
     if !args.skip_query {
         let num_queries = (args.num_points as f32 * 0.01).max(100_f32) as u64;
+        let limit = 100;
         println!(
-            "Querying {} points with concurrency of {} from collection '{}' with price filter",
-            num_queries, args.concurrent_queries, args.collection_name,
+            "Querying {} points with concurrency of {} from collection '{}' with price filter and limit of {}",
+            num_queries, args.concurrent_queries, args.collection_name, limit,
         );
 
         let mut rnd = rand::rng();
@@ -128,7 +129,7 @@ async fn main() -> Result<(), SmolBenchError> {
                             "value": format!("{}", price_gte * 10),
                             "op": "gte",
                         },
-                        "limit": 100,
+                        "limit": limit,
                     }),
                 )
             })
