@@ -10,7 +10,7 @@ pub struct TextIndex(sled::Tree);
 
 // Full text search index implementation with posting lists
 impl TextIndex {
-    pub fn upsert(&self, point_id: u64, text: &String) -> Result<(), sled::Error> {
+    pub fn upsert(&self, point_id: u64, text: &str) -> Result<(), sled::Error> {
         // TODO: Add stop words, stemming, etc based on language
         // We need to tokenize the text into terms
         let terms: Vec<&str> = text.split_whitespace().collect();
@@ -22,7 +22,7 @@ impl TextIndex {
 
             let mut point_ids: Vec<u64> = self
                 .0
-                .get(&term_key)?
+                .get(term_key)?
                 .map(|data| {
                     // Decode existing point IDs for this term
                     // Todo: Apply delta encoding??
@@ -43,7 +43,7 @@ impl TextIndex {
                 )))
             })?;
 
-            self.0.insert(&term_key, encoded_ids).map_err(|e| {
+            self.0.insert(term_key, encoded_ids).map_err(|e| {
                 sled::Error::Io(std::io::Error::other(format!(
                     "Failed to insert into text index tree: {e}"
                 )))
@@ -64,7 +64,7 @@ impl FieldIndexTrait for TextIndex {
 
     fn add_point(&self, point_id: u64, value: &Value) -> Result<(), sled::Error> {
         match value {
-            Value::String(text) => self.upsert(point_id, text),
+            Value::String(text) => self.upsert(point_id, text.as_str()),
             _ => Err(sled::Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("{value} is not a valid string value"),
@@ -90,7 +90,7 @@ impl FieldIndexTrait for TextIndex {
 
         let point_ids: Vec<u64> = self
             .0
-            .get(&term_key)?
+            .get(term_key)?
             .map(|data| {
                 // Decode existing point IDs for this term
                 decoded_point_ids(&data)
