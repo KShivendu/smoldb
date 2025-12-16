@@ -167,6 +167,7 @@ impl PayloadIndex {
     /// ToDo: Support updating existing points in the index. This would require removing old values and adding new ones.
     /// ToDo: Decoupling indexing from upserts. So that we can upsert fast and index in the background.
     pub fn upsert(&self, point: &Point) -> Result<(), sled::Error> {
+        // todo: Use id tracker so that we can support different PointId types while being storage efficient.
         let PointId::Id(point_id) = point.id else {
             return Err(sled::Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
