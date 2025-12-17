@@ -36,6 +36,7 @@ impl IntegerIndex {
     }
 
     /// todo: Upserting should also remove the point id from the index?
+    /// these should be decoupled from upsert so we can batch them
     pub fn upsert(&self, point_id: u64, value: i64) -> StorageResult<()> {
         // In numeric tree, the point value becomes tree's key, and the point ID is part of a list of values.
         let tree_key = encoded_integer_value(value);
@@ -90,7 +91,7 @@ impl IntegerIndex {
         };
 
         for item in self.tree.range(bounds) {
-            let (_gte_value, encoded_point_ids) = item?;
+            let (_integer_value, encoded_point_ids) = item?;
             let point_ids = decoded_point_ids(&encoded_point_ids).map_err(|e| {
                 sled::Error::Io(std::io::Error::other(format!("Failed to decode: {e}")))
             })?;
@@ -154,17 +155,36 @@ impl InMemoryIntegerIndex {
 
     pub fn query(
         &self,
-        _value: i64,
-        _operation: &FilterOperator,
-        _limit: Option<usize>,
+        value: i64,
+        operation: &FilterOperator,
+        limit: Option<usize>,
     ) -> StorageResult<Vec<PointId>> {
-        // Query the in-memory index same as IntegerIndex::query to support all operations
-        let _guard = self.index.read().map_err(|e| {
+        let index_guard = self.index.read().map_err(|e| {
             StorageError::ServiceError(format!("Failed to read from in-memory index: {e}"))
         })?;
 
-        // Todo: Implement query logic based on the operation
+        // todo: Convert into a generic that works with any type
+        let bounds = match operation {
+            FilterOperator::Gte => (Bound::Included(value), Bound::Unbounded),
+            FilterOperator::Gt => (Bound::Excluded(value), Bound::Unbounded),
+            FilterOperator::Lt => (Bound::Unbounded, Bound::Excluded(value)),
+            FilterOperator::Lte => (Bound::Unbounded, Bound::Included(value)),
+            FilterOperator::Eq => (Bound::Included(value.clone()), Bound::Included(value)),
+        };
 
-        Ok(Vec::new())
+        let mut results = Vec::new();
+
+        for (_int_value, point_ids) in index_guard.range(bounds) {
+            results.extend_from_slice(&point_ids);
+
+            if let Some(limit) = limit {
+                if results.len() >= limit {
+                    results.truncate(limit);
+                    break;
+                }
+            }
+        }
+
+        Ok(results.into_iter().map(PointId::Id).collect())
     }
 }
