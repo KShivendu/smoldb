@@ -120,14 +120,43 @@ jobs:
                 echo "✅ **All benchmarks passed threshold checks**" >> $GITHUB_STEP_SUMMARY
                 echo "" >> $GITHUB_STEP_SUMMARY
               fi
-
-              # Extract detailed comparison results
-              echo "### Comparison with Baseline" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              grep -E "(Benchmarking|time:|change:|Performance|regressed|improved|slower|faster)" bench_output.txt | head -100 >> $GITHUB_STEP_SUMMARY || cat bench_output.txt | tail -50 >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
             fi
+          fi
+
+          # For PRs with a baseline, build a structured comparison table using Criterion JSON
+          if [ -d target/criterion ] && [ "${{ github.event_name }}" == "pull_request" ] && [ "${{ steps.bench_results.outputs.baseline_missing }}" != "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Baseline Comparison" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Benchmark | Baseline Mean (ns) | Current Mean (ns) | Change |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----------|---------------------|-------------------|--------|" >> $GITHUB_STEP_SUMMARY
+
+            # Criterion stores JSON estimates for baseline (e.g. main/) and current run (new/)
+            find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null | sort | while read new_file; do
+              base_file=$(echo "$new_file" | sed 's,/new/,/main/,')
+              if [ ! -f "$base_file" ]; then
+                continue
+              fi
+
+              bench_name=$(echo "$new_file" | sed -n 's|.*/\([^/]*\)/[^/]*/new/estimates.json|\1|p')
+              new_mean_ns=$(jq -r '.mean.point_estimate' "$new_file" 2>/dev/null)
+              base_mean_ns=$(jq -r '.mean.point_estimate' "$base_file" 2>/dev/null)
+
+              if [ "$new_mean_ns" = "null" ] || [ -z "$new_mean_ns" ] || [ "$base_mean_ns" = "null" ] || [ -z "$base_mean_ns" ]; then
+                continue
+              fi
+
+              change_pct=$(echo "scale=2; ($new_mean_ns - $base_mean_ns) * 100 / $base_mean_ns" | bc -l)
+
+              # Ensure a sign is always shown
+              if echo "$change_pct" | grep -q '^-'; then
+                signed_change="${change_pct}%"
+              else
+                signed_change="+${change_pct}%"
+              fi
+
+              echo "| $bench_name | $base_mean_ns | $new_mean_ns | $signed_change |" >> $GITHUB_STEP_SUMMARY
+            done
           fi
 
           # Extract JSON results for summary table
