@@ -169,13 +169,13 @@ impl InMemoryIntegerIndex {
             FilterOperator::Gt => (Bound::Excluded(value), Bound::Unbounded),
             FilterOperator::Lt => (Bound::Unbounded, Bound::Excluded(value)),
             FilterOperator::Lte => (Bound::Unbounded, Bound::Included(value)),
-            FilterOperator::Eq => (Bound::Included(value.clone()), Bound::Included(value)),
+            FilterOperator::Eq => (Bound::Included(value), Bound::Included(value)),
         };
 
         let mut results = Vec::new();
 
         for (_int_value, point_ids) in index_guard.range(bounds) {
-            results.extend_from_slice(&point_ids);
+            results.extend_from_slice(point_ids);
 
             if let Some(limit) = limit {
                 if results.len() >= limit {
