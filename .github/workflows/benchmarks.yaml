@@ -15,6 +15,9 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # We need full history to be able to checkout the base commit / previous commit
+          fetch-depth: 0
       - name: Install Protoc # for protobuf
         uses: arduino/setup-protoc@v3
         with:
@@ -25,44 +28,62 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y jq bc
-      - name: Download baseline (for PRs)
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmark-baseline
-          path: target/criterion
-      - name: Run benchmarks and save baseline (main branch)
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
-        run: |
-          cargo bench --bench collection -- --save-baseline main
-      - name: Run benchmarks with threshold check (PRs)
-        if: github.event_name == 'pull_request'
+      - name: Run benchmarks with baseline comparison
+        # For PRs: compare against the base branch commit
+        # For pushes: compare against the previous commit on the same branch
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         id: bench_results
         continue-on-error: true
         run: |
           # Ensure target/criterion directory exists
           mkdir -p target/criterion
 
-          # Check if baseline exists - be more robust in checking
+          echo "event_name=${{ github.event_name }}"
+
           BASELINE_EXISTS=false
-          if [ -d "target/criterion" ]; then
-            # Check for any main baseline JSON files
-            MAIN_BASELINE=$(find target/criterion -name '*.json' -path '*/main/*' 2>/dev/null | head -1 || true)
-            if [ -n "$MAIN_BASELINE" ] && [ -f "$MAIN_BASELINE" ]; then
+
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "📌 PR detected. Using base commit as baseline..."
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            PR_SHA="${{ github.sha }}"
+
+            if [ -n "$BASE_SHA" ]; then
+              echo "Checking out base commit $BASE_SHA to generate baseline..."
+              git checkout "$BASE_SHA"
+              cargo bench --bench collection -- --save-baseline main || true
+
+              echo "Switching back to PR commit $PR_SHA..."
+              git checkout "$PR_SHA"
               BASELINE_EXISTS=true
+            else
+              echo "⚠️ Could not determine base SHA, running without baseline."
+            fi
+          elif [ "${{ github.event_name }}" == "push" ]; then
+            echo "📌 Push detected. Using previous commit as baseline (if it exists)..."
+            CURRENT_SHA="${{ github.sha }}"
+
+            if git rev-parse HEAD^ >/dev/null 2>&1; then
+              PREV_SHA=$(git rev-parse HEAD^)
+              echo "Previous commit detected: $PREV_SHA. Generating baseline from it..."
+              git checkout "$PREV_SHA"
+              cargo bench --bench collection -- --save-baseline main || true
+
+              echo "Switching back to current commit $CURRENT_SHA..."
+              git checkout "$CURRENT_SHA"
+              BASELINE_EXISTS=true
+            else
+              echo "⚠️ No previous commit found (first commit on branch). Running without baseline."
             fi
           fi
 
           if [ "$BASELINE_EXISTS" = "false" ]; then
-            echo "⚠️ No baseline found. Running benchmarks without comparison..."
+            echo "⚠️ No baseline available. Running benchmarks and saving baseline for future runs..."
             cargo bench --bench collection -- --save-baseline main 2>&1 | tee bench_output.txt || true
             echo "baseline_missing=true" >> $GITHUB_OUTPUT
             echo "exit_code=0" >> $GITHUB_OUTPUT
           else
             echo "📊 Running benchmarks with baseline comparison..."
             # Run with baseline comparison - Criterion will show differences
-            # Using --test will fail on regressions, but we use continue-on-error to still report
             cargo bench --bench collection -- --baseline main 2>&1 | tee bench_output.txt || true
             BENCH_EXIT_CODE=${PIPESTATUS[0]}
             echo "exit_code=$BENCH_EXIT_CODE" >> $GITHUB_OUTPUT
@@ -73,17 +94,6 @@ jobs:
             echo "=== Threshold Check (5% significance) ===" >> bench_output.txt
             cargo bench --bench collection -- --baseline main --test 2>&1 | tee -a bench_output.txt || true
           fi
-      - name: Run benchmarks without baseline (other branches)
-        if: github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev'
-        run: |
-          cargo bench --bench collection -- --save-baseline main
-      - name: Upload baseline artifact
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-baseline
-          path: target/criterion
-          retention-days: 30
       - name: Upload benchmark reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -99,7 +109,7 @@ jobs:
 
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             if [ "${{ steps.bench_results.outputs.baseline_missing }}" == "true" ]; then
-              echo "⚠️ **No baseline found for comparison.** This is the first benchmark run." >> $GITHUB_STEP_SUMMARY
+              echo "⚠️ **No baseline found for comparison.** This might be the first benchmark-capable commit for this PR or its base." >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
             elif [ -f bench_output.txt ]; then
               # Check for performance regressions
