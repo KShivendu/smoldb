@@ -1,6 +1,7 @@
 mod common;
 mod query;
 mod read;
+mod text_search;
 mod write;
 
 use criterion::{criterion_group, criterion_main};
@@ -12,6 +13,8 @@ criterion_group!(
     read::single_read,
     read::concurrent_read,
     query::single_query,
-    query::concurrent_query
+    query::concurrent_query,
+    text_search::single_text_query,
+    text_search::concurrent_text_query
 );
 criterion_main!(benches);
