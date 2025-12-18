@@ -1,7 +1,6 @@
-use std::ops::Bound;
-
 use serde_json::Value;
 use sled::Db;
+use std::ops::Bound;
 
 use crate::storage::{
     index::{
