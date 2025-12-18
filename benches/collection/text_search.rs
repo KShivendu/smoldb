@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use criterion::Criterion;
+use serde_json::Value;
 
 use crate::common::{
     benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
@@ -14,7 +15,7 @@ use smoldb::{
     },
 };
 
-// Perf when bench was first implemented: 31.807 µs
+// Perf when bench was first implemented: 1.5804 µs
 pub fn single_text_query(c: &mut Criterion) {
     let mut group = benchmark_group(c, "Single text query benchmarks");
 
@@ -36,7 +37,7 @@ pub fn single_text_query(c: &mut Criterion) {
     let collection_arc = Arc::new(collection);
 
     let query = Query {
-        filter: QueryFilter::new("text", "100", FilterOperator::Eq),
+        filter: QueryFilter::new("text", Value::from("100"), FilterOperator::Eq),
         limit: Some(10),
     };
 
@@ -50,7 +51,7 @@ pub fn single_text_query(c: &mut Criterion) {
     });
 }
 
-// Perf when bench was first implemented: 668.48 µs
+// Perf when bench was first implemented: 5.7696 µs
 pub fn concurrent_text_query(c: &mut Criterion) {
     let mut group = benchmark_group(c, "Concurrent text query benchmarks");
 
@@ -76,7 +77,11 @@ pub fn concurrent_text_query(c: &mut Criterion) {
         .map(|i| {
             let start_id = i * chunk_size as u64;
             Query {
-                filter: QueryFilter::new("text", format!("{start_id}"), FilterOperator::Gte),
+                filter: QueryFilter::new(
+                    "text",
+                    Value::from(format!("{start_id}")),
+                    FilterOperator::Gte,
+                ),
                 limit: Some(10),
             }
         })
