@@ -1,10 +1,14 @@
 pub mod index;
+pub mod payload_storage;
 pub mod point;
 
 use crate::{
     api::points::Query,
     error::StorageError,
-    storage::index::payload_index::{IndexConfig, PayloadIndex},
+    storage::{
+        index::payload_index::{IndexConfig, PayloadIndex},
+        segment::payload_storage::{PayloadStorage, PayloadStorageTrait},
+    },
 };
 use futures::StreamExt;
 use std::{
@@ -17,7 +21,7 @@ pub use point::{Point, PointId};
 
 pub struct Segment {
     pub path: PathBuf,
-    pub db: sled::Db,
+    pub payload_storage: PayloadStorage,
     // ToDo: ID tracker, vector storage?
     // ID tracker is valuable for building immutable segments, so same point can exist in multiple segments while only the latest version is visible
     pub payload_index: PayloadIndex,
@@ -32,21 +36,21 @@ impl Segment {
         let path = segments_dir.join("0");
         std::fs::create_dir_all(&path).expect("Failed to create segment directory");
 
-        let db = sled::open(&path).map_err(|e| {
-            StorageError::ServiceError(format!("Failed to open segment database: {e}"))
-        })?;
+        let payload_storage = PayloadStorage::new_on_disk(&path)?;
 
-        let mut payload_index = PayloadIndex::get_or_create(&db);
+        let db = payload_storage._inner_db();
+
+        let mut payload_index = PayloadIndex::get_or_create(db);
 
         for (index_name, index_config) in payload_schema {
             payload_index
-                .add_index(&db, &index_name, index_config)
+                .add_index(db, &index_name, index_config)
                 .map_err(|e| StorageError::ServiceError(format!("Failed to add index: {e}")))?;
         }
 
         Ok(Self {
             path,
-            db,
+            payload_storage,
             payload_index,
         })
     }
@@ -58,12 +62,13 @@ impl Segment {
             )));
         }
 
-        let db = sled::open(path).expect("Failed to open segment database");
-        let payload_index = PayloadIndex::get_or_create(&db);
+        let payload_storage = PayloadStorage::new_on_disk(path)?;
+
+        let payload_index = PayloadIndex::get_or_create(payload_storage._inner_db());
 
         Ok(Self {
             path: path.to_owned(),
-            db,
+            payload_storage,
             payload_index,
         })
     }
@@ -73,7 +78,7 @@ impl Segment {
         for point in points {
             let key = point.id.encode()?;
             let value = point.encode_payload()?;
-            self.db.insert(key, value).map_err(|e| {
+            self.payload_storage.insert(key, value).map_err(|e| {
                 StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
             })?;
 
@@ -82,9 +87,7 @@ impl Segment {
             })?;
         }
 
-        self.db
-            .flush()
-            .map_err(|e| StorageError::ServiceError(format!("Failed to flush segment db: {e}")))?;
+        self.payload_storage.flush()?;
         Ok(())
     }
 
@@ -93,7 +96,7 @@ impl Segment {
             None => {
                 // This iteration will block the thread since sled iter is sequential
                 // So we should move it to a blocking context so it doesn't block the event loop
-                let db_clone = self.db.clone();
+                let db_clone = self.payload_storage._inner_db().clone();
                 let points =
                     tokio::task::spawn_blocking(move || -> Result<Vec<Point>, StorageError> {
                         let points = db_clone
@@ -121,7 +124,7 @@ impl Segment {
                     let key = ids[0].encode()?;
                     // db.get is a blocking call in async runtime, but it's only a single item so it should be okay
                     // todo: can be optimized later when we have io_uring?
-                    if let Some(value) = self.db.get(&key)? {
+                    if let Some(value) = self.payload_storage._inner_db().get(&key)? {
                         return Ok(vec![Point::decode(&key, &value)?]);
                     }
                 }
@@ -136,7 +139,7 @@ impl Segment {
 
                 // Each chunk will read 50 points and we will read 10 chunks in parallel => 500 points in parallel
                 let point_chunks = futures::stream::iter(chunks.into_iter().map(|chunk| {
-                    let db = self.db.clone();
+                    let db = self.payload_storage._inner_db().clone();
                     tokio::task::spawn_blocking(move || -> Result<Vec<Point>, StorageError> {
                         let mut found_points = Vec::with_capacity(chunk.len());
                         for id in chunk {
@@ -174,7 +177,7 @@ impl Segment {
     }
 
     pub fn count_points(&self) -> usize {
-        self.db.len()
+        self.payload_storage.count()
     }
 
     // todo: Allow updating payload index schema on the fly
