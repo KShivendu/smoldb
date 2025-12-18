@@ -224,9 +224,9 @@ pub async fn upsert_points(
             .map(|i| Point {
                 id: i,
                 payload: json!({
-                    "text": format!("Point {}", i),
+                    "description": format!("Point {}", i),
+                    "price": i as i64 * 10,
                     "timestamp": batch_ts.to_rfc3339(),
-                    "description": i as i64 * 10,
                 }),
             })
             .collect();

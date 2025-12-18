@@ -85,12 +85,12 @@ impl FieldIndexTrait<&Value> for FieldIndex {
                 unimplemented!("Null index queries are not implemented yet");
             }
             FieldIndex::Text(t) => {
-                let Some(value) = value.as_str() else {
-                    return Err(sled::Error::Io(std::io::Error::new(
+                let value = value.as_str().ok_or_else(|| {
+                    sled::Error::Io(std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
-                        "Text index query value must be a string",
-                    )));
-                };
+                        format!("Text index query value must be a string. Found {value}"),
+                    ))
+                })?;
 
                 t.query(value, &FilterOperator::Eq, limit)?
             }
