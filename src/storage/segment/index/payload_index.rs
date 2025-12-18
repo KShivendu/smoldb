@@ -75,7 +75,7 @@ impl FieldIndexTrait<&Value> for FieldIndex {
                 let value = value.as_i64().ok_or_else(|| {
                     sled::Error::Io(std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
-                        "Integer index query value must be an integer",
+                        format!("Integer index query value must be an integer. Found {value}"),
                     ))
                 })?;
 
@@ -196,11 +196,7 @@ impl PayloadIndex {
 
         // Todo: Support combining results from multiple indices for complex queries
 
-        let results = index.query(
-            &Value::String(query.filter.value),
-            &query.filter.op,
-            query.limit,
-        )?;
+        let results = index.query(&query.filter.value, &query.filter.op, query.limit)?;
 
         Ok(results)
     }

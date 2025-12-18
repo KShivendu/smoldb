@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -40,12 +41,13 @@ impl std::convert::TryFrom<String> for FilterOperator {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct QueryFilter {
     pub key: String,
-    pub value: String,
+    // todo: Limit types of values?
+    pub value: Value,
     pub op: FilterOperator,
 }
 
 impl QueryFilter {
-    pub fn new(key: impl Into<String>, value: impl Into<String>, op: FilterOperator) -> Self {
+    pub fn new(key: impl Into<String>, value: impl Into<Value>, op: FilterOperator) -> Self {
         Self {
             key: key.into(),
             value: value.into(),

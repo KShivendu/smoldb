@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(read_points[0], points[0]);
 
         let query = Query {
-            filter: QueryFilter::new("age", "25", FilterOperator::Gte),
+            filter: QueryFilter::new("age", json!(25), FilterOperator::Gte),
             limit: None,
         };
 
