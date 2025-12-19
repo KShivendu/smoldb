@@ -128,65 +128,159 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Baseline Comparison against $BASE_SHA" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Benchmark | Baseline Mean | Current Mean | Change | Significant (≥5%) |" >> $GITHUB_STEP_SUMMARY
-            echo "|-----------|---------------|--------------|--------|--------------------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Benchmark | Baseline Mean | Current Mean | Change | Significant (≥5%) | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----------|---------------|--------------|--------|--------------------|--------|" >> $GITHUB_STEP_SUMMARY
 
-            # Criterion stores JSON estimates for baseline (e.g. main/) and current run (new/)
-            find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null | sort | while read new_file; do
-              base_file=$(echo "$new_file" | sed 's,/new/,/main/,')
-              if [ ! -f "$base_file" ]; then
-                continue
+            # Get list of all benchmarks we know about
+            ALL_BENCHES_BASE=""
+            ALL_BENCHES_CURRENT=""
+
+            # Find all benchmarks in baseline
+            if [ -d target/criterion ]; then
+              ALL_BENCHES_BASE=$(find target/criterion -name "estimates.json" -path "*/main/*" 2>/dev/null | sed -n 's|.*/\([^/]*\)/[^/]*/main/estimates.json|\1|p' | sort -u || true)
+              ALL_BENCHES_CURRENT=$(find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null | sed -n 's|.*/\([^/]*\)/[^/]*/new/estimates.json|\1|p' | sort -u || true)
+            fi
+
+            # Get panicked benchmarks if available
+            PANICKED_BENCHES_COMP=""
+            if [ -f bench_output.txt ]; then
+              BENCHES_STARTED=$(grep "^Benchmarking " bench_output.txt | sed 's/^Benchmarking //' | sort -u || true)
+              if [ -n "$BENCHES_STARTED" ] && [ -n "$ALL_BENCHES_CURRENT" ]; then
+                PANICKED_BENCHES_COMP=$(comm -23 <(echo "$BENCHES_STARTED") <(echo "$ALL_BENCHES_CURRENT") 2>/dev/null || true)
+              elif [ -n "$BENCHES_STARTED" ] && [ -z "$ALL_BENCHES_CURRENT" ]; then
+                PANICKED_BENCHES_COMP="$BENCHES_STARTED"
               fi
+            fi
 
-              bench_name=$(echo "$new_file" | sed -n 's|.*/\([^/]*\)/[^/]*/new/estimates.json|\1|p')
-              new_mean_ns=$(jq -r '.mean.point_estimate' "$new_file" 2>/dev/null)
-              base_mean_ns=$(jq -r '.mean.point_estimate' "$base_file" 2>/dev/null)
+            # Combine all benchmarks (baseline + current + panicked)
+            ALL_BENCHES_COMP=$(printf "%s\n%s\n%s" "$ALL_BENCHES_BASE" "$ALL_BENCHES_CURRENT" "$PANICKED_BENCHES_COMP" | sort -u | grep -v '^$' || true)
 
-              if [ "$new_mean_ns" = "null" ] || [ -z "$new_mean_ns" ] || [ "$base_mean_ns" = "null" ] || [ -z "$base_mean_ns" ]; then
-                continue
-              fi
+            # Process each benchmark
+            if [ -n "$ALL_BENCHES_COMP" ]; then
+              echo "$ALL_BENCHES_COMP" | while read bench_name; do
+                new_file=$(find target/criterion -name "estimates.json" -path "*/${bench_name}/new/*" 2>/dev/null | head -1 || true)
+                base_file=$(find target/criterion -name "estimates.json" -path "*/${bench_name}/main/*" 2>/dev/null | head -1 || true)
 
-              # Format baseline mean into human-friendly units
-              if (( $(echo "$base_mean_ns > 1000000" | bc -l) )); then
-                base_mean_ms=$(echo "scale=2; $base_mean_ns / 1000000" | bc)
-                base_mean_disp="${base_mean_ms} ms"
-              elif (( $(echo "$base_mean_ns > 1000" | bc -l) )); then
-                base_mean_us=$(echo "scale=2; $base_mean_ns / 1000" | bc)
-                base_mean_disp="${base_mean_us} µs"
-              else
-                base_mean_disp="${base_mean_ns} ns"
-              fi
+                # Check if panicked
+                IS_PANICKED=false
+                if [ -n "$PANICKED_BENCHES_COMP" ] && echo "$PANICKED_BENCHES_COMP" | grep -q "^${bench_name}$"; then
+                  IS_PANICKED=true
+                fi
 
-              # Format current mean into human-friendly units
-              if (( $(echo "$new_mean_ns > 1000000" | bc -l) )); then
-                new_mean_ms=$(echo "scale=2; $new_mean_ns / 1000000" | bc)
-                new_mean_disp="${new_mean_ms} ms"
-              elif (( $(echo "$new_mean_ns > 1000" | bc -l) )); then
-                new_mean_us=$(echo "scale=2; $new_mean_ns / 1000" | bc)
-                new_mean_disp="${new_mean_us} µs"
-              else
-                new_mean_disp="${new_mean_ns} ns"
-              fi
+                # Check if new benchmark
+                IS_NEW=false
+                if [ -z "$base_file" ] && [ -n "$new_file" ]; then
+                  IS_NEW=true
+                fi
 
-              change_pct=$(echo "scale=2; ($new_mean_ns - $base_mean_ns) * 100 / $base_mean_ns" | bc -l)
+                if [ "$IS_PANICKED" = "true" ]; then
+                  # Panicked benchmark
+                  base_mean_disp="—"
+                  new_mean_disp="—"
+                  signed_change="—"
+                  significant="—"
+                  status="❌ PANICKED"
+                elif [ "$IS_NEW" = "true" ] && [ -n "$new_file" ]; then
+                  # New benchmark (only in current run)
+                  base_mean_disp="—"
+                  new_mean_ns=$(jq -r '.mean.point_estimate' "$new_file" 2>/dev/null)
 
-              # Ensure a sign is always shown
-              if echo "$change_pct" | grep -q '^-'; then
-                signed_change="${change_pct}%"
-              else
-                signed_change="+${change_pct}%"
-              fi
+                  if [ "$new_mean_ns" != "null" ] && [ -n "$new_mean_ns" ] && [ "$new_mean_ns" != "" ]; then
+                    if (( $(echo "$new_mean_ns > 1000000" | bc -l) )); then
+                      new_mean_ms=$(echo "scale=2; $new_mean_ns / 1000000" | bc)
+                      new_mean_disp="${new_mean_ms} ms"
+                    elif (( $(echo "$new_mean_ns > 1000" | bc -l) )); then
+                      new_mean_us=$(echo "scale=2; $new_mean_ns / 1000" | bc)
+                      new_mean_disp="${new_mean_us} µs"
+                    else
+                      new_mean_disp="${new_mean_ns} ns"
+                    fi
+                  else
+                    new_mean_disp="—"
+                  fi
 
-              # Heuristic "significance": highlight changes with magnitude ≥ 5%
-              abs_change_pct=$(echo "if ($change_pct < 0) -$change_pct else $change_pct" | bc -l)
-              if (( $(echo "$abs_change_pct >= 5.0" | bc -l) )); then
-                significant="yes"
-              else
-                significant="no"
-              fi
+                  signed_change="—"
+                  significant="—"
+                  status="🆕 NEW"
+                elif [ -n "$new_file" ] && [ -n "$base_file" ]; then
+                  # Both exist - normal comparison
+                  new_mean_ns=$(jq -r '.mean.point_estimate' "$new_file" 2>/dev/null)
+                  base_mean_ns=$(jq -r '.mean.point_estimate' "$base_file" 2>/dev/null)
 
-              echo "| $bench_name | $base_mean_disp | $new_mean_disp | $signed_change | $significant |" >> $GITHUB_STEP_SUMMARY
-            done
+                  if [ "$new_mean_ns" = "null" ] || [ -z "$new_mean_ns" ] || [ "$base_mean_ns" = "null" ] || [ -z "$base_mean_ns" ]; then
+                    continue
+                  fi
+
+                  # Format baseline mean into human-friendly units
+                  if (( $(echo "$base_mean_ns > 1000000" | bc -l) )); then
+                    base_mean_ms=$(echo "scale=2; $base_mean_ns / 1000000" | bc)
+                    base_mean_disp="${base_mean_ms} ms"
+                  elif (( $(echo "$base_mean_ns > 1000" | bc -l) )); then
+                    base_mean_us=$(echo "scale=2; $base_mean_ns / 1000" | bc)
+                    base_mean_disp="${base_mean_us} µs"
+                  else
+                    base_mean_disp="${base_mean_ns} ns"
+                  fi
+
+                  # Format current mean into human-friendly units
+                  if (( $(echo "$new_mean_ns > 1000000" | bc -l) )); then
+                    new_mean_ms=$(echo "scale=2; $new_mean_ns / 1000000" | bc)
+                    new_mean_disp="${new_mean_ms} ms"
+                  elif (( $(echo "$new_mean_ns > 1000" | bc -l) )); then
+                    new_mean_us=$(echo "scale=2; $new_mean_ns / 1000" | bc)
+                    new_mean_disp="${new_mean_us} µs"
+                  else
+                    new_mean_disp="${new_mean_ns} ns"
+                  fi
+
+                  change_pct=$(echo "scale=2; ($new_mean_ns - $base_mean_ns) * 100 / $base_mean_ns" | bc -l)
+
+                  # Ensure a sign is always shown
+                  if echo "$change_pct" | grep -q '^-'; then
+                    signed_change="${change_pct}%"
+                  else
+                    signed_change="+${change_pct}%"
+                  fi
+
+                  # Heuristic "significance": highlight changes with magnitude ≥ 5%
+                  abs_change_pct=$(echo "if ($change_pct < 0) -$change_pct else $change_pct" | bc -l)
+                  if (( $(echo "$abs_change_pct >= 5.0" | bc -l) )); then
+                    significant="yes"
+                  else
+                    significant="no"
+                  fi
+
+                  status="✅"
+                elif [ -n "$base_file" ] && [ -z "$new_file" ]; then
+                  # Exists in baseline but not in current (likely panicked or removed)
+                  base_mean_ns=$(jq -r '.mean.point_estimate' "$base_file" 2>/dev/null)
+
+                  if [ "$base_mean_ns" != "null" ] && [ -n "$base_mean_ns" ] && [ "$base_mean_ns" != "" ]; then
+                    if (( $(echo "$base_mean_ns > 1000000" | bc -l) )); then
+                      base_mean_ms=$(echo "scale=2; $base_mean_ns / 1000000" | bc)
+                      base_mean_disp="${base_mean_ms} ms"
+                    elif (( $(echo "$base_mean_ns > 1000" | bc -l) )); then
+                      base_mean_us=$(echo "scale=2; $base_mean_ns / 1000" | bc)
+                      base_mean_disp="${base_mean_us} µs"
+                    else
+                      base_mean_disp="${base_mean_ns} ns"
+                    fi
+                  else
+                    base_mean_disp="—"
+                  fi
+
+                  new_mean_disp="—"
+                  signed_change="—"
+                  significant="—"
+                  status="⚠️ MISSING"
+                else
+                  # Skip if we can't determine anything
+                  continue
+                fi
+
+                echo "| $bench_name | $base_mean_disp | $new_mean_disp | $signed_change | $significant | $status |" >> $GITHUB_STEP_SUMMARY
+              done
+            fi
           fi
 
           # Extract JSON results for summary table
@@ -194,49 +288,146 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Benchmark Summary" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Benchmark | Mean Time |" >> $GITHUB_STEP_SUMMARY
-            echo "|-----------|-----------|" >> $GITHUB_STEP_SUMMARY
 
-            # Find all estimates.json files (prefer new/ over main/ for PRs)
-            if [ "${{ github.event_name }}" == "pull_request" ]; then
-              ESTIMATES_PATH="*/new/*"
+            # For PRs, we need to track which benchmarks panicked and which are new
+            if [ "${{ github.event_name }}" == "pull_request" ] && [ -f bench_output.txt ]; then
+              # Extract benchmark names that panicked from the output
+              # Criterion outputs "Benchmarking <name>" before each benchmark
+              # Panics show up as "panicked at" or "thread '<name>' panicked"
+              PANICKED_BENCHES=$(grep -E "thread '[^']*' panicked|panicked at" bench_output.txt | grep -oE "thread '[^']*'" | sed "s/thread '//;s/'//" | sort -u || true)
+
+              # Also try to extract from "Benchmarking <name>" lines that are followed by panics
+              # This is a more reliable way - find benchmarks that were started but never completed
+              BENCHES_STARTED=$(grep "^Benchmarking " bench_output.txt | sed 's/^Benchmarking //' | sort -u || true)
+
+              # Find benchmarks that completed successfully (have new/ directory)
+              BENCHES_COMPLETED=$(find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p' | sort -u || true)
+
+              # Benchmarks that started but didn't complete are likely panicked
+              # Use a more robust method that handles empty inputs
+              if [ -n "$BENCHES_STARTED" ] && [ -n "$BENCHES_COMPLETED" ]; then
+                PANICKED_FROM_COMPARISON=$(comm -23 <(echo "$BENCHES_STARTED") <(echo "$BENCHES_COMPLETED") 2>/dev/null || true)
+                if [ -n "$PANICKED_FROM_COMPARISON" ]; then
+                  PANICKED_BENCHES=$(printf "%s\n%s" "$PANICKED_BENCHES" "$PANICKED_FROM_COMPARISON" | sort -u | grep -v '^$' || true)
+                fi
+              elif [ -n "$BENCHES_STARTED" ] && [ -z "$BENCHES_COMPLETED" ]; then
+                # If no benchmarks completed but some started, they all likely panicked
+                PANICKED_BENCHES=$(printf "%s\n%s" "$PANICKED_BENCHES" "$BENCHES_STARTED" | sort -u | grep -v '^$' || true)
+              fi
             else
-              ESTIMATES_PATH="*/main/*"
+              PANICKED_BENCHES=""
             fi
 
-            find target/criterion -name "estimates.json" -path "$ESTIMATES_PATH" 2>/dev/null | sort | while read file; do
-              BENCH_NAME=$(echo "$file" | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p')
-              MEAN_NS=$(jq -r '.mean.point_estimate' "$file" 2>/dev/null)
+            # Determine which benchmarks exist in baseline (for detecting new benchmarks)
+            BASELINE_BENCHES=""
+            if [ "${{ github.event_name }}" == "pull_request" ] && [ -d target/criterion ]; then
+              BASELINE_BENCHES=$(find target/criterion -name "estimates.json" -path "*/main/*" 2>/dev/null | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p' | sort -u || true)
+            fi
 
-              if [ "$MEAN_NS" != "null" ] && [ -n "$MEAN_NS" ] && [ "$MEAN_NS" != "" ]; then
-                # Convert to appropriate unit
-                if (( $(echo "$MEAN_NS > 1000000" | bc -l) )); then
-                  MEAN_MS=$(echo "scale=2; $MEAN_NS / 1000000" | bc)
-                  echo "| $BENCH_NAME | ${MEAN_MS} ms |" >> $GITHUB_STEP_SUMMARY
-                elif (( $(echo "$MEAN_NS > 1000" | bc -l) )); then
-                  MEAN_US=$(echo "scale=2; $MEAN_NS / 1000" | bc)
-                  echo "| $BENCH_NAME | ${MEAN_US} µs |" >> $GITHUB_STEP_SUMMARY
-                else
-                  echo "| $BENCH_NAME | ${MEAN_NS} ns |" >> $GITHUB_STEP_SUMMARY
+            # Determine which benchmarks exist in current run
+            CURRENT_BENCHES=""
+            if [ "${{ github.event_name }}" == "pull_request" ]; then
+              CURRENT_BENCHES=$(find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p' | sort -u || true)
+            else
+              CURRENT_BENCHES=$(find target/criterion -name "estimates.json" -path "*/main/*" 2>/dev/null | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p' | sort -u || true)
+            fi
+
+            # Combine all benchmarks we know about (baseline + current + panicked)
+            ALL_BENCHES=$(printf "%s\n%s\n%s" "$BASELINE_BENCHES" "$CURRENT_BENCHES" "$PANICKED_BENCHES" | sort -u | grep -v '^$' || true)
+
+            echo "| Benchmark | Status | Mean Time |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----------|--------|-----------|" >> $GITHUB_STEP_SUMMARY
+
+            # Process each benchmark we know about
+            if [ -n "$ALL_BENCHES" ]; then
+              echo "$ALL_BENCHES" | while read BENCH_NAME; do
+                # Check if this benchmark panicked
+                IS_PANICKED=false
+                if [ -n "$PANICKED_BENCHES" ] && echo "$PANICKED_BENCHES" | grep -q "^${BENCH_NAME}$"; then
+                  IS_PANICKED=true
                 fi
-              fi
-            done
 
-            # If no results found in new/, try main/ as fallback
-            if [ "${{ github.event_name }}" == "pull_request" ] && [ -z "$(find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null)" ]; then
-              find target/criterion -name "estimates.json" -path "*/main/*" 2>/dev/null | sort | while read file; do
+                # Check if this is a new benchmark (not in baseline)
+                IS_NEW=false
+                if [ "${{ github.event_name }}" == "pull_request" ] && [ -n "$BASELINE_BENCHES" ]; then
+                  if ! echo "$BASELINE_BENCHES" | grep -q "^${BENCH_NAME}$"; then
+                    IS_NEW=true
+                  fi
+                fi
+
+                # Try to find the estimates.json file
+                ESTIMATES_FILE=""
+                if [ "${{ github.event_name }}" == "pull_request" ]; then
+                  ESTIMATES_FILE=$(find target/criterion -name "estimates.json" -path "*/${BENCH_NAME}/new/*" 2>/dev/null | head -1 || true)
+                  # If not found in new/, check main/ (but only if not panicked)
+                  if [ -z "$ESTIMATES_FILE" ] && [ "$IS_PANICKED" = "false" ]; then
+                    ESTIMATES_FILE=$(find target/criterion -name "estimates.json" -path "*/${BENCH_NAME}/main/*" 2>/dev/null | head -1 || true)
+                  fi
+                else
+                  ESTIMATES_FILE=$(find target/criterion -name "estimates.json" -path "*/${BENCH_NAME}/main/*" 2>/dev/null | head -1 || true)
+                fi
+
+                # Determine status and time
+                STATUS=""
+                TIME_DISPLAY=""
+
+                if [ "$IS_PANICKED" = "true" ]; then
+                  STATUS="❌ PANICKED"
+                  TIME_DISPLAY="—"
+                elif [ -n "$ESTIMATES_FILE" ] && [ -f "$ESTIMATES_FILE" ]; then
+                  MEAN_NS=$(jq -r '.mean.point_estimate' "$ESTIMATES_FILE" 2>/dev/null || echo "null")
+
+                  if [ "$MEAN_NS" != "null" ] && [ -n "$MEAN_NS" ] && [ "$MEAN_NS" != "" ]; then
+                    if [ "$IS_NEW" = "true" ]; then
+                      STATUS="🆕 NEW"
+                    else
+                      STATUS="✅ OK"
+                    fi
+
+                    # Convert to appropriate unit
+                    if (( $(echo "$MEAN_NS > 1000000" | bc -l 2>/dev/null || echo "0") )); then
+                      MEAN_MS=$(echo "scale=2; $MEAN_NS / 1000000" | bc)
+                      TIME_DISPLAY="${MEAN_MS} ms"
+                    elif (( $(echo "$MEAN_NS > 1000" | bc -l 2>/dev/null || echo "0") )); then
+                      MEAN_US=$(echo "scale=2; $MEAN_NS / 1000" | bc)
+                      TIME_DISPLAY="${MEAN_US} µs"
+                    else
+                      TIME_DISPLAY="${MEAN_NS} ns"
+                    fi
+                  else
+                    STATUS="⚠️ NO DATA"
+                    TIME_DISPLAY="—"
+                  fi
+                elif [ "$IS_NEW" = "true" ]; then
+                  STATUS="🆕 NEW (no data)"
+                  TIME_DISPLAY="—"
+                else
+                  STATUS="⚠️ MISSING"
+                  TIME_DISPLAY="—"
+                fi
+
+                echo "| $BENCH_NAME | $STATUS | $TIME_DISPLAY |" >> $GITHUB_STEP_SUMMARY
+              done
+            else
+              # Fallback: if we can't determine benchmarks, use the old method
+              ESTIMATES_PATH="*/main/*"
+              if [ "${{ github.event_name }}" == "pull_request" ]; then
+                ESTIMATES_PATH="*/new/*"
+              fi
+
+              find target/criterion -name "estimates.json" -path "$ESTIMATES_PATH" 2>/dev/null | sort | while read file; do
                 BENCH_NAME=$(echo "$file" | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p')
                 MEAN_NS=$(jq -r '.mean.point_estimate' "$file" 2>/dev/null)
 
                 if [ "$MEAN_NS" != "null" ] && [ -n "$MEAN_NS" ] && [ "$MEAN_NS" != "" ]; then
                   if (( $(echo "$MEAN_NS > 1000000" | bc -l) )); then
                     MEAN_MS=$(echo "scale=2; $MEAN_NS / 1000000" | bc)
-                    echo "| $BENCH_NAME | ${MEAN_MS} ms |" >> $GITHUB_STEP_SUMMARY
+                    echo "| $BENCH_NAME | ✅ OK | ${MEAN_MS} ms |" >> $GITHUB_STEP_SUMMARY
                   elif (( $(echo "$MEAN_NS > 1000" | bc -l) )); then
                     MEAN_US=$(echo "scale=2; $MEAN_NS / 1000" | bc)
-                    echo "| $BENCH_NAME | ${MEAN_US} µs |" >> $GITHUB_STEP_SUMMARY
+                    echo "| $BENCH_NAME | ✅ OK | ${MEAN_US} µs |" >> $GITHUB_STEP_SUMMARY
                   else
-                    echo "| $BENCH_NAME | ${MEAN_NS} ns |" >> $GITHUB_STEP_SUMMARY
+                    echo "| $BENCH_NAME | ✅ OK | ${MEAN_NS} ns |" >> $GITHUB_STEP_SUMMARY
                   fi
                 fi
               done
