@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use criterion::Criterion;
+use serde_json::Value;
 
 use crate::common::{
     benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
@@ -28,14 +29,14 @@ pub fn single_query(c: &mut Criterion) {
             &tempdir,
             channel_service,
             Some(payload_index),
-            generate_points(1),
+            generate_points(1), // todo: Should have 100_000 points but query only for a single point
         )
         .await
     });
     let collection_arc = Arc::new(collection);
 
     let query = Query {
-        filter: QueryFilter::new("price", "0", FilterOperator::Gte),
+        filter: QueryFilter::new("price", Value::from(0), FilterOperator::Gte),
         limit: Some(10),
     };
 
@@ -75,11 +76,7 @@ pub fn concurrent_query(c: &mut Criterion) {
         .map(|i| {
             let start_id = i * chunk_size as u64;
             Query {
-                filter: QueryFilter::new(
-                    "price",
-                    format!("{}", start_id * 10),
-                    FilterOperator::Gte,
-                ),
+                filter: QueryFilter::new("price", Value::from(start_id * 10), FilterOperator::Gte),
                 limit: Some(10),
             }
         })
