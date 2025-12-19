@@ -48,3 +48,4 @@ impl From<tonic::Status> for CollectionError {
 }
 
 pub type CollectionResult<T> = Result<T, CollectionError>;
+pub type StorageResult<T> = Result<T, StorageError>;

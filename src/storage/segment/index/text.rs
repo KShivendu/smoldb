@@ -3,23 +3,25 @@ use std::{collections::HashMap, sync::RwLock};
 use serde_json::Value;
 use sled::Db;
 
-use crate::storage::{
-    index::{
-        filter::FilterOperator,
-        payload_index::{decoded_point_ids, encoded_point_ids, FieldIndexTrait},
+use crate::{
+    error::{StorageError, StorageResult},
+    storage::{
+        index::{
+            filter::FilterOperator,
+            payload_index::{decoded_point_ids, encoded_point_ids, FieldIndexTrait},
+        },
+        segment::PointId,
     },
-    segment::PointId,
 };
 
 pub struct TextIndex {
     db: sled::Tree,
-    in_memory_index: InMemoryTextIndex,
-    use_in_memory: bool,
+    in_memory_index: Option<InMemoryTextIndex>,
 }
 
 // Full text search index implementation with posting lists
 impl TextIndex {
-    pub fn upsert(&self, point_id: u64, text: &str) -> Result<(), sled::Error> {
+    pub fn upsert(&self, point_id: u64, text: &str) -> StorageResult<()> {
         // TODO: Add stop words, stemming, etc based on language
         // We need to tokenize the text into terms
         let terms: Vec<&str> = text.split_whitespace().collect();
@@ -46,20 +48,14 @@ impl TextIndex {
             point_ids.sort();
 
             // Store back
-            let encoded_ids = encoded_point_ids(&point_ids).map_err(|e| {
-                sled::Error::Io(std::io::Error::other(format!(
-                    "Failed to encode point IDs for posting list: {e}"
-                )))
-            })?;
+            let encoded_ids = encoded_point_ids(&point_ids)?;
 
             self.db.insert(term_key, encoded_ids).map_err(|e| {
-                sled::Error::Io(std::io::Error::other(format!(
-                    "Failed to insert into text index tree: {e}"
-                )))
+                StorageError::ServiceError(format!("Failed to insert into text index tree: {e}"))
             })?;
 
-            if self.use_in_memory {
-                self.in_memory_index.override_posting_list(term, point_ids);
+            if let Some(in_memory_index) = &self.in_memory_index {
+                in_memory_index.override_posting_list(term, point_ids);
             }
         }
 
@@ -68,26 +64,26 @@ impl TextIndex {
 }
 
 impl FieldIndexTrait<&str> for TextIndex {
-    fn open(db: &Db, name: &str) -> Self {
-        let tree = db
-            .open_tree(format!("{name}_text_index"))
-            .expect("Failed to open sled tree");
+    fn open(db: &Db, name: &str, use_in_memory: bool) -> StorageResult<Self> {
+        let tree = db.open_tree(format!("{name}_text_index"))?;
 
-        let in_memory_index = InMemoryTextIndex::new(db);
+        let in_memory_index = if use_in_memory {
+            Some(InMemoryTextIndex::new(db))
+        } else {
+            None
+        };
 
-        Self {
+        Ok(Self {
             db: tree,
             in_memory_index,
-            use_in_memory: false,
-        }
+        })
     }
 
-    fn add_point(&self, point_id: u64, value: &Value) -> Result<(), sled::Error> {
+    fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()> {
         match value {
             Value::String(text) => self.upsert(point_id, text.as_str()),
-            _ => Err(sled::Error::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("{value} is not a valid string value"),
+            _ => Err(StorageError::BadInput(format!(
+                "{value} is not a valid string value"
             ))),
         }
     }
@@ -97,10 +93,9 @@ impl FieldIndexTrait<&str> for TextIndex {
         value: &str,
         _operation: &FilterOperator, // todo: Remove operation for text index?
         limit: Option<usize>,
-    ) -> Result<Vec<PointId>, sled::Error> {
-        if self.use_in_memory {
-            return Ok(self
-                .in_memory_index
+    ) -> StorageResult<Vec<PointId>> {
+        if let Some(in_memory_index) = &self.in_memory_index {
+            return Ok(in_memory_index
                 .query(value, limit)
                 .into_iter()
                 .map(PointId::Id)
@@ -110,15 +105,13 @@ impl FieldIndexTrait<&str> for TextIndex {
         let mut results = Vec::new();
         let query_key = value.as_bytes();
 
-        let point_ids: Vec<u64> = self
-            .db
-            .get(query_key)?
-            .map(|data| {
-                // Decode existing point IDs for this term
-                decoded_point_ids(&data)
-                    .unwrap_or_else(|e| panic!("Failed to decode point IDs from posting list: {e}"))
-            })
-            .unwrap_or_default();
+        let Some(encoded_point_ids) = self.db.get(query_key)? else {
+            // No results found for this term
+            return Ok(Vec::new());
+        };
+
+        // Decode existing point IDs for this term
+        let point_ids = decoded_point_ids(&encoded_point_ids)?;
 
         for point_id in point_ids {
             results.push(PointId::Id(point_id));
