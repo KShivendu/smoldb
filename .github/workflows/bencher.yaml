@@ -1,0 +1,21 @@
+name: "Bencher Benchmarks"
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ '**' ]
+
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write  # Needed for Bencher to post status checks
+    env:
+      BENCHER_PROJECT: smoldb
+      BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bencherdev/bencher@main
+      - name: Run benchmarks
+        run: bencher run --github-actions "${{ secrets.GITHUB_TOKEN }}" "cargo bench"
