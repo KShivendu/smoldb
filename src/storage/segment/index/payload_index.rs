@@ -66,13 +66,17 @@ impl FieldIndexTrait<&Value> for FieldIndex {
     fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()> {
         match self {
             FieldIndex::Int(index) => index.add_point(point_id, value),
-            FieldIndex::Null => Err(StorageError::BadInput("Null index is not supported yet".to_string())),
+            FieldIndex::Null => Err(StorageError::BadInput(
+                "Null index is not supported yet".to_string(),
+            )),
             FieldIndex::Text(index) => index.add_point(point_id, value),
         }
     }
 
     fn open(_db: &Db, _name: &str) -> StorageResult<Self> {
-        Err(StorageError::BadInput("Use specific index constructors like new_numeric or new_text".to_string()))
+        Err(StorageError::BadInput(
+            "Use specific index constructors like new_numeric or new_text".to_string(),
+        ))
     }
 
     fn query(
@@ -84,17 +88,23 @@ impl FieldIndexTrait<&Value> for FieldIndex {
         let results = match self {
             FieldIndex::Int(int_index) => {
                 let value = value.as_i64().ok_or_else(|| {
-                    StorageError::BadInput(format!("Integer index query value must be an integer. Found {value}"))
+                    StorageError::BadInput(format!(
+                        "Integer index query value must be an integer. Found {value}"
+                    ))
                 })?;
 
                 int_index.query(value, operation, limit)?
             }
             FieldIndex::Null => {
-                return Err(StorageError::BadInput("Null index queries are not supported yet".to_string()));
+                return Err(StorageError::BadInput(
+                    "Null index queries are not supported yet".to_string(),
+                ));
             }
             FieldIndex::Text(t) => {
                 let value = value.as_str().ok_or_else(|| {
-                    StorageError::BadInput(format!("Text index query value must be a string. Found {value}"))
+                    StorageError::BadInput(format!(
+                        "Text index query value must be a string. Found {value}"
+                    ))
                 })?;
 
                 t.query(value, &FilterOperator::Eq, limit)?
@@ -123,7 +133,11 @@ impl PayloadIndex {
                 serde_json::from_slice(&value).expect("Failed to deserialize index config");
             let field_index = match index_config {
                 IndexConfig::Int => FieldIndex::new_numeric(db, &name),
-                IndexConfig::Null => return Err(StorageError::BadInput("Null index is not implemented yet".to_string())),
+                IndexConfig::Null => {
+                    return Err(StorageError::BadInput(
+                        "Null index is not implemented yet".to_string(),
+                    ))
+                }
                 IndexConfig::Text => FieldIndex::new_text(db, &name),
             }?;
             indices.insert(name, field_index);
@@ -150,7 +164,11 @@ impl PayloadIndex {
 
         let index = match index_config {
             IndexConfig::Int => FieldIndex::new_numeric(db, name)?,
-            IndexConfig::Null => return Err(StorageError::BadInput("Null index is not implemented yet".to_string())),
+            IndexConfig::Null => {
+                return Err(StorageError::BadInput(
+                    "Null index is not implemented yet".to_string(),
+                ))
+            }
             IndexConfig::Text => FieldIndex::new_text(db, name)?,
         };
 
@@ -202,7 +220,9 @@ impl PayloadIndex {
 
 pub trait FieldIndexTrait<DataType> {
     /// Create or load an index from the DB
-    fn open(db: &Db, name: &str) -> StorageResult<Self> where Self: Sized;
+    fn open(db: &Db, name: &str) -> StorageResult<Self>
+    where
+        Self: Sized;
     /// Add a point to the index
     fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()>;
     /// Query the index

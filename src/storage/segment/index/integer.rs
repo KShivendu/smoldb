@@ -6,7 +6,9 @@ use crate::error::{StorageError, StorageResult};
 use crate::storage::{
     index::{
         filter::FilterOperator,
-        payload_index::{decoded_point_ids, encoded_integer_value, decoded_integer_value, encoded_point_ids},
+        payload_index::{
+            decoded_integer_value, decoded_point_ids, encoded_integer_value, encoded_point_ids,
+        },
     },
     segment::PointId,
 };

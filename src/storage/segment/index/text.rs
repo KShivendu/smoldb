@@ -3,13 +3,16 @@ use std::{collections::HashMap, sync::RwLock};
 use serde_json::Value;
 use sled::Db;
 
-use crate::{error::{StorageError, StorageResult}, storage::{
-    index::{
-        filter::FilterOperator,
-        payload_index::{FieldIndexTrait, decoded_point_ids, encoded_point_ids},
+use crate::{
+    error::{StorageError, StorageResult},
+    storage::{
+        index::{
+            filter::FilterOperator,
+            payload_index::{decoded_point_ids, encoded_point_ids, FieldIndexTrait},
+        },
+        segment::PointId,
     },
-    segment::PointId,
-}};
+};
 
 pub struct TextIndex {
     db: sled::Tree,
@@ -63,8 +66,7 @@ impl TextIndex {
 
 impl FieldIndexTrait<&str> for TextIndex {
     fn open(db: &Db, name: &str) -> StorageResult<Self> {
-        let tree = db
-            .open_tree(format!("{name}_text_index"))?;
+        let tree = db.open_tree(format!("{name}_text_index"))?;
 
         let in_memory_index = InMemoryTextIndex::new(db);
 
@@ -78,7 +80,9 @@ impl FieldIndexTrait<&str> for TextIndex {
     fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()> {
         match value {
             Value::String(text) => self.upsert(point_id, text.as_str()),
-            _ => Err(StorageError::BadInput(format!("{value} is not a valid string value"))),
+            _ => Err(StorageError::BadInput(format!(
+                "{value} is not a valid string value"
+            ))),
         }
     }
 
