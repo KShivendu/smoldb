@@ -52,12 +52,12 @@ pub enum IndexConfig {
 
 impl FieldIndex {
     pub fn new_numeric(db: &Db, name: &str) -> StorageResult<Self> {
-        let index = IntegerIndex::open(db, name)?;
+        let index = IntegerIndex::open(db, name, true)?;
         Ok(FieldIndex::Int(index))
     }
 
     pub fn new_text(db: &Db, name: &str) -> StorageResult<Self> {
-        let index = TextIndex::open(db, name)?;
+        let index = TextIndex::open(db, name, true)?;
         Ok(FieldIndex::Text(index))
     }
 }
@@ -73,7 +73,7 @@ impl FieldIndexTrait<&Value> for FieldIndex {
         }
     }
 
-    fn open(_db: &Db, _name: &str) -> StorageResult<Self> {
+    fn open(_db: &Db, _name: &str, _use_in_memory: bool) -> StorageResult<Self> {
         Err(StorageError::BadInput(
             "Use specific index constructors like new_numeric or new_text".to_string(),
         ))
@@ -220,7 +220,11 @@ impl PayloadIndex {
 
 pub trait FieldIndexTrait<DataType> {
     /// Create or load an index from the DB
-    fn open(db: &Db, name: &str) -> StorageResult<Self>
+    ///
+    /// Note for `use_in_memory`:
+    /// Whether to query the on-disk index or the in-memory index
+    /// If yes, writes will update both in-memory and on-disk index
+    fn open(db: &Db, name: &str, use_in_memory: bool) -> StorageResult<Self>
     where
         Self: Sized;
     /// Add a point to the index

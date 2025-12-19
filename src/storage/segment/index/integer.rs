@@ -17,25 +17,25 @@ pub struct IntegerIndex {
     // For persistent storage
     tree: sled::Tree,
     // /// In-memory index copy for fast lookups
-    in_memory: InMemoryIntegerIndex,
-    // Whether to query the on-disk index or the in-memory index
-    // If yes, writes will update both in-memory and on-disk index
-    use_in_memory: bool,
+    in_memory: Option<InMemoryIntegerIndex>,
 }
 
 impl IntegerIndex {
-    pub fn open(db: &Db, name: &str) -> StorageResult<Self> {
+    /// Note for `use_in_memory`:
+    /// Whether to query the on-disk index or the in-memory index
+    /// If yes, writes will update both in-memory and on-disk index
+    pub fn open(db: &Db, name: &str, use_in_memory: bool) -> StorageResult<Self> {
         let tree = db
             .open_tree(format!("{name}_numeric_index"))
             .expect("Failed to open sled tree");
 
-        let in_memory = InMemoryIntegerIndex::new(&tree)?;
+        let in_memory = if use_in_memory {
+            Some(InMemoryIntegerIndex::new(&tree)?)
+        } else {
+            None
+        };
 
-        Ok(Self {
-            tree,
-            in_memory,
-            use_in_memory: true,
-        })
+        Ok(Self { tree, in_memory })
     }
 
     /// todo: Upserting should also remove the point id from the index?
@@ -65,8 +65,8 @@ impl IntegerIndex {
             StorageError::ServiceError(format!("Failed to insert into index tree: {e}"))
         })?;
 
-        if self.use_in_memory {
-            self.in_memory.insert(value, point_ids)?;
+        if let Some(in_memory) = &self.in_memory {
+            in_memory.insert(value, point_ids)?;
         }
 
         Ok(())
@@ -78,8 +78,8 @@ impl IntegerIndex {
         operation: &FilterOperator,
         limit: Option<usize>,
     ) -> StorageResult<Vec<PointId>> {
-        if self.use_in_memory {
-            return self.in_memory.query(value, operation, limit);
+        if let Some(in_memory) = &self.in_memory {
+            return in_memory.query(value, operation, limit);
         };
 
         let mut results = Vec::new();

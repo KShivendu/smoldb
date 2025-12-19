@@ -16,10 +16,7 @@ use crate::{
 
 pub struct TextIndex {
     db: sled::Tree,
-    in_memory_index: InMemoryTextIndex,
-    // Whether to query the on-disk index or the in-memory index
-    // If yes, writes will update both in-memory and on-disk index
-    use_in_memory: bool,
+    in_memory_index: Option<InMemoryTextIndex>,
 }
 
 // Full text search index implementation with posting lists
@@ -57,8 +54,8 @@ impl TextIndex {
                 StorageError::ServiceError(format!("Failed to insert into text index tree: {e}"))
             })?;
 
-            if self.use_in_memory {
-                self.in_memory_index.override_posting_list(term, point_ids);
+            if let Some(in_memory_index) = &self.in_memory_index {
+                in_memory_index.override_posting_list(term, point_ids);
             }
         }
 
@@ -67,15 +64,18 @@ impl TextIndex {
 }
 
 impl FieldIndexTrait<&str> for TextIndex {
-    fn open(db: &Db, name: &str) -> StorageResult<Self> {
+    fn open(db: &Db, name: &str, use_in_memory: bool) -> StorageResult<Self> {
         let tree = db.open_tree(format!("{name}_text_index"))?;
 
-        let in_memory_index = InMemoryTextIndex::new(db);
+        let in_memory_index = if use_in_memory {
+            Some(InMemoryTextIndex::new(db))
+        } else {
+            None
+        };
 
         Ok(Self {
             db: tree,
             in_memory_index,
-            use_in_memory: true,
         })
     }
 
@@ -94,9 +94,8 @@ impl FieldIndexTrait<&str> for TextIndex {
         _operation: &FilterOperator, // todo: Remove operation for text index?
         limit: Option<usize>,
     ) -> StorageResult<Vec<PointId>> {
-        if self.use_in_memory {
-            return Ok(self
-                .in_memory_index
+        if let Some(in_memory_index) = &self.in_memory_index {
+            return Ok(in_memory_index
                 .query(value, limit)
                 .into_iter()
                 .map(PointId::Id)
