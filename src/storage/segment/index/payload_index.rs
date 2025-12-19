@@ -9,7 +9,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sled::Db;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
 /// Converts the number into a big-endian value which is suitable for querying/storing in sled
@@ -100,14 +100,14 @@ impl FieldIndexTrait<&Value> for FieldIndex {
                     "Null index queries are not supported yet".to_string(),
                 ));
             }
-            FieldIndex::Text(t) => {
+            FieldIndex::Text(text_index) => {
                 let value = value.as_str().ok_or_else(|| {
                     StorageError::BadInput(format!(
                         "Text index query value must be a string. Found {value}"
                     ))
                 })?;
 
-                t.query(value, &FilterOperator::Eq, limit)?
+                text_index.query(value, &FilterOperator::Eq, limit)?
             }
         };
 
@@ -116,7 +116,7 @@ impl FieldIndexTrait<&Value> for FieldIndex {
 }
 
 pub struct PayloadIndex {
-    pub indices: HashMap<String, FieldIndex>,
+    pub indices: BTreeMap<String, FieldIndex>,
 }
 
 impl PayloadIndex {
@@ -125,7 +125,7 @@ impl PayloadIndex {
         let schema_tree = db
             .open_tree("schema")
             .expect("Failed to open segment schema tree");
-        let mut indices = HashMap::new();
+        let mut indices = BTreeMap::new();
         for item in schema_tree.iter() {
             let (key, value) = item.expect("Failed to read schema item");
             let name = String::from_utf8(key.to_vec()).expect("Invalid UTF-8 in key");
@@ -243,33 +243,44 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_payload_index() {
+    fn test_payload_index() -> StorageResult<()> {
         let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
         let db = sled::open(&tmp_dir).expect("Failed to open sled database");
-        let mut index = PayloadIndex::get_or_create(&db).unwrap();
+        let mut index = PayloadIndex::get_or_create(&db)?;
 
-        index.add_index(&db, "price", IndexConfig::Int).unwrap();
+        index.add_index(&db, "price", IndexConfig::Int)?;
+        index.add_index(&db, "description", IndexConfig::Text)?;
 
-        assert!(index.get_index_names().len() == 1);
-        assert!(index.indices.contains_key("price"));
+        assert_eq!(index.get_index_names(), ["description", "price"]);
 
         for i in 0..10 {
-            index
-                .upsert(&Point {
-                    id: PointId::Id(i),
-                    payload: json!({"price": i * 10}),
-                })
-                .unwrap();
+            index.upsert(&Point {
+                id: PointId::Id(i),
+                payload: json!({"price": i * 10, "description": format!("foo {i}")}),
+            })?;
         }
 
-        let field_index = index.indices.get("price").unwrap();
+        // Todo: Test on-disk and in-memory index separately
 
-        if let FieldIndex::Int(numeric_index) = field_index {
-            let results = numeric_index.query(40, &FilterOperator::Gte, None).unwrap();
+        if let Some(FieldIndex::Int(int_index)) = index.indices.get("price") {
+            let results = int_index.query(40, &FilterOperator::Gte, None)?;
             assert_eq!(results.len(), 6); // Points with ids 4, 5, 6, 7, 8, 9
             assert_eq!(results, (4..10).map(PointId::Id).collect::<Vec<_>>());
         } else {
             panic!("Expected NumericIndex");
         }
+
+        if let Some(FieldIndex::Text(text_index)) = index.indices.get("description") {
+            let results = text_index.query("4", &FilterOperator::Eq, None)?;
+            assert_eq!(results.len(), 1);
+            assert_eq!(results, vec![PointId::Id(4)]);
+
+            let results = text_index.query("missingTerm", &FilterOperator::Eq, None)?;
+            assert_eq!(results.len(), 0);
+        } else {
+            panic!("Expected TextIndex");
+        }
+
+        Ok(())
     }
 }

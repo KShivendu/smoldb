@@ -104,8 +104,13 @@ impl FieldIndexTrait<&str> for TextIndex {
         let mut results = Vec::new();
         let query_key = value.as_bytes();
 
+        let Some(encoded_point_ids) = self.db.get(query_key)? else {
+            // No results found for this term
+            return Ok(Vec::new());
+        };
+
         // Decode existing point IDs for this term
-        let point_ids = decoded_point_ids(&self.db.get(query_key)?.unwrap_or_default())?;
+        let point_ids = decoded_point_ids(&encoded_point_ids)?;
 
         for point_id in point_ids {
             results.push(PointId::Id(point_id));

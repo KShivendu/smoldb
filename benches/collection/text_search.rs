@@ -34,6 +34,7 @@ pub fn single_text_query(c: &mut Criterion) {
         )
         .await
     });
+
     let collection_arc = Arc::new(collection);
 
     let query = Query {
