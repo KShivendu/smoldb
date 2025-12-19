@@ -10,10 +10,12 @@ impl Query {
             .filter
             .ok_or_else(|| "Query filter is required".to_string())?;
 
+        let value = serde_json::from_str(&filter.value).expect("Failed to convert value to string");
+
         Ok(Self {
             filter: QueryFilter {
                 key: filter.key,
-                value: filter.value,
+                value,
                 op: filter.op.try_into()?,
             },
             limit: None, // ToDo
@@ -21,10 +23,14 @@ impl Query {
     }
 
     pub fn into_grpc(self) -> Option<GrpcQueryPointsParams> {
+        // todo: cleaner error handling
+        let value =
+            serde_json::to_string(&self.filter.value).expect("Failed to convert value to string");
+
         Some(GrpcQueryPointsParams {
             filter: Some(crate::api::grpc::schema::QueryFilter {
                 key: self.filter.key,
-                value: self.filter.value,
+                value,
                 op: self.filter.op.as_str().to_string(),
             }),
         })

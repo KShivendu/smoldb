@@ -59,6 +59,11 @@ pub struct Args {
     #[clap(long, default_value = "false")]
     pub skip_int_index: bool,
 
+    // ToDo: Remove this flag once text index is faster or decoupled
+    /// Use text index for payload
+    #[clap(long, default_value = "true")]
+    pub skip_text_index: bool,
+
     /// Use if you don't want to upsert points by default
     #[clap(long, default_value = "false")]
     pub skip_upsert: bool,

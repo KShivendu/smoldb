@@ -17,7 +17,7 @@ async fn test_smoldb_consecutive_writes() -> Result<(), crate::error::SmolBenchE
     let delay = None;
 
     let create_response =
-        crate::apis::create_collection(&uri, &collection_name, false, true).await?;
+        crate::apis::create_collection(&uri, &collection_name, false, false, true).await?;
 
     println!("Result: {}", &create_response.result);
     assert!(create_response.result);

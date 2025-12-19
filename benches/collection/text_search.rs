@@ -15,32 +15,33 @@ use smoldb::{
     },
 };
 
-// Perf when bench was first implemented: 31.807 µs
-pub fn single_query(c: &mut Criterion) {
-    let mut group = benchmark_group(c, "Single query benchmarks");
+// Perf when bench was first implemented: 1.5804 µs
+pub fn single_text_query(c: &mut Criterion) {
+    let mut group = benchmark_group(c, "Single text query benchmarks");
 
     let rt = create_runtime();
     let tempdir = create_tempdir();
     let channel_service = create_channel_service();
+    let num_points = 100_000;
 
     let collection = rt.block_on(async {
-        let payload_index = BTreeMap::from_iter([("price".to_string(), IndexConfig::Int)]);
+        let payload_index = BTreeMap::from_iter([("text".to_string(), IndexConfig::Text)]);
         create_collection_with_points(
             &tempdir,
             channel_service,
             Some(payload_index),
-            generate_points(1), // todo: Should have 100_000 points but query only for a single point
+            generate_points(num_points),
         )
         .await
     });
     let collection_arc = Arc::new(collection);
 
     let query = Query {
-        filter: QueryFilter::new("price", Value::from(0), FilterOperator::Gte),
+        filter: QueryFilter::new("text", Value::from("100"), FilterOperator::Eq),
         limit: Some(10),
     };
 
-    group.bench_function("single_query", |b| {
+    group.bench_function("single_text_query", |b| {
         b.to_async(&rt).iter(|| async {
             collection_arc
                 .query_points(query.clone(), true)
@@ -50,9 +51,9 @@ pub fn single_query(c: &mut Criterion) {
     });
 }
 
-// Perf when bench was first implemented: 668.48 µs
-pub fn concurrent_query(c: &mut Criterion) {
-    let mut group = benchmark_group(c, "Concurrent query benchmarks");
+// Perf when bench was first implemented: 5.7696 µs
+pub fn concurrent_text_query(c: &mut Criterion) {
+    let mut group = benchmark_group(c, "Concurrent text query benchmarks");
 
     let rt = create_runtime();
     let tempdir = create_tempdir();
@@ -66,7 +67,7 @@ pub fn concurrent_query(c: &mut Criterion) {
     let channel_service = create_channel_service();
 
     let collection = rt.block_on(async {
-        let payload_index = BTreeMap::from_iter([("price".to_string(), IndexConfig::Int)]);
+        let payload_index = BTreeMap::from_iter([("text".to_string(), IndexConfig::Text)]);
         create_collection_with_points(&tempdir, channel_service, Some(payload_index), points).await
     });
     let collection_arc = Arc::new(collection);
@@ -76,13 +77,17 @@ pub fn concurrent_query(c: &mut Criterion) {
         .map(|i| {
             let start_id = i * chunk_size as u64;
             Query {
-                filter: QueryFilter::new("price", Value::from(start_id * 10), FilterOperator::Gte),
+                filter: QueryFilter::new(
+                    "text",
+                    Value::from(format!("{start_id}")),
+                    FilterOperator::Gte,
+                ),
                 limit: Some(10),
             }
         })
         .collect();
 
-    group.bench_function("concurrent_query", |b| {
+    group.bench_function("concurrent_text_query", |b| {
         b.to_async(&rt).iter(|| async {
             for query in &queries {
                 collection_arc

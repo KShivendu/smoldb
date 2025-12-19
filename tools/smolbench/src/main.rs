@@ -40,8 +40,14 @@ async fn main() -> Result<(), SmolBenchError> {
                     args.collection_name
                 );
                 delete_collection(&args.uri, &args.collection_name, true).await?;
-                match create_collection(&args.uri, &args.collection_name, args.skip_int_index, true)
-                    .await
+                match create_collection(
+                    &args.uri,
+                    &args.collection_name,
+                    args.skip_int_index,
+                    args.skip_text_index,
+                    true,
+                )
+                .await
                 {
                     Ok(_) => println!("Collection created successfully."),
                     Err(e) => return Err(SmolBenchError::CreateCollectionError(e.to_string()))?,
@@ -52,8 +58,14 @@ async fn main() -> Result<(), SmolBenchError> {
                 "Collection '{}' does not exist, creating it",
                 args.collection_name
             );
-            match create_collection(&args.uri, &args.collection_name, args.skip_int_index, true)
-                .await
+            match create_collection(
+                &args.uri,
+                &args.collection_name,
+                args.skip_int_index,
+                args.skip_text_index,
+                true,
+            )
+            .await
             {
                 Ok(_) => println!("Collection created successfully."),
                 Err(e) => return Err(SmolBenchError::CreateCollectionError(e.to_string()))?,
@@ -109,12 +121,14 @@ async fn main() -> Result<(), SmolBenchError> {
                 apis::query_points(
                     &args.uri,
                     &args.collection_name,
+                    // ToDo: Benchmark with multiple filters at once
                     json!({
                         "filter": {
                             "key": "price",
                             "value": format!("{}", price_gte * 10),
                             "op": "gte",
-                        }
+                        },
+                        "limit": 100,
                     }),
                 )
             })
