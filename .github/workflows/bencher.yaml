@@ -10,6 +10,7 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     permissions:
+      pull-requests: write  # Required for PR comments
       checks: write  # Needed for Bencher to post status checks
     env:
       BENCHER_PROJECT: smoldb
@@ -21,11 +22,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      # - name: Install dependencies
-      #   run: |
-      #     sudo apt-get update
-      #     sudo apt-get install -y clang lld protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@v2
       - uses: bencherdev/bencher@main
       - name: Run benchmarks
-        run: bencher run --github-actions "${{ secrets.GITHUB_TOKEN }}" "cargo bench"
+        run: bencher run --github-actions "${{ secrets.GITHUB_TOKEN }}" --adapter rust_criterion "cargo bench"
