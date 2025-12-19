@@ -1,0 +1,28 @@
+name: "Bencher Benchmarks"
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ '**' ]
+
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write  # Required for PR comments
+      checks: write  # Needed for Bencher to post status checks
+    env:
+      BENCHER_PROJECT: smoldb
+      BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Protoc # for protobuf
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      - uses: bencherdev/bencher@main
+      - name: Run benchmarks
+        run: bencher run --github-actions "${{ secrets.GITHUB_TOKEN }}" --adapter rust_criterion "cargo bench"
