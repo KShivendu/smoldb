@@ -18,8 +18,9 @@ pub struct IntegerIndex {
     tree: sled::Tree,
     // /// In-memory index copy for fast lookups
     in_memory: InMemoryIntegerIndex,
-    // Whether to query the disk index or the in-memory index
-    query_with_disk: bool,
+    // Whether to query the on-disk index or the in-memory index
+    // If yes, writes will update both in-memory and on-disk index
+    use_in_memory: bool,
 }
 
 impl IntegerIndex {
@@ -33,7 +34,7 @@ impl IntegerIndex {
         Ok(Self {
             tree,
             in_memory,
-            query_with_disk: false,
+            use_in_memory: true,
         })
     }
 
@@ -64,8 +65,9 @@ impl IntegerIndex {
             StorageError::ServiceError(format!("Failed to insert into index tree: {e}"))
         })?;
 
-        // Now update the in-memory index
-        self.in_memory.insert(value, point_ids)?;
+        if self.use_in_memory {
+            self.in_memory.insert(value, point_ids)?;
+        }
 
         Ok(())
     }
@@ -76,7 +78,7 @@ impl IntegerIndex {
         operation: &FilterOperator,
         limit: Option<usize>,
     ) -> StorageResult<Vec<PointId>> {
-        if !self.query_with_disk {
+        if self.use_in_memory {
             return self.in_memory.query(value, operation, limit);
         };
 

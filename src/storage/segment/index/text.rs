@@ -17,6 +17,8 @@ use crate::{
 pub struct TextIndex {
     db: sled::Tree,
     in_memory_index: InMemoryTextIndex,
+    // Whether to query the on-disk index or the in-memory index
+    // If yes, writes will update both in-memory and on-disk index
     use_in_memory: bool,
 }
 
@@ -73,7 +75,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         Ok(Self {
             db: tree,
             in_memory_index,
-            use_in_memory: false,
+            use_in_memory: true,
         })
     }
 
