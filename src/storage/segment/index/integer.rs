@@ -21,9 +21,6 @@ pub struct IntegerIndex {
 }
 
 impl IntegerIndex {
-    /// Note for `use_in_memory`:
-    /// Whether to query the on-disk index or the in-memory index
-    /// If yes, writes will update both in-memory and on-disk index
     pub fn open(db: &Db, name: &str, use_in_memory: bool) -> StorageResult<Self> {
         let tree = db
             .open_tree(format!("{name}_numeric_index"))
@@ -45,14 +42,15 @@ impl IntegerIndex {
         let tree_key = encoded_integer_value(value);
 
         // Fetch existing point IDs for this value
-        let mut point_ids: Vec<u64> = self
-            .tree
-            .get(&tree_key)?
-            .map(|data| {
-                decoded_point_ids(&data)
-                    .unwrap_or_else(|e| panic!("Failed to decode point IDs: {e}"))
-            })
-            .unwrap_or_default();
+        let mut point_ids = if let Some(in_memory) = &self.in_memory {
+            in_memory.get_point_ids(value)?
+        } else {
+            self.tree
+                .get(&tree_key)?
+                .map(|d| decoded_point_ids(&d))
+                .transpose()?
+                .unwrap_or_default()
+        };
 
         // Add point and sort
         point_ids.push(point_id);
@@ -155,6 +153,16 @@ impl InMemoryIntegerIndex {
             })?
             .insert(value, point_ids);
         Ok(())
+    }
+
+    pub fn get_point_ids(&self, value: i64) -> StorageResult<Vec<u64>> {
+        let index_guard = self.index.read().map_err(|e| {
+            StorageError::ServiceError(format!("Failed to read from in-memory index: {e}"))
+        })?;
+        Ok(index_guard
+            .get(&value)
+            .cloned()
+            .unwrap_or_else(|| Vec::new()))
     }
 
     pub fn query(

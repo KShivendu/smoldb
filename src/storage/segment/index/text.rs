@@ -31,17 +31,16 @@ impl TextIndex {
         for term in terms {
             let term_key = term.as_bytes();
 
-            let mut point_ids: Vec<u64> = self
-                .db
-                .get(term_key)?
-                .map(|data| {
-                    // Decode existing point IDs for this term
-                    // Todo: Apply delta encoding??
-                    decoded_point_ids(&data).unwrap_or_else(|e| {
-                        panic!("Failed to decode point IDs from posting list: {e}")
-                    })
-                })
-                .unwrap_or_default();
+            // Fetch existing point IDs for this term
+            let mut point_ids = if let Some(in_memory_index) = &self.in_memory_index {
+                in_memory_index.get_point_ids(term)?
+            } else {
+                self.db
+                    .get(term_key)?
+                    .map(|data| decoded_point_ids(&data))
+                    .transpose()?
+                    .unwrap_or_default()
+            };
 
             // Add point and sort
             point_ids.push(point_id);
@@ -145,6 +144,13 @@ impl InMemoryTextIndex {
         Self {
             index: RwLock::new(index),
         }
+    }
+
+    pub fn get_point_ids(&self, term: &str) -> StorageResult<Vec<u64>> {
+        let index_guard = self.index.read().map_err(|e| {
+            StorageError::ServiceError(format!("Failed to read from in-memory index: {e}"))
+        })?;
+        Ok(index_guard.get(term).cloned().unwrap_or_default())
     }
 
     pub fn override_posting_list(&self, term: &str, point_ids: Vec<u64>) {
