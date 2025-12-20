@@ -159,10 +159,7 @@ impl InMemoryIntegerIndex {
         let index_guard = self.index.read().map_err(|e| {
             StorageError::ServiceError(format!("Failed to read from in-memory index: {e}"))
         })?;
-        Ok(index_guard
-            .get(&value)
-            .cloned()
-            .unwrap_or_else(|| Vec::new()))
+        Ok(index_guard.get(&value).cloned().unwrap_or_default())
     }
 
     pub fn query(
