@@ -52,9 +52,16 @@ impl IntegerIndex {
                 .unwrap_or_default()
         };
 
-        // Add point and sort
-        point_ids.push(point_id);
-        point_ids.sort();
+        // Add point with binary search to maintain sorted order
+        match point_ids.binary_search(&point_id) {
+            Ok(_) => {
+                // It already exists, we don't need to do anything (for now)
+                return Ok(());
+            }
+            Err(pos) => {
+                point_ids.insert(pos, point_id);
+            }
+        }
 
         // Store back
         let encoded_ids = encoded_point_ids(&point_ids)?;
