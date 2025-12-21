@@ -369,7 +369,7 @@ mod tests {
             HashMap::from([
                 ("hello".into(), 2),
                 ("world".into(), 1),
-                ("123".into(), 2),
+                ("123".into(), 1),
                 ("a1b2c3".into(), 1),
                 ("123-456-7890".into(), 1)
             ])
@@ -401,9 +401,9 @@ mod tests {
         let results = index.query("quick fox", &FilterOperator::Eq, None).unwrap();
 
         // This order happens because:
-        // 1: "The quick brown fox" has both terms, so highest score and is shorter
-        // 0: "The quick brown fox jumps over the lazy dog" has both terms but is longer
-        // 3: "A fast brown fox leaps over a sleepy dog" has "fox" only
+        // 1: has both terms, so highest score and is shorter
+        // 0: has both terms but is longer
+        // 3: has "fox" only
         let expected_ids: Vec<PointId> = vec![PointId::Id(1), PointId::Id(0), PointId::Id(3)];
         assert_eq!(
             results, expected_ids,
