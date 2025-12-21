@@ -2,6 +2,7 @@ mod common;
 mod index;
 mod query;
 mod read;
+mod segment_write;
 mod text_search;
 mod write;
 
@@ -24,7 +25,7 @@ pub fn setup_tracing() {
             .with_thread_ids(false)
             .with_level(false)
             // .with_env_filter(EnvFilter::from_default_env())
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::ERROR) // Set to ERROR level for benches on CI
             .with_timer(fmt::time::uptime())
             // .pretty()
             .try_init();
@@ -42,7 +43,7 @@ pub fn setup_tracing() {
 criterion_group!(
     name = benches;
     config = Criterion::default();
-    targets = write::write, read::read, query::int_query, text_search::text_query, index::int_indexing, index::text_indexing
+    targets = write::write, read::read, query::int_query, text_search::text_query, index::int_indexing, index::text_indexing, segment_write::segment_benches
 );
 
 criterion_main!(benches);
