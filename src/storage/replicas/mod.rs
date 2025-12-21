@@ -3,7 +3,7 @@ pub mod remote_shard;
 
 use crate::api::points::Query;
 use crate::channel_service::ChannelService;
-use crate::error::{CollectionResult, StorageError};
+use crate::error::{CollectionResult, StorageError, StorageResult};
 use crate::storage::replicas::{local_shard::LocalShard, remote_shard::RemoteShard};
 use crate::storage::segment::Point;
 use crate::storage::{collection::CollectionName, segment::PointId};
@@ -230,7 +230,7 @@ impl ReplicaHolder {
         &self,
         points: Option<Vec<T>>,
         shard_id: Option<ShardId>,
-    ) -> Result<Vec<(ShardId, Option<Vec<T>>)>, StorageError> {
+    ) -> StorageResult<Vec<(ShardId, Option<Vec<T>>)>> {
         // If a shard id is provided, only route to that particular shard
         if let Some(shard_id) = shard_id {
             return Ok(vec![(shard_id, points)]);
