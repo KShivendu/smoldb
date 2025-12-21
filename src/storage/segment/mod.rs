@@ -36,7 +36,7 @@ impl Segment {
     pub fn create(
         segments_dir: &Path,
         payload_schema: BTreeMap<String, IndexConfig>,
-    ) -> Result<Self, StorageError> {
+    ) -> StorageResult<Self> {
         // ToDo: Have uuid segment ID
         let path = segments_dir.join("0");
         std::fs::create_dir_all(&path).expect("Failed to create segment directory");
@@ -194,7 +194,7 @@ impl Segment {
         }
     }
 
-    pub async fn query_points(&self, query: Query) -> Result<Vec<Point>, StorageError> {
+    pub async fn query_points(&self, query: Query) -> StorageResult<Vec<Point>> {
         let point_ids = self.payload_index.query(query).map_err(|e| {
             StorageError::ServiceError(format!("Failed to query payload index: {e}"))
         })?;

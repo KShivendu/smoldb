@@ -34,6 +34,8 @@ fn main() -> std::io::Result<()> {
     color_backtrace::install();
     let _logger_guard = setup_logging();
 
+    // console_subscriber::init();  // For tokio-console
+
     let args = parse_args();
 
     // Create a dedicated threadpool for internal gRPC and HTTP services while we also run the consensus loop

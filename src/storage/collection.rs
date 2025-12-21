@@ -165,12 +165,12 @@ impl Collection {
     ) -> CollectionResult<()> {
         let points_len = points.len();
         async {
-            let replica_holder_guard = self.replica_holder.read().await;
+        let replica_holder_guard = self.replica_holder.read().await;
 
         let mut replicas_to_mark_dead = vec![];
 
         // ToDo: Run this operation concurrently for each shard
-        for (shard_id, points) in replica_holder_guard.group_by_shards(Some(points))? {
+        for (shard_id, points) in replica_holder_guard.route_points(Some(points), None)? {
             let Some(points) = points else {
                 continue; // No points for this shard
             };
@@ -190,6 +190,7 @@ impl Collection {
                 )
                 .await;
 
+            // This count takes 1% of collection upsert time. should optimize:
             let total_success = results.iter().filter(|(_, r)| r.is_ok()).count();
 
             let ((_peer_id, local_result), remote_results) = results.split_first().unwrap();
@@ -251,16 +252,11 @@ impl Collection {
         local_only: bool,
     ) -> CollectionResult<Vec<Point>> {
         let replica_holder = self.replica_holder.read().await;
-        let mut shard_id_to_point = replica_holder.group_by_shards(ids)?;
 
-        // If a shard id is provided, only query that particular shard
-        if let Some(shard_id) = shard_id {
-            shard_id_to_point.retain(|&id, _| id == shard_id);
-        }
-
+        let routed_points = replica_holder.route_points(ids, shard_id)?;
         let mut all_points = BTreeMap::new();
 
-        for (shard_id, shard_point_ids) in shard_id_to_point {
+        for (shard_id, shard_point_ids) in routed_points {
             let replica_set = replica_holder.get_replica_set(shard_id).await?;
 
             let replica_results = replica_set
@@ -293,7 +289,7 @@ impl Collection {
         local_only: bool,
     ) -> CollectionResult<Vec<Point>> {
         let replica_holder = self.replica_holder.read().await;
-        let all_shards = replica_holder.group_by_shards::<PointId>(None)?; // query all shards
+        let all_shards = replica_holder.route_points::<PointId>(None, None)?; // query all shards
         let mut all_points = BTreeMap::new();
 
         for (shard_id, _query_all) in all_shards {
