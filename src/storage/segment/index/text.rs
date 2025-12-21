@@ -191,7 +191,7 @@ impl BM25Index {
         let k1 = 1.2;
         let b = 0.75;
 
-        for (_term, posting_list) in &postings {
+        for posting_list in postings.values() {
             for item in posting_list {
                 *doc_lengths.entry(item.doc_id).or_insert(0) += item.term_freq as usize;
                 avg_doc_length += item.term_freq as f64;
@@ -207,8 +207,8 @@ impl BM25Index {
             postings,
             doc_lengths,
             avg_doc_length,
-            k1: k1,
-            b: b,
+            k1,
+            b,
         })
     }
 
@@ -228,7 +228,7 @@ impl BM25Index {
         // Update doc lengths and avg doc length:
         self.doc_lengths.clear();
         self.avg_doc_length = 0.0;
-        for (_term, posting_list) in &self.postings {
+        for posting_list in self.postings.values() {
             for item in posting_list {
                 *self.doc_lengths.entry(item.doc_id).or_insert(0) += item.term_freq as usize;
                 self.avg_doc_length += item.term_freq as f64;
@@ -264,16 +264,16 @@ impl BM25Index {
 
         // If limit is provided, return the top N docs, otherwise return all docs
         if let Some(limit) = limit {
-            return Ok(sorted_docs
+            Ok(sorted_docs
                 .into_iter()
                 .take(limit)
                 .map(|(doc_id, _score)| doc_id)
-                .collect());
+                .collect())
         } else {
-            return Ok(sorted_docs
+            Ok(sorted_docs
                 .into_iter()
                 .map(|(doc_id, _score)| doc_id)
-                .collect());
+                .collect())
         }
     }
 
