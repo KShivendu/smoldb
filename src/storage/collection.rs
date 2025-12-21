@@ -191,7 +191,13 @@ impl Collection {
                 .await;
 
             // This count takes 1% of collection upsert time. should optimize:
-            let total_success = results.iter().filter(|(_, r)| r.is_ok()).count();
+            // let total_success = results.iter().filter(|(_, r)| r.is_ok()).count();
+            let mut total_success = 0;
+            for (_, result) in &results {
+                if result.is_ok() {
+                    total_success += 1;
+                }
+            }
 
             let ((_peer_id, local_result), remote_results) = results.split_first().unwrap();
             if let Err(e) = local_result {

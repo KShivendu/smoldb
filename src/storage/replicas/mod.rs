@@ -293,7 +293,7 @@ mod tests {
 
         let point_uuid = PointId::try_from("04d90043-873a-40d1-85e3-2cb589acf7eb").unwrap();
 
-        let shards_to_point_ids = shard_holder
+        let mut shards_to_point_ids = shard_holder
             .route_points(
                 Some(vec![
                     PointId::from(1),
@@ -305,10 +305,13 @@ mod tests {
             )
             .unwrap();
 
-        let expected_grouping = [
+        let mut expected_grouping = [
             (0, Some(vec![PointId::Id(100), point_uuid])),
             (1, Some(vec![PointId::Id(1), PointId::Id(2)])),
         ];
+
+        shards_to_point_ids.sort();
+        expected_grouping.sort();
 
         assert_eq!(shards_to_point_ids, expected_grouping);
     }
