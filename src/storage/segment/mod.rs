@@ -14,6 +14,7 @@ use std::{
 
 // re-export point imports
 pub use point::{Point, PointId};
+// todo: Introduce type alias InnerPointId and use everywhere instead of u64
 
 pub struct Segment {
     pub path: PathBuf,

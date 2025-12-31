@@ -38,16 +38,16 @@ pub fn decoded_point_ids(data: &[u8]) -> StorageResult<Vec<u64>> {
 
 pub enum FieldIndex {
     Int(IntegerIndex),
-    Null,
     Text(TextIndex),
+    Null,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexConfig {
     Int,
-    Null,
     Text,
+    Null,
 }
 
 impl FieldIndex {
@@ -66,10 +66,10 @@ impl FieldIndexTrait<&Value> for FieldIndex {
     fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()> {
         match self {
             FieldIndex::Int(index) => index.add_point(point_id, value),
+            FieldIndex::Text(index) => index.add_point(point_id, value),
             FieldIndex::Null => Err(StorageError::BadInput(
                 "Null index is not supported yet".to_string(),
             )),
-            FieldIndex::Text(index) => index.add_point(point_id, value),
         }
     }
 
