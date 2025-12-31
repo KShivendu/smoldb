@@ -118,10 +118,15 @@ impl IntegerIndex {
     }
 
     pub fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()> {
-        let num_value = value.as_i64().ok_or_else(|| {
-            StorageError::BadInput(format!("Value being inserted is not an integer: {value}"))
-        })?;
-        self.upsert(point_id, num_value)
+        match value {
+            Value::Number(num) if num.is_i64() => {
+                let num_value = num.as_i64().unwrap();
+                self.upsert(point_id, num_value)
+            }
+            _ => Err(StorageError::BadInput(format!(
+                "{value} is not a valid i64 value",
+            ))),
+        }
     }
 }
 

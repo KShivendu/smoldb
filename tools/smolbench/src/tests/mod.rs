@@ -12,7 +12,7 @@ async fn test_smoldb_consecutive_writes() -> Result<(), crate::error::SmolBenchE
 
     let uri = Uri::from_str("http://localhost:9001").unwrap();
     let collection_name = "benchmark".to_string();
-    let num_points: usize = 10_000;
+    let num_points: usize = 100_000;
     let batch_size: usize = 100;
     let delay = None;
 
