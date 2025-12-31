@@ -126,7 +126,7 @@ async fn main() -> Result<(), SmolBenchError> {
                     json!({
                         "filter": {
                             "key": "price",
-                            "value": format!("{}", price_gte * 10),
+                            "value": price_gte * 10,
                             "op": "gte",
                         },
                         "limit": limit,
