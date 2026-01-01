@@ -9,7 +9,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sled::Db;
-use std::{collections::BTreeMap, sync::Mutex};
+use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
 /// Converts the number into a big-endian value which is suitable for querying/storing in sled
@@ -127,7 +127,6 @@ impl FieldIndexTrait<&Value> for FieldIndex {
 
 pub struct PayloadIndex {
     pub indices: BTreeMap<String, FieldIndex>,
-    pub indexing_queue: Mutex<Vec<PointId>>,
 }
 
 impl PayloadIndex {
@@ -154,10 +153,7 @@ impl PayloadIndex {
             indices.insert(name, field_index);
         }
 
-        Ok(Self {
-            indices,
-            indexing_queue: Mutex::new(Vec::new()),
-        })
+        Ok(Self { indices })
     }
 
     pub fn get_index_names(&self) -> Vec<&str> {
@@ -214,45 +210,6 @@ impl PayloadIndex {
             }
         }
         Ok(())
-    }
-
-    /// Send some points to be indexed to the indexing queue
-    pub fn queue(&self, point_id: &PointId) -> StorageResult<()> {
-        let mut guard = self.indexing_queue.lock().map_err(|e| {
-            StorageError::ServiceError(format!("Failed to lock indexing queue: {}", e))
-        })?;
-        guard.push(point_id.clone());
-        Ok(())
-    }
-
-    pub fn run_indexing_loop<F>(&self, read_points: F) -> StorageResult<()>
-    where
-        F: Fn(&[PointId]) -> StorageResult<Vec<Point>>,
-    {
-        let mut point_ids = Vec::new();
-
-        loop {
-            // Wait till we get 100 points to index in a batch:
-            const INDEXING_THRESHOLD: usize = 100;
-            while point_ids.len() < INDEXING_THRESHOLD {
-                let mut guard = self.indexing_queue.lock().map_err(|e| {
-                    StorageError::ServiceError(format!("Failed to lock indexing queue: {}", e))
-                })?;
-                // Instead, wait for a bit and check again:
-                let Some(point_id) = guard.pop() else {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                    continue;
-                };
-
-                drop(guard);
-                point_ids.push(point_id);
-            }
-
-            let points = read_points(&point_ids)?;
-
-            self.insert_batch(&points)?;
-            point_ids.clear();
-        }
     }
 
     pub fn insert_batch(&self, points: &[Point]) -> StorageResult<()> {

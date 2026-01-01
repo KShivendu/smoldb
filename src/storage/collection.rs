@@ -375,6 +375,8 @@ impl CollectionInfo {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use crate::storage::index::filter::{FilterOperator, QueryFilter};
 
     use super::*;
@@ -519,6 +521,9 @@ mod tests {
 
         assert_eq!(read_points.len(), 1);
         assert_eq!(read_points[0], points[0]);
+
+        // Wait for indexing to complete:
+        tokio::time::sleep(Duration::from_millis(1100)).await;
 
         let query = Query {
             filter: QueryFilter::new("age", json!(25), FilterOperator::Gte),

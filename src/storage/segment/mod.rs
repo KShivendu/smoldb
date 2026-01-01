@@ -10,7 +10,9 @@ use futures::StreamExt;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    sync::Mutex,
     thread::JoinHandle,
+    time::Instant,
 };
 
 // re-export point imports
@@ -23,6 +25,7 @@ pub struct Segment {
     // ToDo: ID tracker, vector storage?
     // ID tracker is valuable for building immutable segments, so same point can exist in multiple segments while only the latest version is visible
     pub payload_index: PayloadIndex,
+    pub indexing_queue: Mutex<Vec<PointId>>,
     pub async_indexer: Option<JoinHandle<()>>,
 }
 
@@ -51,6 +54,7 @@ impl Segment {
             path,
             db,
             payload_index,
+            indexing_queue: Mutex::new(Vec::new()),
             async_indexer: None,
         })
     }
@@ -69,6 +73,7 @@ impl Segment {
             path: path.to_owned(),
             db,
             payload_index,
+            indexing_queue: Mutex::new(Vec::new()),
             async_indexer: None,
         })
     }
@@ -86,12 +91,21 @@ impl Segment {
             //     StorageError::ServiceError(format!("Failed to update payload index: {e}"))
             // })?;
 
-            self.payload_index.queue(&point.id)?;
+            self.queue_for_indexing(&point.id)?;
         }
 
         self.db
             .flush()
             .map_err(|e| StorageError::ServiceError(format!("Failed to flush segment db: {e}")))?;
+        Ok(())
+    }
+
+    /// Send some points to be indexed to the indexing queue
+    pub fn queue_for_indexing(&self, point_id: &PointId) -> StorageResult<()> {
+        let mut guard = self.indexing_queue.lock().map_err(|e| {
+            StorageError::ServiceError(format!("Failed to lock indexing queue: {}", e))
+        })?;
+        guard.push(point_id.clone());
         Ok(())
     }
 
@@ -182,6 +196,46 @@ impl Segment {
 
     pub fn count_points(&self) -> usize {
         self.db.len()
+    }
+
+    /// Runs the background indexing loop, batching points efficiently.
+    pub async fn run_indexing_loop(&self) -> StorageResult<()> {
+        const INDEXING_THRESHOLD: usize = 100;
+        const INDEXING_INTERVAL_MS: u64 = 1000;
+        const SLEEP_MS: u64 = 10;
+
+        let mut point_ids = Vec::with_capacity(INDEXING_THRESHOLD);
+        let mut last_index_time = Instant::now();
+
+        loop {
+            // Fill the batch up to threshold or until interval passes.
+            while point_ids.len() < INDEXING_THRESHOLD
+                && last_index_time.elapsed().as_millis() < INDEXING_INTERVAL_MS as u128
+            {
+                let point_id_opt = {
+                    let mut queue = self.indexing_queue.lock().map_err(|e| {
+                        StorageError::ServiceError(format!(
+                            "Failed to acquire lock on indexing queue: {e}"
+                        ))
+                    })?;
+                    queue.pop()
+                };
+
+                if let Some(point_id) = point_id_opt {
+                    point_ids.push(point_id);
+                } else {
+                    std::thread::sleep(std::time::Duration::from_millis(SLEEP_MS));
+                }
+            }
+
+            if !point_ids.is_empty() {
+                let points = self.get_points(Some(point_ids.clone())).await?;
+                self.payload_index.insert_batch(&points)?;
+                point_ids.clear();
+            }
+
+            last_index_time = Instant::now();
+        }
     }
 
     // todo: Allow updating payload index schema on the fly
