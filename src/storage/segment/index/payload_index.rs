@@ -9,7 +9,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sled::Db;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Mutex};
 use utoipa::ToSchema;
 
 /// Converts the number into a big-endian value which is suitable for querying/storing in sled
@@ -73,6 +73,16 @@ impl FieldIndexTrait<&Value> for FieldIndex {
         }
     }
 
+    fn add_points(&self, point_ids: &[u64], values: &[Value]) -> StorageResult<()> {
+        match self {
+            FieldIndex::Int(index) => index.add_points(point_ids, values),
+            FieldIndex::Text(index) => index.add_points(point_ids, values),
+            FieldIndex::Null => Err(StorageError::BadInput(
+                "Null index is not supported yet".to_string(),
+            )),
+        }
+    }
+
     fn open(_db: &Db, _name: &str, _use_in_memory: bool) -> StorageResult<Self> {
         Err(StorageError::BadInput(
             "Use specific index constructors like new_numeric or new_text".to_string(),
@@ -117,6 +127,7 @@ impl FieldIndexTrait<&Value> for FieldIndex {
 
 pub struct PayloadIndex {
     pub indices: BTreeMap<String, FieldIndex>,
+    pub indexing_queue: Mutex<Vec<PointId>>,
 }
 
 impl PayloadIndex {
@@ -143,7 +154,10 @@ impl PayloadIndex {
             indices.insert(name, field_index);
         }
 
-        Ok(Self { indices })
+        Ok(Self {
+            indices,
+            indexing_queue: Mutex::new(Vec::new()),
+        })
     }
 
     pub fn get_index_names(&self) -> Vec<&str> {
@@ -202,6 +216,69 @@ impl PayloadIndex {
         Ok(())
     }
 
+    /// Send some points to be indexed to the indexing queue
+    pub fn queue(&self, point_id: &PointId) -> StorageResult<()> {
+        let mut guard = self.indexing_queue.lock().map_err(|e| {
+            StorageError::ServiceError(format!("Failed to lock indexing queue: {}", e))
+        })?;
+        guard.push(point_id.clone());
+        Ok(())
+    }
+
+    pub fn run_indexing_loop<F>(&self, read_points: F) -> StorageResult<()>
+    where
+        F: Fn(&[PointId]) -> StorageResult<Vec<Point>>,
+    {
+        let mut point_ids = Vec::new();
+
+        loop {
+            // Wait till we get 100 points to index in a batch:
+            const INDEXING_THRESHOLD: usize = 100;
+            while point_ids.len() < INDEXING_THRESHOLD {
+                let mut guard = self.indexing_queue.lock().map_err(|e| {
+                    StorageError::ServiceError(format!("Failed to lock indexing queue: {}", e))
+                })?;
+                // Instead, wait for a bit and check again:
+                let Some(point_id) = guard.pop() else {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    continue;
+                };
+
+                drop(guard);
+                point_ids.push(point_id);
+            }
+
+            let points = read_points(&point_ids)?;
+
+            self.insert_batch(&points)?;
+            point_ids.clear();
+        }
+    }
+
+    pub fn insert_batch(&self, points: &[Point]) -> StorageResult<()> {
+        // Ensure point Ids are u64 type:
+        let point_ids = points.iter().map(|point| {
+            let PointId::Id(id) = point.id else {
+                return Err(StorageError::BadInput("Invalid PointId type: Only u64 point ID is supported for payload indexing (for now)".to_string()));
+            };
+            Ok(id)
+        }).collect::<Result<Vec<u64>, _>>()?;
+
+        for (index_key, index_tree) in &self.indices {
+            let index_values = points
+                .iter()
+                .filter_map(|point| {
+                    // Skipping points that don't have a value for the index key
+                    point.payload.get(index_key).cloned()
+                })
+                .collect::<Vec<Value>>();
+
+            index_tree.add_points(&point_ids, &index_values)?;
+        }
+
+        Ok(())
+    }
+
     // Todo: Support deleting points from the index in case of update or deletes
 
     pub fn query(&self, query: Query) -> StorageResult<Vec<PointId>> {
@@ -218,7 +295,7 @@ impl PayloadIndex {
     }
 }
 
-pub trait FieldIndexTrait<DataType> {
+pub trait FieldIndexTrait<QueryValueType> {
     /// Create or load an index from the DB
     ///
     /// Note for `use_in_memory`:
@@ -229,10 +306,12 @@ pub trait FieldIndexTrait<DataType> {
         Self: Sized;
     /// Add a point to the index
     fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()>;
+    /// Add points to the index (for bulk indexing)
+    fn add_points(&self, point_ids: &[u64], values: &[Value]) -> StorageResult<()>;
     /// Query the index
     fn query(
         &self,
-        value: DataType,
+        value: QueryValueType,
         operation: &FilterOperator,
         limit: Option<usize>,
     ) -> StorageResult<Vec<PointId>>;

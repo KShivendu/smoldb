@@ -10,6 +10,7 @@ use futures::StreamExt;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    thread::JoinHandle,
 };
 
 // re-export point imports
@@ -22,6 +23,7 @@ pub struct Segment {
     // ToDo: ID tracker, vector storage?
     // ID tracker is valuable for building immutable segments, so same point can exist in multiple segments while only the latest version is visible
     pub payload_index: PayloadIndex,
+    pub async_indexer: Option<JoinHandle<()>>,
 }
 
 impl Segment {
@@ -49,6 +51,7 @@ impl Segment {
             path,
             db,
             payload_index,
+            async_indexer: None,
         })
     }
 
@@ -66,6 +69,7 @@ impl Segment {
             path: path.to_owned(),
             db,
             payload_index,
+            async_indexer: None,
         })
     }
 
@@ -78,9 +82,11 @@ impl Segment {
                 StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
             })?;
 
-            self.payload_index.upsert(point).map_err(|e| {
-                StorageError::ServiceError(format!("Failed to update payload index: {e}"))
-            })?;
+            // self.payload_index.upsert(point).map_err(|e| {
+            //     StorageError::ServiceError(format!("Failed to update payload index: {e}"))
+            // })?;
+
+            self.payload_index.queue(&point.id)?;
         }
 
         self.db

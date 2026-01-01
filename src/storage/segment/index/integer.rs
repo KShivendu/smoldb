@@ -123,6 +123,76 @@ impl IntegerIndex {
         })?;
         self.upsert(point_id, num_value)
     }
+
+    pub fn add_points(&self, point_ids: &[u64], values: &[Value]) -> StorageResult<()> {
+        if point_ids.len() != values.len() {
+            return Err(StorageError::BadInput(
+                "Point IDs and values length mismatch".to_string(),
+            ));
+        }
+
+        let values = values
+            .iter()
+            .map(|v| {
+                v.as_i64().ok_or_else(|| {
+                    StorageError::BadInput(format!("Value being inserted is not an integer: {v}"))
+                })
+            })
+            .collect::<Result<Vec<i64>, StorageError>>()?;
+
+        self.upsert_batch(point_ids, &values)?;
+        Ok(())
+    }
+
+    pub fn upsert_batch(&self, point_ids: &[u64], values: &[i64]) -> StorageResult<()> {
+        let mut temp_index: BTreeMap<i64, Vec<u64>> = BTreeMap::new();
+
+        // Group point IDs by their integer values
+        for (&point_id, &value) in point_ids.iter().zip(values.iter()) {
+            temp_index.entry(value).or_default().push(point_id);
+        }
+
+        // Now update the sled tree and in-memory index
+        for (value, mut new_point_ids) in temp_index {
+            let tree_key = encoded_integer_value(value);
+
+            // Fetch existing point IDs for this value
+            let mut point_ids = if let Some(in_memory) = &self.in_memory {
+                in_memory.get_point_ids(value)?
+            } else {
+                self.tree
+                    .get(&tree_key)?
+                    .map(|d| decoded_point_ids(&d))
+                    .transpose()?
+                    .unwrap_or_default()
+            };
+
+            // Merge new point IDs while maintaining sorted order
+            for point_id in new_point_ids.drain(..) {
+                match point_ids.binary_search(&point_id) {
+                    Ok(_) => {
+                        // It already exists, we don't need to do anything
+                    }
+                    Err(pos) => {
+                        point_ids.insert(pos, point_id);
+                    }
+                }
+            }
+
+            // Store back
+            let encoded_ids = encoded_point_ids(&point_ids)?;
+
+            self.tree.insert(&tree_key, encoded_ids).map_err(|e| {
+                StorageError::ServiceError(format!("Failed to insert into index tree: {e}"))
+            })?;
+
+            if let Some(in_memory) = &self.in_memory {
+                in_memory.insert(value, point_ids)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 struct InMemoryIntegerIndex {
