@@ -11,7 +11,6 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Mutex,
-    thread::JoinHandle,
     time::Instant,
 };
 
@@ -26,7 +25,6 @@ pub struct Segment {
     // ID tracker is valuable for building immutable segments, so same point can exist in multiple segments while only the latest version is visible
     pub payload_index: PayloadIndex,
     pub indexing_queue: Mutex<Vec<PointId>>,
-    pub async_indexer: Option<JoinHandle<()>>,
 }
 
 impl Segment {
@@ -55,7 +53,6 @@ impl Segment {
             db,
             payload_index,
             indexing_queue: Mutex::new(Vec::new()),
-            async_indexer: None,
         })
     }
 
@@ -74,7 +71,6 @@ impl Segment {
             db,
             payload_index,
             indexing_queue: Mutex::new(Vec::new()),
-            async_indexer: None,
         })
     }
 
@@ -229,6 +225,11 @@ impl Segment {
             }
 
             if !point_ids.is_empty() {
+                log::info!(
+                    "Indexing {} points. First point ID: {:?}",
+                    point_ids.len(),
+                    point_ids[0]
+                );
                 let points = self.get_points(Some(point_ids.clone())).await?;
                 self.payload_index.insert_batch(&points)?;
                 point_ids.clear();
