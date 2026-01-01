@@ -144,6 +144,10 @@ impl IntegerIndex {
         Ok(())
     }
 
+    pub fn count_points(&self) -> usize {
+        self.tree.len()
+    }
+
     pub fn upsert_batch(&self, point_ids: &[u64], values: &[i64]) -> StorageResult<()> {
         let mut temp_index: BTreeMap<i64, Vec<u64>> = BTreeMap::new();
 
