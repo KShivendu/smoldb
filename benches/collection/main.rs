@@ -14,7 +14,6 @@ criterion_group!(
     read::concurrent_read,
     query::single_query,
     query::concurrent_query,
-    text_search::single_text_query,
-    text_search::concurrent_text_query
+    text_search::text_query_benchmarks
 );
 criterion_main!(benches);

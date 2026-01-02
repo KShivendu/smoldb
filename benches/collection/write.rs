@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use criterion::Criterion;
+use criterion::{BatchSize, Criterion};
+use futures::{
+    executor::block_on,
+    stream::{self, StreamExt},
+};
 
 use crate::common::{
     benchmark_group, create_channel_service, create_collection, create_runtime, create_tempdir,
@@ -13,22 +17,30 @@ pub fn single_write(c: &mut Criterion) {
     let mut group = benchmark_group(c, "Single write benchmarks");
 
     let rt = create_runtime();
-    let tempdir = create_tempdir();
-    let channel_service = create_channel_service();
-
-    let collection = rt.block_on(async {
-        create_collection("test_collection", &tempdir, channel_service.clone(), None).await
-    });
-
     let points = generate_points(1);
 
     group.bench_function("single_write", |b| {
-        b.to_async(&rt).iter(|| async {
-            collection
-                .upsert_points(points.to_vec(), true)
-                .await
-                .unwrap();
-        })
+        let points = points.clone();
+        let setup = move || {
+            let tempdir = create_tempdir();
+            let channel_service = create_channel_service();
+            block_on(async {
+                create_collection("test_collection", &tempdir, channel_service, None).await
+            })
+        };
+        b.to_async(&rt).iter_batched(
+            setup,
+            move |collection| {
+                let points = points.clone();
+                async move {
+                    collection
+                        .upsert_points(points.to_vec(), true)
+                        .await
+                        .unwrap();
+                }
+            },
+            BatchSize::PerIteration,
+        );
     });
 }
 
@@ -38,29 +50,39 @@ pub fn concurrent_write(c: &mut Criterion) {
     let mut group = benchmark_group(c, "Concurrent write benchmarks");
 
     let rt = create_runtime();
-    let tempdir = create_tempdir();
-    let channel_service = create_channel_service();
-
-    let collection = rt.block_on(async {
-        create_collection("test_collection", &tempdir, channel_service, None).await
-    });
-    let collection_arc = Arc::new(collection);
-
+    let rt_handle = rt.handle().clone();
     let num_points = 100_000;
     let num_threads = 16;
     let chunk_size = (num_points / num_threads) as usize;
 
-    let points = generate_points(num_points);
-
     group.bench_function("concurrent_write", |b| {
-        b.to_async(&rt).iter(|| async {
-            for chunk in points.chunks(chunk_size) {
-                let collection_clone = collection_arc.clone();
-                collection_clone
-                    .upsert_points(chunk.to_vec(), true)
-                    .await
-                    .unwrap();
-            }
-        })
+        let rt_handle = rt_handle.clone();
+        let num_points = num_points;
+        let chunk_size = chunk_size;
+        let setup = move || {
+            let tempdir = create_tempdir();
+            let channel_service = create_channel_service();
+            let collection = block_on(async {
+                create_collection("test_collection", &tempdir, channel_service, None).await
+            });
+            let collection_arc = Arc::new(collection);
+            let points = generate_points(num_points);
+            (collection_arc, points, chunk_size, num_threads)
+        };
+        b.to_async(&rt).iter_batched(
+            setup,
+            |(collection_arc, points, chunk_size, num_threads)| async move {
+                stream::iter(points.chunks(chunk_size))
+                    .map(|chunk| {
+                        let collection_clone = collection_arc.clone();
+                        let chunk = chunk.to_vec();
+                        async move { collection_clone.upsert_points(chunk, true).await.unwrap() }
+                    })
+                    .buffer_unordered(num_threads as usize)
+                    .collect::<Vec<_>>()
+                    .await;
+            },
+            BatchSize::PerIteration,
+        );
     });
 }
