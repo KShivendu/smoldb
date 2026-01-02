@@ -155,7 +155,9 @@ pub fn benchmark_group<'a>(
     name: &str,
 ) -> BenchmarkGroup<'a, criterion::measurement::WallTime> {
     let mut group = c.benchmark_group(name);
-    group.sample_size(100); // Default is 100
+    group.sample_size(100); // default is 100
+    group.measurement_time(Duration::from_secs(5)); // default is 5s
+    group.warm_up_time(Duration::from_secs(3)); // default is 3s
     group.significance_level(0.05);
     group.noise_threshold(0.05);
     group
@@ -168,12 +170,16 @@ pub fn create_temp_db() -> (sled::Db, TempDir) {
     (db, tempdir)
 }
 
-/// Generates integer values for benchmark storage
-pub fn generate_integer_values(num_values: usize) -> Vec<i64> {
-    (0..num_values).map(|i| i as i64 * 10).collect::<Vec<_>>()
+/// Generates integer values for indexing benchmarks
+pub fn generate_integer_values(num_points: usize) -> Vec<Value> {
+    (0..num_points)
+        .map(|i| Value::Number((i as i64 * 10).into()))
+        .collect()
 }
 
-/// Generates text values for benchmark storage
-pub fn generate_text_values(num_values: usize) -> Vec<String> {
-    (0..num_values).map(|i| format!("Hello world {}", i)).collect::<Vec<_>>()
+/// Generates text values for indexing benchmarks
+pub fn generate_text_values(num_points: usize) -> Vec<Value> {
+    (0..num_points)
+        .map(|i| Value::String(format!("foo bar {}", i)))
+        .collect()
 }

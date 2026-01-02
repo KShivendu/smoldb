@@ -1,6 +1,5 @@
 use crate::common::{benchmark_group, create_temp_db, generate_integer_values, generate_text_values, BATCH_SIZE};
 use criterion::Criterion;
-use serde_json::Value;
 use smoldb::storage::index::{integer::IntegerIndex, payload_index::FieldIndexTrait, text::TextIndex};
 
 // Todo: payload_index should have dedicated benches binary that's not part of collection benches?
@@ -20,13 +19,11 @@ pub fn int_indexing(c: &mut Criterion) {
         let (db, _tempdir) = create_temp_db();
         let index = IntegerIndex::open(&db, "price", false).unwrap();
 
-        group.bench_function("batch", |b| {
-            b.iter(|| {
-                // todo: Add batching when supported by integer index
-                for (point_id, value) in point_ids.iter().zip(values.iter()) {
-                    index.upsert(*point_id, *value).unwrap();
-                }
-            });
+        b.iter(|| {
+            // todo: Add batching when supported by integer index
+            for (point_id, value) in point_ids.iter().zip(values.iter()) {
+                index.add_point(*point_id, value).unwrap();
+            }
         });
     }
 
@@ -34,13 +31,11 @@ pub fn int_indexing(c: &mut Criterion) {
         let (db, _tempdir) = create_temp_db();
         let index_with_in_mem = IntegerIndex::open(&db, "price", true).unwrap();
 
-        group.bench_function("in_memory/batch", |b| {
-            b.iter(|| {
-                // todo: Add batching when supported by integer index
-                for (point_id, value) in point_ids.iter().zip(values.iter()) {
-                    index_with_in_mem.upsert(*point_id, *value).unwrap();
-                }
-            });
+        b.iter(|| {
+            // todo: Add batching when supported by integer index
+            for (point_id, value) in point_ids.iter().zip(values.iter()) {
+                index_with_in_mem.add_point(*point_id, value).unwrap();
+            }
         });
     }
 }
@@ -63,7 +58,7 @@ pub fn text_indexing(c: &mut Criterion) {
         b.iter(|| {
             // todo: Add batching when supported by integer index
             for (point_id, value) in point_ids.iter().zip(values.iter()) {
-                index.add_point(*point_id, &Value::String(value.clone())).unwrap();
+                index.add_point(*point_id, value).unwrap();
             }
         });
     });
@@ -75,7 +70,7 @@ pub fn text_indexing(c: &mut Criterion) {
         b.iter(|| {
             // todo: Add batching when supported by integer index
             for (point_id, value) in point_ids.iter().zip(values.iter()) {
-                index_with_in_mem.add_point(*point_id, &Value::String(value.clone())).unwrap();
+                index_with_in_mem.add_point(*point_id, value).unwrap();
             }
         });
     });
