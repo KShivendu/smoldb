@@ -63,7 +63,7 @@ pub fn write(c: &mut Criterion) {
         );
     });
 
-    group.throughput(Throughput::Elements(NUM_POINTS as u64));
+    group.throughput(Throughput::Elements(NUM_POINTS));
 
     // Write NUM_POINTS points in CONCURRENCY parallel batches of BATCH_SIZE points in an **empty** collection
     // Takes 68.347 ms on my machine

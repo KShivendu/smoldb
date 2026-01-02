@@ -81,7 +81,7 @@ pub fn read(c: &mut Criterion) {
     // Perf in the beginning: ???
     // Perf with hashring and tokio: 124.54ms (100_000 points, 4 threads, 2 shards; only 170x slower than single read)
     // Read NUM_POINTS points in NUM_THREADS parallel batches of BATCH_SIZE points
-    group.throughput(Throughput::Elements(NUM_POINTS as u64));
+    group.throughput(Throughput::Elements(NUM_POINTS));
     group.bench_function("concurrent", |b| {
         let rt = create_runtime();
 
