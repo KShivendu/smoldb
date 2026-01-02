@@ -166,7 +166,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         let in_memory_index = self.in_memory_index.as_ref();
 
         // Merge the temporary index into the main index in parallel:
-        let results: Result<Vec<_>, StorageError> = temp_index
+        let results = temp_index
             .into_par_iter()
             .map(|(term, mut new_posting_list)| {
                 let term_key = term.as_bytes();
@@ -188,12 +188,11 @@ impl FieldIndexTrait<&str> for TextIndex {
                 })?;
                 Ok((term, posting_list))
             })
-            .collect();
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         // Update in-memory index sequentially (since it uses RwLock)
         if let Some(in_memory_index) = &self.in_memory_index {
-            for result in results? {
-                let (term, posting_list) = result;
+            for (term, posting_list) in results {
                 // Also updates the stats in the in-memory index
                 in_memory_index.override_term_posting_list(&term, posting_list)?;
             }

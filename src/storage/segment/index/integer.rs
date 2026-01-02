@@ -173,7 +173,7 @@ impl IntegerIndex {
         let in_memory = self.in_memory.as_ref();
 
         // Update the sled tree and in-memory index in parallel
-        let results: Result<Vec<_>, StorageError> = temp_index
+        let results = temp_index
             .into_par_iter()
             .map(|(value, mut new_point_ids)| {
                 let tree_key = encoded_integer_value(value);
@@ -209,12 +209,11 @@ impl IntegerIndex {
 
                 Ok((value, point_ids))
             })
-            .collect();
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         // Update in-memory index sequentially (since it uses RwLock)
         if let Some(in_memory) = &self.in_memory {
-            for result in results? {
-                let (value, point_ids) = result;
+            for (value, point_ids) in results {
                 in_memory.insert(value, point_ids)?;
             }
         }
