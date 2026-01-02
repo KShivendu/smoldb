@@ -1,23 +1,15 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use criterion::{BatchSize, Criterion};
+use crate::common::{
+    benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
+    create_tempdir, generate_points, generate_text_queries, CONCURRENCY, NUM_POINTS, NUM_QUERIES,
+};
+use criterion::{BatchSize, Criterion, Throughput};
 use futures::{
     executor::block_on,
     stream::{self, StreamExt},
 };
-use serde_json::Value;
-
-use crate::common::{
-    benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
-    create_tempdir, generate_points,
-};
-use smoldb::{
-    api::points::Query,
-    storage::index::{
-        filter::{FilterOperator, QueryFilter},
-        payload_index::IndexConfig,
-    },
-};
+use smoldb::storage::index::payload_index::IndexConfig;
 
 // Perf when bench was first implemented: single=1.5804 µs, concurrent=5.7696 µs
 pub fn text_query(c: &mut Criterion) {
@@ -25,85 +17,66 @@ pub fn text_query(c: &mut Criterion) {
 
     // Single text query benchmark
     group.bench_function("single", |b| {
-        let query = Query {
-            filter: QueryFilter::new("text", Value::from("100"), FilterOperator::Eq),
-            limit: Some(10),
-        };
         let rt = create_runtime();
         let setup = move || {
+            let query = generate_text_queries(1).first().unwrap().clone();
             let tempdir = create_tempdir();
             let channel_service = create_channel_service();
-            let points = generate_points(1);
             let collection = block_on(async {
                 let payload_index = BTreeMap::from_iter([("text".to_string(), IndexConfig::Text)]);
                 create_collection_with_points(
                     &tempdir,
                     channel_service,
                     Some(payload_index),
-                    points,
+                    generate_points(NUM_POINTS),
                 )
                 .await
             });
-            Arc::new(collection)
+            (Arc::new(collection), query)
         };
         b.to_async(&rt).iter_batched(
             setup,
-            move |collection_arc| {
-                let query = query.clone();
-                async move {
-                    collection_arc.query_points(query, true).await.unwrap();
-                }
+            move |(collection_arc, query)| async move {
+                collection_arc.query_points(query, true).await.unwrap();
             },
             BatchSize::PerIteration,
         );
     });
 
-    // Concurrent text query benchmark
+    // todo: Query a single batch of RW_BATCH_SIZE points while there are NUM_POINTS points in the collection
+    // It needs support from the API to pass a batch of queries
+
+    group.throughput(Throughput::Elements(NUM_QUERIES as u64));
+
+    // For querying, batch size is always 1 (for now)
+    // So we can just run NUM_QUERIES queries in CONCURRENCY parallel with batch size=1
     group.bench_function("concurrent", |b| {
         let rt = create_runtime();
-        let num_points = 100_000;
-        let num_threads = 4;
-        let chunk_size = (num_points / num_threads) as usize;
-
-        let queries: Vec<Query> = (0..num_threads)
-            .map(|i| {
-                let start_id = i * chunk_size as u64;
-                Query {
-                    filter: QueryFilter::new(
-                        "text",
-                        Value::from(format!("{start_id}")),
-                        FilterOperator::Gte,
-                    ),
-                    limit: Some(10),
-                }
-            })
-            .collect();
-
         let setup = move || {
+            let queries = generate_text_queries(NUM_QUERIES);
             let tempdir = create_tempdir();
             let channel_service = create_channel_service();
-            let points = generate_points(num_points);
             let collection = block_on(async {
                 let payload_index = BTreeMap::from_iter([("text".to_string(), IndexConfig::Text)]);
                 create_collection_with_points(
                     &tempdir,
                     channel_service,
                     Some(payload_index),
-                    points,
+                    generate_points(NUM_POINTS),
                 )
                 .await
             });
-            (Arc::new(collection), queries.clone(), num_threads)
+            (Arc::new(collection), queries)
         };
         b.to_async(&rt).iter_batched(
             setup,
-            move |(collection_arc, queries, num_threads)| async move {
+            move |(collection_arc, queries)| async move {
                 stream::iter(queries)
                     .map(|query| {
                         let collection_clone = collection_arc.clone();
                         async move { collection_clone.query_points(query, true).await.unwrap() }
                     })
-                    .buffer_unordered(num_threads as usize)
+                    .buffer_unordered(CONCURRENCY)
                     .collect::<Vec<_>>()
                     .await;
             },

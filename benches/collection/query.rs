@@ -1,35 +1,25 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use crate::common::{
+    benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
+    create_tempdir, generate_int_queries, generate_points, CONCURRENCY, NUM_POINTS, NUM_QUERIES,
+};
 use criterion::{BatchSize, Criterion};
 use futures::{
     executor::block_on,
     stream::{self, StreamExt},
 };
-use serde_json::Value;
-
-use crate::common::{
-    benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
-    create_tempdir, generate_points,
-};
-use smoldb::{
-    api::points::Query,
-    storage::index::{
-        filter::{FilterOperator, QueryFilter},
-        payload_index::IndexConfig,
-    },
-};
+use smoldb::storage::index::payload_index::IndexConfig;
 
 pub fn int_query(c: &mut Criterion) {
     let mut group = benchmark_group(c, "query/int");
 
     // Perf when bench was first implemented: 31.807 µs
+    // Query a single point while there are NUM_POINTS points in the collection
     group.bench_function("single", |b| {
-        let query = Query {
-            filter: QueryFilter::new("price", Value::from(0), FilterOperator::Gte),
-            limit: Some(10),
-        };
         let rt = create_runtime();
         let setup = move || {
+            let query = generate_int_queries(1).first().unwrap().clone();
             let tempdir = create_tempdir();
             let channel_service = create_channel_service();
             let collection = block_on(async {
@@ -38,11 +28,11 @@ pub fn int_query(c: &mut Criterion) {
                     &tempdir,
                     channel_service,
                     Some(payload_index),
-                    generate_points(1), // todo: Should have 100_000 points but query only for a single point
+                    generate_points(NUM_POINTS),
                 )
                 .await
             });
-            (Arc::new(collection), query.clone())
+            (Arc::new(collection), query)
         };
         b.to_async(&rt).iter_batched(
             setup,
@@ -53,54 +43,42 @@ pub fn int_query(c: &mut Criterion) {
         );
     });
 
+    // ToDo: Query a single batch of RW_BATCH_SIZE points while there are NUM_POINTS points in the collection
+    // It needs support from the API to pass a batch of queries
+
     // Perf when bench was first implemented: 668.48 µs
-    group.bench_function("concurrent", |b| {
+    // For querying, batch size is always 1 (for now)
+    // So we can just run num_queries queries in CONCURRENCY parallel with batch size=1
+    group.bench_function("concurrent", |b: &mut criterion::Bencher<'_>| {
         let rt = create_runtime();
-        let num_points = 100_000;
-        let num_threads = 4;
-        let chunk_size = (num_points / num_threads) as usize;
         let setup = move || {
             let tempdir = create_tempdir();
             let channel_service = create_channel_service();
-            let points = generate_points(num_points);
             let collection = block_on(async {
                 let payload_index = BTreeMap::from_iter([("price".to_string(), IndexConfig::Int)]);
                 create_collection_with_points(
                     &tempdir,
                     channel_service,
                     Some(payload_index),
-                    points,
+                    generate_points(NUM_POINTS),
                 )
                 .await
             });
             let collection_arc = Arc::new(collection);
 
-            // Create queries for different chunks - filtering on different message values
-            let queries: Vec<Query> = (0..num_threads)
-                .map(|i| {
-                    let start_id = i * chunk_size as u64;
-                    Query {
-                        filter: QueryFilter::new(
-                            "price",
-                            Value::from(start_id * 10),
-                            FilterOperator::Gte,
-                        ),
-                        limit: Some(10),
-                    }
-                })
-                .collect();
-
-            (collection_arc, queries, num_threads)
+            // Create queries for different chunks
+            let queries = generate_int_queries(NUM_QUERIES);
+            (collection_arc, queries)
         };
         b.to_async(&rt).iter_batched(
             setup,
-            |(collection_arc, queries, num_threads)| async move {
+            |(collection_arc, queries)| async move {
                 stream::iter(queries)
                     .map(|query| {
                         let collection_clone = collection_arc.clone();
                         async move { collection_clone.query_points(query, true).await.unwrap() }
                     })
-                    .buffer_unordered(num_threads as usize)
+                    .buffer_unordered(CONCURRENCY)
                     .collect::<Vec<_>>()
                     .await;
             },
