@@ -19,19 +19,16 @@ use smoldb::{
     },
 };
 
-// Perf when bench was first implemented: 31.807 µs
-pub fn single_query(c: &mut Criterion) {
-    let mut group = benchmark_group(c, "Single query benchmarks");
+pub fn int_query(c: &mut Criterion) {
+    let mut group = benchmark_group(c, "query/int");
 
-    let rt = create_runtime();
-
-    let query = Query {
-        filter: QueryFilter::new("price", Value::from(0), FilterOperator::Gte),
-        limit: Some(10),
-    };
-
-    group.bench_function("single_query", |b| {
-        let query = query.clone();
+    // Perf when bench was first implemented: 31.807 µs
+    group.bench_function("single", |b| {
+        let query = Query {
+            filter: QueryFilter::new("price", Value::from(0), FilterOperator::Gte),
+            limit: Some(10),
+        };
+        let rt = create_runtime();
         let setup = move || {
             let tempdir = create_tempdir();
             let channel_service = create_channel_service();
@@ -55,23 +52,13 @@ pub fn single_query(c: &mut Criterion) {
             BatchSize::PerIteration,
         );
     });
-}
 
-// Perf when bench was first implemented: 668.48 µs
-pub fn concurrent_query(c: &mut Criterion) {
-    let mut group = benchmark_group(c, "Concurrent query benchmarks");
-
-    let rt = create_runtime();
-    let rt_handle = rt.handle().clone();
-    let num_points = 100_000;
-    let num_threads = 4;
-    let chunk_size = (num_points / num_threads) as usize;
-
-    group.bench_function("concurrent_query", |b| {
-        let rt_handle = rt_handle.clone();
-        let num_points = num_points;
-        let num_threads = num_threads;
-        let chunk_size = chunk_size;
+    // Perf when bench was first implemented: 668.48 µs
+    group.bench_function("concurrent", |b| {
+        let rt = create_runtime();
+        let num_points = 100_000;
+        let num_threads = 4;
+        let chunk_size = (num_points / num_threads) as usize;
         let setup = move || {
             let tempdir = create_tempdir();
             let channel_service = create_channel_service();

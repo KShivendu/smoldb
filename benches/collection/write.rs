@@ -11,16 +11,14 @@ use crate::common::{
     generate_points,
 };
 
-// Takes 619.19 ns on my machine
-// After hashring and tokio: 874.32 ns
-pub fn single_write(c: &mut Criterion) {
-    let mut group = benchmark_group(c, "Single write benchmarks");
+pub fn write(c: &mut Criterion) {
+    let mut group = benchmark_group(c, "write");
 
-    let rt = create_runtime();
-    let points = generate_points(1);
-
-    group.bench_function("single_write", |b| {
-        let points = points.clone();
+    // Takes 619.19 ns on my machine
+    // After hashring and tokio: 874.32 ns
+    group.bench_function("single", |b| {
+        let rt = create_runtime();
+        let points = generate_points(1);
         let setup = move || {
             let tempdir = create_tempdir();
             let channel_service = create_channel_service();
@@ -42,23 +40,15 @@ pub fn single_write(c: &mut Criterion) {
             BatchSize::PerIteration,
         );
     });
-}
 
-// Takes 68.347 ms on my machine
-// After hashring and tokio: 172.99ms
-pub fn concurrent_write(c: &mut Criterion) {
-    let mut group = benchmark_group(c, "Concurrent write benchmarks");
+    // Takes 68.347 ms on my machine
+    // After hashring and tokio: 172.99ms
+    group.bench_function("concurrent", |b| {
+        let rt = create_runtime();
+        let num_points = 100_000;
+        let num_threads = 16;
+        let chunk_size = (num_points / num_threads) as usize;
 
-    let rt = create_runtime();
-    let rt_handle = rt.handle().clone();
-    let num_points = 100_000;
-    let num_threads = 16;
-    let chunk_size = (num_points / num_threads) as usize;
-
-    group.bench_function("concurrent_write", |b| {
-        let rt_handle = rt_handle.clone();
-        let num_points = num_points;
-        let chunk_size = chunk_size;
         let setup = move || {
             let tempdir = create_tempdir();
             let channel_service = create_channel_service();

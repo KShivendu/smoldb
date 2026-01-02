@@ -11,14 +11,13 @@ use crate::common::{
     create_tempdir, generate_points,
 };
 
-// Perf in the beginning: ???
-// Perf with hashring and tokio: 729.73 ns
-pub fn single_read(c: &mut Criterion) {
-    let mut group = benchmark_group(c, "Single read benchmarks");
+pub fn read(c: &mut Criterion) {
+    let mut group = benchmark_group(c, "read");
 
-    let rt = create_runtime();
-
-    group.bench_function("single_read", |b| {
+    // Perf in the beginning: ???
+    // Perf with hashring and tokio: 729.73 ns
+    group.bench_function("single", |b| {
+        let rt = create_runtime();
         let setup = move || {
             let tempdir = create_tempdir();
             let channel_service = create_channel_service();
@@ -42,23 +41,15 @@ pub fn single_read(c: &mut Criterion) {
             BatchSize::PerIteration,
         );
     });
-}
 
-// Perf in the beginning: ???
-// Perf with hashring and tokio: 124.54ms (100_000 points, 4 threads, 2 shards; only 170x slower than single read)
-pub fn concurrent_read(c: &mut Criterion) {
-    let mut group = benchmark_group(c, "Concurrent read benchmarks");
+    // Perf in the beginning: ???
+    // Perf with hashring and tokio: 124.54ms (100_000 points, 4 threads, 2 shards; only 170x slower than single read)
+    group.bench_function("concurrent", |b| {
+        let rt = create_runtime();
+        let num_points = 100_000;
+        let num_threads = 4;
+        let chunk_size = (num_points / num_threads) as usize;
 
-    let rt = create_runtime();
-    let rt_handle = rt.handle().clone();
-    let num_points = 100_000;
-    let num_threads = 4;
-    let chunk_size = (num_points / num_threads) as usize;
-
-    group.bench_function("concurrent_read", |b| {
-        let rt_handle = rt_handle.clone();
-        let num_points = num_points;
-        let chunk_size = chunk_size;
         let setup = move || {
             let tempdir = create_tempdir();
             let channel_service = create_channel_service();
