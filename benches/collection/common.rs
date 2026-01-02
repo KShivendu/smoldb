@@ -172,3 +172,8 @@ pub fn create_temp_db() -> (sled::Db, TempDir) {
 pub fn generate_integer_values(num_values: usize) -> Vec<i64> {
     (0..num_values).map(|i| i as i64 * 10).collect::<Vec<_>>()
 }
+
+/// Generates text values for benchmark storage
+pub fn generate_text_values(num_values: usize) -> Vec<String> {
+    (0..num_values).map(|i| format!("Hello world {}", i)).collect::<Vec<_>>()
+}
