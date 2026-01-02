@@ -155,21 +155,18 @@ impl IntegerIndex {
             .par_iter()
             .zip(values.par_iter())
             .fold(
-                || HashMap::<i64, Vec<u64>>::new(),
+                HashMap::<i64, Vec<u64>>::new,
                 |mut acc, (&point_id, &value)| {
                     acc.entry(value).or_default().push(point_id);
                     acc
                 },
             )
-            .reduce(
-                || HashMap::<i64, Vec<u64>>::new(),
-                |mut a, b| {
-                    for (k, mut v) in b {
-                        a.entry(k).or_default().append(&mut v);
-                    }
-                    a
-                },
-            );
+            .reduce(HashMap::<i64, Vec<u64>>::new, |mut a, b| {
+                for (k, mut v) in b {
+                    a.entry(k).or_default().append(&mut v);
+                }
+                a
+            });
 
         // Clone the tree for parallel access (sled trees are thread-safe)
         let tree = self.tree.clone();

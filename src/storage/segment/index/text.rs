@@ -143,7 +143,7 @@ impl FieldIndexTrait<&str> for TextIndex {
             .par_iter()
             .zip(texts.par_iter())
             .fold(
-                || HashMap::<String, Vec<PostingListItem>>::new(),
+                HashMap::<String, Vec<PostingListItem>>::new,
                 |mut acc, (&point_id, text)| {
                     let terms = tokenize_and_count_frequencies(text);
                     for (term, term_freq) in terms {
@@ -154,15 +154,12 @@ impl FieldIndexTrait<&str> for TextIndex {
                     acc
                 },
             )
-            .reduce(
-                || HashMap::<String, Vec<PostingListItem>>::new(),
-                |mut a, b| {
-                    for (k, mut v) in b {
-                        a.entry(k).or_default().append(&mut v);
-                    }
-                    a
-                },
-            );
+            .reduce(HashMap::<String, Vec<PostingListItem>>::new, |mut a, b| {
+                for (k, mut v) in b {
+                    a.entry(k).or_default().append(&mut v);
+                }
+                a
+            });
 
         // Clone the db tree for parallel access (sled trees are thread-safe)
         let db = self.db.clone();
