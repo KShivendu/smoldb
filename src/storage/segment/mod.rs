@@ -246,6 +246,8 @@ impl Segment {
                             "Failed to acquire lock on indexing queue: {e}"
                         ))
                     })?;
+                    // todo: Should pop from the front. I tried using VecDeque instead of Vec.
+                    // But it was slower. Need to investigate why or find alt.
                     queue.pop()
                 };
 
@@ -263,7 +265,7 @@ impl Segment {
                     point_ids[0]
                 );
                 let points = self.get_points(Some(point_ids.clone())).await?;
-                self.payload_index.insert_batch(&points)?;
+                self.payload_index.upsert_many(&points)?;
                 point_ids.clear();
             }
 
