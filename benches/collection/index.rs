@@ -1,0 +1,41 @@
+use crate::common::{benchmark_group, create_temp_db, generate_integer_values, BATCH_SIZE};
+use criterion::Criterion;
+use smoldb::storage::index::integer::IntegerIndex;
+
+// Todo: payload_index should have dedicated benches binary that's not part of collection benches?
+
+// Integer index benchmarks
+
+pub fn int_indexing(c: &mut Criterion) {
+    let mut group = benchmark_group(c, "Bulk indexing (integer index)");
+
+    // For now only upserting BATCH_SIZE points at a time, but must upsert NUM_POINTS points in future
+    // once indexing is faster due to batching.
+    let num_points = BATCH_SIZE as u64;
+    let point_ids: Vec<u64> = (0..num_points).collect();
+    let values = generate_integer_values(num_points as usize);
+
+    group.bench_function("integer_index/batch", |b| {
+        let (db, _tempdir) = create_temp_db();
+        let index = IntegerIndex::open(&db, "price", false).unwrap();
+
+        b.iter(|| {
+            // todo: Add batching when supported by integer index
+            for (point_id, value) in point_ids.iter().zip(values.iter()) {
+                index.upsert(*point_id, *value).unwrap();
+            }
+        });
+    });
+
+    group.bench_function("integer_index/in_memory/batch", |b| {
+        let (db, _tempdir) = create_temp_db();
+        let index_with_in_mem = IntegerIndex::open(&db, "price", true).unwrap();
+
+        b.iter(|| {
+            // todo: Add batching when supported by integer index
+            for (point_id, value) in point_ids.iter().zip(values.iter()) {
+                index_with_in_mem.upsert(*point_id, *value).unwrap();
+            }
+        });
+    });
+}

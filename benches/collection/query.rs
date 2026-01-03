@@ -4,7 +4,7 @@ use crate::common::{
     benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
     create_tempdir, generate_int_queries, generate_points, CONCURRENCY, NUM_POINTS, NUM_QUERIES,
 };
-use criterion::{BatchSize, Criterion};
+use criterion::Criterion;
 use futures::{
     executor::block_on,
     stream::{self, StreamExt},
@@ -18,29 +18,22 @@ pub fn int_query(c: &mut Criterion) {
     // Query a single point while there are NUM_POINTS points in the collection
     group.bench_function("single", |b| {
         let rt = create_runtime();
-        let setup = move || {
-            let query = generate_int_queries(1).first().unwrap().clone();
-            let tempdir = create_tempdir();
-            let channel_service = create_channel_service();
-            let collection = block_on(async {
-                let payload_index = BTreeMap::from_iter([("price".to_string(), IndexConfig::Int)]);
-                create_collection_with_points(
-                    &tempdir,
-                    channel_service,
-                    Some(payload_index),
-                    generate_points(NUM_POINTS),
-                )
-                .await
-            });
-            (Arc::new(collection), query)
-        };
-        b.to_async(&rt).iter_batched(
-            setup,
-            move |(collection_arc, query)| async move {
-                collection_arc.query_points(query, true).await.unwrap();
-            },
-            BatchSize::PerIteration,
-        );
+        let query = generate_int_queries(1).first().unwrap().clone();
+        let tempdir = create_tempdir();
+        let channel_service = create_channel_service();
+        let collection = block_on(async {
+            let payload_index = BTreeMap::from_iter([("price".to_string(), IndexConfig::Int)]);
+            create_collection_with_points(
+                &tempdir,
+                channel_service,
+                Some(payload_index),
+                generate_points(NUM_POINTS),
+            )
+            .await
+        });
+        b.to_async(&rt).iter(|| async {
+            collection.query_points(query.clone(), true).await.unwrap();
+        });
     });
 
     // ToDo: Query a single batch of RW_BATCH_SIZE points while there are NUM_POINTS points in the collection
@@ -51,38 +44,34 @@ pub fn int_query(c: &mut Criterion) {
     // So we can just run num_queries queries in CONCURRENCY parallel with batch size=1
     group.bench_function("concurrent", |b: &mut criterion::Bencher<'_>| {
         let rt = create_runtime();
-        let setup = move || {
-            let tempdir = create_tempdir();
-            let channel_service = create_channel_service();
-            let collection = block_on(async {
-                let payload_index = BTreeMap::from_iter([("price".to_string(), IndexConfig::Int)]);
-                create_collection_with_points(
-                    &tempdir,
-                    channel_service,
-                    Some(payload_index),
-                    generate_points(NUM_POINTS),
-                )
-                .await
-            });
-            let collection_arc = Arc::new(collection);
+        let tempdir = create_tempdir();
+        let channel_service = create_channel_service();
+        let collection = block_on(async {
+            let payload_index = BTreeMap::from_iter([("price".to_string(), IndexConfig::Int)]);
+            create_collection_with_points(
+                &tempdir,
+                channel_service,
+                Some(payload_index),
+                generate_points(NUM_POINTS),
+            )
+            .await
+        });
 
-            // Create queries for different chunks
-            let queries = generate_int_queries(NUM_QUERIES);
-            (collection_arc, queries)
-        };
-        b.to_async(&rt).iter_batched(
-            setup,
-            |(collection_arc, queries)| async move {
-                stream::iter(queries)
-                    .map(|query| {
-                        let collection_clone = collection_arc.clone();
-                        async move { collection_clone.query_points(query, true).await.unwrap() }
-                    })
-                    .buffer_unordered(CONCURRENCY)
-                    .collect::<Vec<_>>()
-                    .await;
-            },
-            BatchSize::PerIteration,
-        );
+        let collection_arc = Arc::new(collection);
+
+        // Create queries for different chunks
+        let queries = generate_int_queries(NUM_QUERIES);
+
+        b.to_async(&rt).iter(|| async {
+            let queries = queries.clone();
+            stream::iter(queries)
+                .map(|query| {
+                    let collection_clone = collection_arc.clone();
+                    async move { collection_clone.query_points(query, true).await.unwrap() }
+                })
+                .buffer_unordered(CONCURRENCY)
+                .collect::<Vec<_>>()
+                .await;
+        });
     });
 }

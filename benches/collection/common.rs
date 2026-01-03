@@ -75,6 +75,22 @@ pub fn generate_points(num_points: u64) -> Vec<Point> {
         .collect()
 }
 
+/// todo: not used in the benchmarks yet
+/// Generates a random point with a random ID and payload
+#[allow(dead_code)]
+pub fn generate_random_points(num_points: usize) -> Vec<Point> {
+    (0..num_points)
+        .map(|_| {
+            let id = rand::random_range(0..NUM_POINTS);
+            let payload = json!({ "msg": format!("Hello world {}", id), "price": id as i64 * 10 });
+            Point {
+                id: PointId::Id(id),
+                payload,
+            }
+        })
+        .collect::<Vec<_>>()
+}
+
 /// Generate queries for integer index
 pub fn generate_int_queries(num_queries: usize) -> Vec<Query> {
     (0..num_queries)
@@ -118,8 +134,20 @@ pub fn benchmark_group<'a>(
     name: &str,
 ) -> BenchmarkGroup<'a, criterion::measurement::WallTime> {
     let mut group = c.benchmark_group(name);
-    group.sample_size(20);
+    group.sample_size(100); // Default is 100
     group.significance_level(0.05);
     group.noise_threshold(0.05);
     group
+}
+
+/// Creates a temporary database for benchmark storage
+pub fn create_temp_db() -> (sled::Db, TempDir) {
+    let tempdir = create_tempdir();
+    let db = sled::open(tempdir.path()).unwrap();
+    (db, tempdir)
+}
+
+/// Generates integer values for benchmark storage
+pub fn generate_integer_values(num_values: usize) -> Vec<i64> {
+    (0..num_values).map(|i| i as i64 * 10).collect::<Vec<_>>()
 }
