@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use criterion::{BatchSize, Criterion, Throughput};
+use criterion::{Criterion, Throughput};
 use futures::{
     executor::block_on,
     stream::{self, StreamExt},
@@ -61,7 +61,7 @@ pub fn read(c: &mut Criterion) {
 
         b.to_async(&rt).iter(|| async {
             collection
-                .read_points(Some(read_batch), None, true)
+                .read_points(Some(read_batch.clone()), None, true)
                 .await
                 .unwrap();
         });

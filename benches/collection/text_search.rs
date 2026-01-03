@@ -4,7 +4,7 @@ use crate::common::{
     benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
     create_tempdir, generate_points, generate_text_queries, CONCURRENCY, NUM_POINTS, NUM_QUERIES,
 };
-use criterion::{BatchSize, Criterion, Throughput};
+use criterion::{Criterion, Throughput};
 use futures::{
     executor::block_on,
     stream::{self, StreamExt},
@@ -60,7 +60,7 @@ pub fn text_query(c: &mut Criterion) {
         });
         let collection_arc = Arc::new(collection);
         b.to_async(&rt).iter(|| async {
-            stream::iter(queries)
+            stream::iter(queries.clone())
                 .map(|query| {
                     let collection_clone = collection_arc.clone();
                     async move { collection_clone.query_points(query, true).await.unwrap() }
