@@ -16,6 +16,8 @@ pub enum SmolBenchError {
     ReadPointsError(String),
     #[error("Failed to query points: {0}")]
     QueryPointsError(String),
+    #[error("Service error: {0}")]
+    ServiceError(String),
     #[error("Request error: {0}")]
     RequestError(#[from] reqwest::Error),
     #[error("JSON parsing error: {0}")]

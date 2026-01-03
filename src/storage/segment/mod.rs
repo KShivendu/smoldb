@@ -82,13 +82,13 @@ impl Segment {
             self.db.insert(key, value).map_err(|e| {
                 StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
             })?;
-
-            // self.payload_index.upsert(point).map_err(|e| {
-            //     StorageError::ServiceError(format!("Failed to update payload index: {e}"))
-            // })?;
-
-            self.queue_for_indexing(&point.id)?;
         }
+
+        let point_ids = points
+            .iter()
+            .map(|point| point.id.clone())
+            .collect::<Vec<_>>();
+        self.queue_for_indexing(point_ids)?;
 
         self.db
             .flush()
@@ -97,11 +97,13 @@ impl Segment {
     }
 
     /// Send some points to be indexed to the indexing queue
-    pub fn queue_for_indexing(&self, point_id: &PointId) -> StorageResult<()> {
+    /// It takes a lock, so it's better to call it for a batch of points at once
+    pub fn queue_for_indexing(&self, point_ids: Vec<PointId>) -> StorageResult<()> {
+        // todo: Should lock in smaller chunks to avoid long locks?
         let mut guard = self.indexing_queue.lock().map_err(|e| {
             StorageError::ServiceError(format!("Failed to lock indexing queue: {}", e))
         })?;
-        guard.push(point_id.clone());
+        guard.extend(point_ids);
         Ok(())
     }
 

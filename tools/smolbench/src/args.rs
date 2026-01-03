@@ -68,6 +68,10 @@ pub struct Args {
     #[clap(long, default_value = "false")]
     pub skip_upsert: bool,
 
+    /// Skip waiting for indexing to complete after upserting points
+    #[clap(long, default_value = "false")]
+    pub skip_wait_index: bool,
+
     /// Check whether to read points after upsert
     #[clap(long, default_value = "false")]
     pub skip_read: bool,

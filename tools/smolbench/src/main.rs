@@ -8,7 +8,10 @@ pub mod types;
 pub mod utils;
 
 use crate::{
-    apis::{create_collection, delete_collection, exists_collection, read_point, upsert_points},
+    apis::{
+        create_collection, delete_collection, exists_collection, read_point, upsert_points,
+        wait_for_indexing,
+    },
     utils::log_latencies,
 };
 use args::parse_args;
@@ -89,6 +92,10 @@ async fn main() -> Result<(), SmolBenchError> {
         .await?;
 
         log_latencies(&batch_responses, args.p9, "server-side batched upsert").await?;
+
+        if !args.skip_wait_index {
+            wait_for_indexing(&args.uri, &args.collection_name).await?;
+        }
     }
 
     if !args.skip_read {
