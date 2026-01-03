@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::common::{
     benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
     create_tempdir, generate_points, generate_text_queries, CONCURRENCY, NUM_POINTS, NUM_QUERIES,
+    TEXT_FIELD,
 };
 use criterion::{Criterion, Throughput};
 use futures::stream::{self, StreamExt};
@@ -19,7 +20,7 @@ pub fn text_query(c: &mut Criterion) {
         let tempdir = create_tempdir();
         let channel_service = create_channel_service();
         let collection = rt.block_on(async {
-            let payload_index = BTreeMap::from_iter([("text".to_string(), IndexConfig::Text)]);
+            let payload_index = BTreeMap::from_iter([(TEXT_FIELD.to_string(), IndexConfig::Text)]);
             create_collection_with_points(
                 &tempdir,
                 channel_service,
@@ -44,7 +45,7 @@ pub fn text_query(c: &mut Criterion) {
         let tempdir = create_tempdir();
         let channel_service = create_channel_service();
         let collection = rt.block_on(async {
-            let payload_index = BTreeMap::from_iter([("text".to_string(), IndexConfig::Text)]);
+            let payload_index = BTreeMap::from_iter([(TEXT_FIELD.to_string(), IndexConfig::Text)]);
             create_collection_with_points(
                 &tempdir,
                 channel_service,

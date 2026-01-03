@@ -213,24 +213,24 @@ impl PayloadIndex {
     }
 
     pub fn insert_batch(&self, points: &[Point]) -> StorageResult<()> {
-        // Ensure point Ids are u64 type:
-        let point_ids = points.iter().map(|point| {
-            let PointId::Id(id) = point.id else {
-                return Err(StorageError::BadInput("Invalid PointId type: Only u64 point ID is supported for payload indexing (for now)".to_string()));
-            };
-            Ok(id)
-        }).collect::<Result<Vec<u64>, _>>()?;
-
         for (index_key, index_tree) in &self.indices {
-            let index_values = points
-                .iter()
-                .filter_map(|point| {
-                    // Skipping points that don't have a value for the index key
-                    point.payload.get(index_key).cloned()
-                })
-                .collect::<Vec<Value>>();
+            // Collect both point_ids and values together, only for points that have the index key
+            let mut point_ids = Vec::new();
+            let mut index_values = Vec::new();
 
-            index_tree.add_points(&point_ids, &index_values)?;
+            for point in points {
+                if let Some(value) = point.payload.get(index_key) {
+                    let PointId::Id(id) = point.id else {
+                        return Err(StorageError::BadInput("Invalid PointId type: Only u64 point ID is supported for payload indexing (for now)".to_string()));
+                    };
+                    point_ids.push(id);
+                    index_values.push(value.clone());
+                }
+            }
+
+            if !point_ids.is_empty() {
+                index_tree.add_points(&point_ids, &index_values)?;
+            }
         }
 
         Ok(())
