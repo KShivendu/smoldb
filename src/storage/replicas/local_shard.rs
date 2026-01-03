@@ -23,7 +23,7 @@ pub struct LocalShard {
     pub path: PathBuf,
     pub segments: HashMap<SegmentId, Arc<Segment>>,
     pub shard_state: ShardState,
-    _indexing_threads: HashMap<SegmentId, JoinHandle<()>>,
+    pub(crate) _indexing_threads: HashMap<SegmentId, JoinHandle<()>>,
     // ToDo: Wal
 }
 
@@ -182,5 +182,32 @@ impl LocalShard {
             .values()
             .filter_map(|segment| segment.indexing_queue_length().ok())
             .sum()
+    }
+}
+
+impl Drop for LocalShard {
+    fn drop(&mut self) {
+        // Signal all segments to shutdown their indexing loops
+        for segment in self.segments.values() {
+            segment.shutdown();
+        }
+
+        // Join all indexing threads to ensure they complete
+        // We need to take ownership of the threads, so we'll use a temporary HashMap
+        let mut threads = std::mem::take(&mut self._indexing_threads);
+        for (segment_id, handle) in threads.drain() {
+            if let Err(e) = handle.join() {
+                log::error!(
+                    "Failed to join indexing thread for segment {}: {:?}",
+                    segment_id,
+                    e
+                );
+            } else {
+                log::debug!(
+                    "Successfully joined indexing thread for segment {}",
+                    segment_id
+                );
+            }
+        }
     }
 }

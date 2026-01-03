@@ -10,7 +10,10 @@ use futures::StreamExt;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Instant,
 };
 
@@ -25,6 +28,7 @@ pub struct Segment {
     // ID tracker is valuable for building immutable segments, so same point can exist in multiple segments while only the latest version is visible
     pub payload_index: PayloadIndex,
     pub indexing_queue: Mutex<Vec<PointId>>,
+    pub shutdown_flag: Arc<AtomicBool>,
 }
 
 impl Segment {
@@ -53,6 +57,7 @@ impl Segment {
             db,
             payload_index,
             indexing_queue: Mutex::new(Vec::new()),
+            shutdown_flag: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -71,6 +76,7 @@ impl Segment {
             db,
             payload_index,
             indexing_queue: Mutex::new(Vec::new()),
+            shutdown_flag: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -204,6 +210,11 @@ impl Segment {
         Ok(queue.len())
     }
 
+    /// Signals the indexing loop to shutdown
+    pub fn shutdown(&self) {
+        self.shutdown_flag.store(true, Ordering::Release);
+    }
+
     /// Runs the background indexing loop, batching points efficiently.
     pub async fn run_indexing_loop(&self) -> StorageResult<()> {
         const INDEXING_THRESHOLD: usize = 100;
@@ -214,10 +225,21 @@ impl Segment {
         let mut last_index_time = Instant::now();
 
         loop {
+            // Check shutdown flag
+            if self.shutdown_flag.load(Ordering::Acquire) {
+                log::info!("Indexing loop shutting down");
+                break;
+            }
+
             // Fill the batch up to threshold or until interval passes.
             while point_ids.len() < INDEXING_THRESHOLD
                 && last_index_time.elapsed().as_millis() < INDEXING_INTERVAL_MS as u128
             {
+                // Check shutdown flag during batching
+                if self.shutdown_flag.load(Ordering::Acquire) {
+                    break;
+                }
+
                 let point_id_opt = {
                     let mut queue = self.indexing_queue.lock().map_err(|e| {
                         StorageError::ServiceError(format!(
@@ -247,6 +269,8 @@ impl Segment {
 
             last_index_time = Instant::now();
         }
+
+        Ok(())
     }
 
     // todo: Allow updating payload index schema on the fly
