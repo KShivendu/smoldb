@@ -26,6 +26,7 @@ pub fn text_query(c: &mut Criterion) {
                 channel_service,
                 Some(payload_index),
                 generate_points(NUM_POINTS),
+                false,
             )
             .await
         });
@@ -51,6 +52,7 @@ pub fn text_query(c: &mut Criterion) {
                 channel_service,
                 Some(payload_index),
                 generate_points(NUM_POINTS),
+                false,
             )
             .await
         });

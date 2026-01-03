@@ -126,21 +126,23 @@ pub async fn create_collection_with_points(
     channel_service: Arc<ChannelService>,
     payload_schema: Option<BTreeMap<String, IndexConfig>>,
     points: Vec<Point>,
+    wait_for_indexing: bool,
 ) -> Collection {
     let collection =
         create_collection("test_collection", tempdir, channel_service, payload_schema).await;
     collection.upsert_points(points, true).await.unwrap();
 
-    // Wait for indexing to complete
-    let start_time = std::time::Instant::now();
-    loop {
-        let pending_indexing_count = collection.get_pending_indexing_count(None).await;
-        if pending_indexing_count > 0 {
-            eprintln!("Waiting for indexing to complete... {pending_indexing_count} points pending, elapsed: {:.2?}", start_time.elapsed());
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        } else {
-            eprintln!("Indexing completed! Elapsed: {:.2?}", start_time.elapsed());
-            break;
+    if wait_for_indexing {
+        let start_time = std::time::Instant::now();
+        loop {
+            let pending_indexing_count = collection.get_pending_indexing_count(None).await;
+            if pending_indexing_count > 0 {
+                eprintln!("Waiting for indexing to complete... {pending_indexing_count} points pending, elapsed: {:.2?}", start_time.elapsed());
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            } else {
+                eprintln!("Indexing completed! Elapsed: {:.2?}", start_time.elapsed());
+                break;
+            }
         }
     }
 

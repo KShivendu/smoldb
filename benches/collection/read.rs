@@ -25,6 +25,7 @@ pub fn read(c: &mut Criterion) {
                 channel_service,
                 None,
                 generate_points(NUM_POINTS), // insert many points but query only for the last one
+                false,
             )
             .await
         });
@@ -49,6 +50,7 @@ pub fn read(c: &mut Criterion) {
                 channel_service,
                 None,
                 generate_points(NUM_POINTS),
+                false,
             )
             .await
         });
@@ -77,7 +79,7 @@ pub fn read(c: &mut Criterion) {
         let points = generate_points(NUM_POINTS);
         let all_point_ids = points.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
         let collection = rt.block_on(async {
-            create_collection_with_points(&tempdir, channel_service, None, points).await
+            create_collection_with_points(&tempdir, channel_service, None, points, false).await
         });
         let collection_arc = Arc::new(collection);
 
