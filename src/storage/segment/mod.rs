@@ -194,6 +194,14 @@ impl Segment {
         self.db.len()
     }
 
+    /// Get the current indexing queue length
+    pub fn indexing_queue_length(&self) -> StorageResult<usize> {
+        let queue = self.indexing_queue.lock().map_err(|e| {
+            StorageError::ServiceError(format!("Failed to lock indexing queue: {e}"))
+        })?;
+        Ok(queue.len())
+    }
+
     /// Runs the background indexing loop, batching points efficiently.
     pub async fn run_indexing_loop(&self) -> StorageResult<()> {
         const INDEXING_THRESHOLD: usize = 100;

@@ -173,4 +173,12 @@ impl LocalShard {
             0
         }
     }
+
+    /// Get the total count of pending points in the indexing queue across all segments
+    pub fn get_pending_indexing_count(&self) -> usize {
+        self.segments
+            .values()
+            .filter_map(|segment| segment.indexing_queue_length().ok())
+            .sum()
+    }
 }

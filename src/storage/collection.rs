@@ -355,11 +355,18 @@ pub struct CollectionInfo {
     pub config: CollectionConfig,
     pub shard_count: usize,
     pub segment_count: usize,
+    pub pending_indexing_count: usize,
 }
 
 impl CollectionInfo {
     pub async fn from(collection: &Collection) -> Self {
         let shard_holder = collection.replica_holder.read().await;
+        let pending_indexing_count: usize = shard_holder
+            .shards
+            .values()
+            .map(|replica_set| replica_set.local.get_pending_indexing_count())
+            .sum();
+
         CollectionInfo {
             id: collection.id.clone(),
             config: collection.config.clone(),
@@ -369,6 +376,7 @@ impl CollectionInfo {
                 .values()
                 .map(|shard| shard.local.segments.len())
                 .sum(),
+            pending_indexing_count,
         }
     }
 }
