@@ -2,7 +2,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::common::{
     benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
-    create_tempdir, generate_int_queries, generate_points, CONCURRENCY, NUM_POINTS, NUM_QUERIES,
+    create_tempdir, generate_int_queries, generate_points, BATCH_SIZE, CONCURRENCY, NUM_POINTS,
+    NUM_POINTS_INDEXING, NUM_QUERIES,
 };
 use criterion::Criterion;
 use futures::stream::{self, StreamExt};
@@ -26,7 +27,7 @@ pub fn int_query(c: &mut Criterion) {
                 channel_service,
                 Some(payload_index),
                 generate_points(NUM_POINTS),
-                false,
+                true, // Wait for indexing
             )
             .await
         });
@@ -53,10 +54,12 @@ pub fn int_query(c: &mut Criterion) {
                 channel_service,
                 Some(payload_index),
                 generate_points(NUM_POINTS),
-                false,
+                true, // Wait for indexing
             )
             .await
         });
+
+        // ToDo: Ensure that all points have been indexed before querying?
 
         let collection_arc = Arc::new(collection);
 

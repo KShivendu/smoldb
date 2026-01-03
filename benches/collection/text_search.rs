@@ -26,7 +26,7 @@ pub fn text_query(c: &mut Criterion) {
                 channel_service,
                 Some(payload_index),
                 generate_points(NUM_POINTS),
-                false,
+                true, // Wait for indexing to complete
             )
             .await
         });
@@ -52,10 +52,13 @@ pub fn text_query(c: &mut Criterion) {
                 channel_service,
                 Some(payload_index),
                 generate_points(NUM_POINTS),
-                false,
+                true, // Wait for indexing to complete
             )
             .await
         });
+
+        // ToDo: Ensure that all points have been indexed before querying?
+
         let collection_arc = Arc::new(collection);
 
         // For querying, batch size is always 1 (for now)
