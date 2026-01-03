@@ -23,9 +23,11 @@ pub fn int_indexing(c: &mut Criterion) {
         let (db, _tempdir) = create_temp_db();
         let index = IntegerIndex::open(&db, "price", false).unwrap();
 
-        b.iter(|| {
-            // todo: Add batching
-            index.add_points(&point_ids, &values).unwrap();
+        group.bench_function("batch", |b| {
+            b.iter(|| {
+                // todo: Add batching
+                index.add_points(&point_ids, &values).unwrap();
+            });
         });
     }
 
@@ -33,9 +35,10 @@ pub fn int_indexing(c: &mut Criterion) {
         let (db, _tempdir) = create_temp_db();
         let index_with_in_mem = IntegerIndex::open(&db, "price", true).unwrap();
 
-        b.iter(|| {
-            // todo: Add batching
-            index_with_in_mem.add_points(&point_ids, &values).unwrap();
+        group.bench_function("in_memory/batch", |b| {
+            b.iter(|| {
+                index_with_in_mem.add_points(&point_ids, &values).unwrap();
+            });
         });
     }
 }
