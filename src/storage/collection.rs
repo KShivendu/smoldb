@@ -397,7 +397,7 @@ impl CollectionInfo {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use crate::storage::index::filter::{FilterOperator, QueryFilter};
 
@@ -545,7 +545,15 @@ mod tests {
         assert_eq!(read_points[0], points[0]);
 
         // Wait for indexing to complete:
-        tokio::time::sleep(Duration::from_millis(1100)).await;
+        let start_time = Instant::now();
+        while start_time.elapsed() < Duration::from_secs(60) {
+            // Always sleep a little first because indexing queue might be picked up but not yet processed
+            tokio::time::sleep(Duration::from_millis(110)).await;
+            let pending_indexing_count = collection.get_pending_indexing_count(None).await;
+            if pending_indexing_count == 0 {
+                break;
+            }
+        }
 
         let query = Query {
             filter: QueryFilter::new("age", json!(25), FilterOperator::Gte),

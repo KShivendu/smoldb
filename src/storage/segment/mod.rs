@@ -207,7 +207,7 @@ impl Segment {
     /// Runs the background indexing loop, batching points efficiently.
     pub async fn run_indexing_loop(&self) -> StorageResult<()> {
         const INDEXING_THRESHOLD: usize = 100;
-        const INDEXING_INTERVAL_MS: u64 = 1000;
+        const INDEXING_INTERVAL_MS: u64 = 100;
         const SLEEP_MS: u64 = 10;
 
         let mut point_ids = Vec::with_capacity(INDEXING_THRESHOLD);
