@@ -26,8 +26,8 @@ pub fn int_query(c: &mut Criterion) {
                 &tempdir,
                 channel_service,
                 Some(payload_index),
-                generate_points(NUM_POINTS),
-                false, // Don't wait for indexing
+                generate_points(NUM_POINTS_INDEXING),
+                true, // Wait for indexing
             )
             .await
         });
@@ -53,8 +53,8 @@ pub fn int_query(c: &mut Criterion) {
                 &tempdir,
                 channel_service,
                 Some(payload_index),
-                generate_points(NUM_POINTS),
-                false, // Don't wait for indexing
+                generate_points(NUM_POINTS_INDEXING),
+                true, // Wait for indexing
             )
             .await
         });

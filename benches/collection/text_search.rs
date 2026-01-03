@@ -25,7 +25,7 @@ pub fn text_query(c: &mut Criterion) {
                 &tempdir,
                 channel_service,
                 Some(payload_index),
-                generate_points(NUM_POINTS),
+                generate_points(NUM_POINTS_INDEXING),
                 true, // Wait for indexing to complete
             )
             .await
@@ -51,7 +51,7 @@ pub fn text_query(c: &mut Criterion) {
                 &tempdir,
                 channel_service,
                 Some(payload_index),
-                generate_points(NUM_POINTS),
+                generate_points(NUM_POINTS_INDEXING),
                 true, // Wait for indexing to complete
             )
             .await
