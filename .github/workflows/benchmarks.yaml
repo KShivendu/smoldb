@@ -37,13 +37,15 @@ jobs:
         run: |
           # Background monitor loop (prints every 3s)
           monitor() {
+            CPU_CORES=$(nproc)
             while true; do
               MEM_USED=$(free -m | awk '/^Mem:/ {printf "%.1f", $3/1024}')
               MEM_TOTAL=$(free -m | awk '/^Mem:/ {printf "%.1f", $2/1024}')
               DISK_USED=$(df $PWD | awk 'NR==2 {printf "%.1f", $3/1024}')
               DISK_TOTAL=$(df $PWD | awk 'NR==2 {printf "%.1f", $2/1024}')
-              echo "memory: ${MEM_USED}GB / ${MEM_TOTAL}GB | disk: ${DISK_USED}GB / ${DISK_TOTAL}GB"
-              sleep 3
+              CPU_PCT=$(mpstat 1 1 | awk 'END {printf "%.0f", 100-$NF}')
+              echo "memory: ${MEM_USED}GB / ${MEM_TOTAL}GB | disk: ${DISK_USED}GB / ${DISK_TOTAL}GB | cpu: ${CPU_PCT}% (${CPU_CORES} cores)"
+              sleep 5
             done
           }
           monitor &
