@@ -20,7 +20,7 @@ use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
 pub const NUM_POINTS: u64 = 100_000;
-/// Number of points to index in the benchmarks (indexing is slow and seems so can't afford to index all 100k points)
+/// Number of points to index in the benchmarks (payload indices can grow beyong the GH CI RAM so can't afford to index all 100k points)
 pub const NUM_POINTS_INDEXING: u64 = 10_000;
 // Batch size for reading and writing (but not querying)
 pub const BATCH_SIZE: usize = 1000;
