@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use criterion::{Criterion, Throughput};
-use futures::{
-    executor::block_on,
-    stream::{self, StreamExt},
-};
+use futures::stream::{self, StreamExt};
 use smoldb::storage::segment::PointId;
 
 use crate::common::{
@@ -22,7 +19,7 @@ pub fn read(c: &mut Criterion) {
         let rt = create_runtime();
         let tempdir = create_tempdir();
         let channel_service = create_channel_service();
-        let collection = block_on(async {
+        let collection = rt.block_on(async {
             create_collection_with_points(
                 &tempdir,
                 channel_service,
@@ -46,7 +43,7 @@ pub fn read(c: &mut Criterion) {
 
         let tempdir = create_tempdir();
         let channel_service = create_channel_service();
-        let collection = block_on(async {
+        let collection = rt.block_on(async {
             create_collection_with_points(
                 &tempdir,
                 channel_service,
@@ -78,7 +75,7 @@ pub fn read(c: &mut Criterion) {
         let channel_service = create_channel_service();
         let points = generate_points(NUM_POINTS);
         let all_point_ids = points.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
-        let collection = block_on(async {
+        let collection = rt.block_on(async {
             create_collection_with_points(&tempdir, channel_service, None, points).await
         });
         let collection_arc = Arc::new(collection);

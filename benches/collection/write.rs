@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use criterion::{Criterion, Throughput};
-use futures::{
-    executor::block_on,
-    stream::{self, StreamExt},
-};
+use futures::stream::{self, StreamExt};
 
 use crate::common::{
     benchmark_group, create_channel_service, create_collection, create_runtime, create_tempdir,
@@ -21,7 +18,7 @@ pub fn write(c: &mut Criterion) {
         let rt = create_runtime();
         let tempdir = create_tempdir();
         let channel_service = create_channel_service();
-        let collection = block_on(async {
+        let collection = rt.block_on(async {
             create_collection("test_collection", &tempdir, channel_service, None).await
         });
         let single_point_batch = generate_points(1);
@@ -40,7 +37,7 @@ pub fn write(c: &mut Criterion) {
         let rt = create_runtime();
         let tempdir = create_tempdir();
         let channel_service = create_channel_service();
-        let collection = block_on(async {
+        let collection = rt.block_on(async {
             create_collection("test_collection", &tempdir, channel_service, None).await
         });
         let write_batch = generate_points(BATCH_SIZE as u64);
@@ -61,7 +58,7 @@ pub fn write(c: &mut Criterion) {
         let rt = create_runtime();
         let tempdir = create_tempdir();
         let channel_service = create_channel_service();
-        let collection = block_on(async {
+        let collection = rt.block_on(async {
             create_collection("test_collection", &tempdir, channel_service, None).await
         });
         let collection_arc = Arc::new(collection);
