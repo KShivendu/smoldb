@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::common::{
     benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
-    create_tempdir, generate_points, generate_text_queries, CONCURRENCY, NUM_POINTS_INDEXING, NUM_QUERIES,
-    TEXT_FIELD,
+    create_tempdir, generate_points, generate_text_queries, CONCURRENCY, NUM_POINTS_INDEXING,
+    NUM_QUERIES, TEXT_FIELD,
 };
 use criterion::{Criterion, Throughput};
 use futures::stream::{self, StreamExt};
