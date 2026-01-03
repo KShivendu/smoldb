@@ -59,6 +59,8 @@ default = []
 
 [profile.bench]
 debug = true
+strip = false
+lto = false
 
 [[bench]]
 name = "collection"

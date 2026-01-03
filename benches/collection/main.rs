@@ -1,20 +1,15 @@
 mod common;
+mod index;
 mod query;
 mod read;
 mod text_search;
 mod write;
 
-use criterion::{criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 criterion_group!(
-    benches,
-    write::single_write,
-    write::concurrent_write,
-    read::single_read,
-    read::concurrent_read,
-    query::single_query,
-    query::concurrent_query,
-    text_search::single_text_query,
-    text_search::concurrent_text_query
+    name = benches;
+    config = Criterion::default();
+    targets = write::write, read::read, query::int_query, text_search::text_query, index::int_indexing
 );
 criterion_main!(benches);

@@ -3,6 +3,10 @@ use std::{collections::BTreeMap, sync::Arc};
 use criterion::BenchmarkGroup;
 use criterion::Criterion;
 use serde_json::json;
+use serde_json::Value;
+use smoldb::api::points::Query;
+use smoldb::storage::index::filter::FilterOperator;
+use smoldb::storage::index::filter::QueryFilter;
 use smoldb::{
     channel_service::ChannelService,
     storage::{
@@ -13,6 +17,13 @@ use smoldb::{
 };
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
+
+pub const NUM_POINTS: u64 = 100_000;
+// Batch size for reading and writing (but not querying)
+pub const BATCH_SIZE: usize = 1000;
+// Number of queries to execute in total
+pub const NUM_QUERIES: usize = 1000;
+pub const CONCURRENCY: usize = 16;
 
 /// Creates a new multi-threaded tokio runtime for benchmarks
 pub fn create_runtime() -> Runtime {
@@ -64,6 +75,46 @@ pub fn generate_points(num_points: u64) -> Vec<Point> {
         .collect()
 }
 
+/// todo: not used in the benchmarks yet
+/// Generates a random point with a random ID and payload
+#[allow(dead_code)]
+pub fn generate_random_points(num_points: usize) -> Vec<Point> {
+    (0..num_points)
+        .map(|_| {
+            let id = rand::random_range(0..NUM_POINTS);
+            let payload = json!({ "msg": format!("Hello world {}", id), "price": id as i64 * 10 });
+            Point {
+                id: PointId::Id(id),
+                payload,
+            }
+        })
+        .collect::<Vec<_>>()
+}
+
+/// Generate queries for integer index
+pub fn generate_int_queries(num_queries: usize) -> Vec<Query> {
+    (0..num_queries)
+        .map(|i| Query {
+            filter: QueryFilter::new("price", Value::from(i * 10), FilterOperator::Gte),
+            limit: Some(10),
+        })
+        .collect::<Vec<_>>()
+}
+
+/// Generate queries for text index
+pub fn generate_text_queries(num_queries: usize) -> Vec<Query> {
+    (0..num_queries)
+        .map(|i| Query {
+            filter: QueryFilter::new(
+                "text",
+                Value::from(format!("Hello world {}", i)),
+                FilterOperator::Eq,
+            ),
+            limit: Some(10),
+        })
+        .collect::<Vec<_>>()
+}
+
 /// Creates a collection and initializes it with the given points
 pub async fn create_collection_with_points(
     tempdir: &TempDir,
@@ -83,8 +134,20 @@ pub fn benchmark_group<'a>(
     name: &str,
 ) -> BenchmarkGroup<'a, criterion::measurement::WallTime> {
     let mut group = c.benchmark_group(name);
-    group.sample_size(20);
+    group.sample_size(100); // Default is 100
     group.significance_level(0.05);
     group.noise_threshold(0.05);
     group
+}
+
+/// Creates a temporary database for benchmark storage
+pub fn create_temp_db() -> (sled::Db, TempDir) {
+    let tempdir = create_tempdir();
+    let db = sled::open(tempdir.path()).unwrap();
+    (db, tempdir)
+}
+
+/// Generates integer values for benchmark storage
+pub fn generate_integer_values(num_values: usize) -> Vec<i64> {
+    (0..num_values).map(|i| i as i64 * 10).collect::<Vec<_>>()
 }
