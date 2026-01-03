@@ -1,6 +1,10 @@
-use crate::common::{benchmark_group, create_temp_db, generate_integer_values, generate_text_values, BATCH_SIZE};
+use crate::common::{
+    benchmark_group, create_temp_db, generate_integer_values, generate_text_values, BATCH_SIZE,
+};
 use criterion::Criterion;
-use smoldb::storage::index::{integer::IntegerIndex, payload_index::FieldIndexTrait, text::TextIndex};
+use smoldb::storage::index::{
+    integer::IntegerIndex, payload_index::FieldIndexTrait, text::TextIndex,
+};
 
 // Todo: payload_index should have dedicated benches binary that's not part of collection benches?
 
@@ -20,10 +24,8 @@ pub fn int_indexing(c: &mut Criterion) {
         let index = IntegerIndex::open(&db, "price", false).unwrap();
 
         b.iter(|| {
-            // todo: Add batching when supported by integer index
-            for (point_id, value) in point_ids.iter().zip(values.iter()) {
-                index.add_point(*point_id, value).unwrap();
-            }
+            // todo: Add batching
+            index.add_points(&point_ids, &values).unwrap();
         });
     }
 
@@ -32,10 +34,8 @@ pub fn int_indexing(c: &mut Criterion) {
         let index_with_in_mem = IntegerIndex::open(&db, "price", true).unwrap();
 
         b.iter(|| {
-            // todo: Add batching when supported by integer index
-            for (point_id, value) in point_ids.iter().zip(values.iter()) {
-                index_with_in_mem.add_point(*point_id, value).unwrap();
-            }
+            // todo: Add batching
+            index_with_in_mem.add_points(&point_ids, &values).unwrap();
         });
     }
 }
@@ -56,10 +56,8 @@ pub fn text_indexing(c: &mut Criterion) {
         let index = TextIndex::open(&db, "description", false).unwrap();
 
         b.iter(|| {
-            // todo: Add batching when supported by integer index
-            for (point_id, value) in point_ids.iter().zip(values.iter()) {
-                index.add_point(*point_id, value).unwrap();
-            }
+            // todo: Add batching
+            index.add_points(&point_ids, &values).unwrap();
         });
     });
 
@@ -68,10 +66,8 @@ pub fn text_indexing(c: &mut Criterion) {
         let index_with_in_mem = TextIndex::open(&db, "description", true).unwrap();
 
         b.iter(|| {
-            // todo: Add batching when supported by integer index
-            for (point_id, value) in point_ids.iter().zip(values.iter()) {
-                index_with_in_mem.add_point(*point_id, value).unwrap();
-            }
+            // todo: Add batching
+            index_with_in_mem.add_points(&point_ids, &values).unwrap();
         });
     });
 }
