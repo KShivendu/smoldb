@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap, sync::RwLock};
 
 use bincode::{Decode, Encode};
+use rayon::prelude::*;
 use serde_json::Value;
 use sled::Db;
 
@@ -137,41 +138,61 @@ impl FieldIndexTrait<&str> for TextIndex {
             })
             .collect::<Result<Vec<&str>, StorageError>>()?;
 
-        // Now build a temporary index in memory to avoid multiple passes over the data:
-        let mut temp_index: HashMap<String, Vec<PostingListItem>> = HashMap::new();
-        for (point_id, text) in point_ids.iter().zip(texts.iter()) {
-            let terms = tokenize_and_count_frequencies(text);
-            for (term, term_freq) in terms {
-                temp_index
-                    .entry(term)
-                    .or_default()
-                    .push(PostingListItem::new(*point_id, term_freq));
-            }
-        }
+        // Build a temporary index in memory in parallel to avoid multiple passes over the data:
+        let temp_index: HashMap<String, Vec<PostingListItem>> = point_ids
+            .par_iter()
+            .zip(texts.par_iter())
+            .fold(
+                HashMap::<String, Vec<PostingListItem>>::new,
+                |mut acc, (&point_id, text)| {
+                    let terms = tokenize_and_count_frequencies(text);
+                    for (term, term_freq) in terms {
+                        acc.entry(term)
+                            .or_default()
+                            .push(PostingListItem::new(point_id, term_freq));
+                    }
+                    acc
+                },
+            )
+            .reduce(HashMap::<String, Vec<PostingListItem>>::new, |mut a, b| {
+                for (k, mut v) in b {
+                    a.entry(k).or_default().append(&mut v);
+                }
+                a
+            });
 
-        // Merge the temporary index into the main index:
-        for (term, mut new_posting_list) in temp_index {
-            let term_key = term.as_bytes();
-            let mut posting_list = if let Some(in_memory_index) = &self.in_memory_index {
-                in_memory_index.get_term_posting_list(&term)?
-            } else {
-                self.db
-                    .get(term_key)?
-                    .map(|data| PostingListItem::decode_list(&data))
-                    .transpose()?
-                    .unwrap_or_default()
-            };
-            posting_list.append(&mut new_posting_list);
-            posting_list.sort_by_key(|item| item.doc_id);
-            let encoded_posting_list = PostingListItem::encode_list(&posting_list)?;
-            self.db
-                .insert(term_key, encoded_posting_list)
-                .map_err(|e| {
+        // Clone the db tree for parallel access (sled trees are thread-safe)
+        let db = self.db.clone();
+        let in_memory_index = self.in_memory_index.as_ref();
+
+        // Merge the temporary index into the main index in parallel:
+        let results = temp_index
+            .into_par_iter()
+            .map(|(term, mut new_posting_list)| {
+                let term_key = term.as_bytes();
+                let mut posting_list = if let Some(in_memory_index) = in_memory_index {
+                    in_memory_index.get_term_posting_list(&term)?
+                } else {
+                    db.get(term_key)?
+                        .map(|data| PostingListItem::decode_list(&data))
+                        .transpose()?
+                        .unwrap_or_default()
+                };
+                posting_list.append(&mut new_posting_list);
+                posting_list.sort_by_key(|item| item.doc_id);
+                let encoded_posting_list = PostingListItem::encode_list(&posting_list)?;
+                db.insert(term_key, encoded_posting_list).map_err(|e| {
                     StorageError::ServiceError(format!(
                         "Failed to insert into text index tree: {e}"
                     ))
                 })?;
-            if let Some(in_memory_index) = &self.in_memory_index {
+                Ok((term, posting_list))
+            })
+            .collect::<Result<Vec<_>, StorageError>>()?;
+
+        // Update in-memory index sequentially (since it uses RwLock)
+        if let Some(in_memory_index) = &self.in_memory_index {
+            for (term, posting_list) in results {
                 // Also updates the stats in the in-memory index
                 in_memory_index.override_term_posting_list(&term, posting_list)?;
             }

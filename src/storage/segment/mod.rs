@@ -246,6 +246,8 @@ impl Segment {
                             "Failed to acquire lock on indexing queue: {e}"
                         ))
                     })?;
+                    // todo: Should pop from the front. I tried using VecDeque instead of Vec.
+                    // But it was slower. Need to investigate why or find alt.
                     queue.pop()
                 };
 

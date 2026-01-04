@@ -1,6 +1,11 @@
+use rayon::prelude::*;
 use serde_json::Value;
 use sled::Db;
-use std::{collections::BTreeMap, ops::Bound, sync::RwLock};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ops::Bound,
+    sync::RwLock,
+};
 
 use crate::error::{StorageError, StorageResult};
 use crate::storage::{
@@ -145,48 +150,70 @@ impl IntegerIndex {
     }
 
     pub fn upsert_batch(&self, point_ids: &[u64], values: &[i64]) -> StorageResult<()> {
-        let mut temp_index: BTreeMap<i64, Vec<u64>> = BTreeMap::new();
+        // Group point IDs by their integer values in parallel
+        let temp_index: HashMap<i64, Vec<u64>> = point_ids
+            .par_iter()
+            .zip(values.par_iter())
+            .fold(
+                HashMap::<i64, Vec<u64>>::new,
+                |mut acc, (&point_id, &value)| {
+                    acc.entry(value).or_default().push(point_id);
+                    acc
+                },
+            )
+            .reduce(HashMap::<i64, Vec<u64>>::new, |mut a, b| {
+                for (k, mut v) in b {
+                    a.entry(k).or_default().append(&mut v);
+                }
+                a
+            });
 
-        // Group point IDs by their integer values
-        for (&point_id, &value) in point_ids.iter().zip(values.iter()) {
-            temp_index.entry(value).or_default().push(point_id);
-        }
+        // Clone the tree for parallel access (sled trees are thread-safe)
+        let tree = self.tree.clone();
+        let in_memory = self.in_memory.as_ref();
 
-        // Now update the sled tree and in-memory index
-        for (value, mut new_point_ids) in temp_index {
-            let tree_key = encoded_integer_value(value);
+        // Update the sled tree and in-memory index in parallel
+        let results = temp_index
+            .into_par_iter()
+            .map(|(value, mut new_point_ids)| {
+                let tree_key = encoded_integer_value(value);
 
-            // Fetch existing point IDs for this value
-            let mut point_ids = if let Some(in_memory) = &self.in_memory {
-                in_memory.get_point_ids(value)?
-            } else {
-                self.tree
-                    .get(&tree_key)?
-                    .map(|d| decoded_point_ids(&d))
-                    .transpose()?
-                    .unwrap_or_default()
-            };
+                // Fetch existing point IDs for this value
+                let mut point_ids = if let Some(in_memory) = in_memory {
+                    in_memory.get_point_ids(value)?
+                } else {
+                    tree.get(&tree_key)?
+                        .map(|d| decoded_point_ids(&d))
+                        .transpose()?
+                        .unwrap_or_default()
+                };
 
-            // Merge new point IDs while maintaining sorted order
-            for point_id in new_point_ids.drain(..) {
-                match point_ids.binary_search(&point_id) {
-                    Ok(_) => {
-                        // It already exists, we don't need to do anything
-                    }
-                    Err(pos) => {
-                        point_ids.insert(pos, point_id);
+                // Merge new point IDs while maintaining sorted order
+                for point_id in new_point_ids.drain(..) {
+                    match point_ids.binary_search(&point_id) {
+                        Ok(_) => {
+                            // It already exists, we don't need to do anything
+                        }
+                        Err(pos) => {
+                            point_ids.insert(pos, point_id);
+                        }
                     }
                 }
-            }
 
-            // Store back
-            let encoded_ids = encoded_point_ids(&point_ids)?;
+                // Store back
+                let encoded_ids = encoded_point_ids(&point_ids)?;
 
-            self.tree.insert(&tree_key, encoded_ids).map_err(|e| {
-                StorageError::ServiceError(format!("Failed to insert into index tree: {e}"))
-            })?;
+                tree.insert(&tree_key, encoded_ids).map_err(|e| {
+                    StorageError::ServiceError(format!("Failed to insert into index tree: {e}"))
+                })?;
 
-            if let Some(in_memory) = &self.in_memory {
+                Ok((value, point_ids))
+            })
+            .collect::<Result<Vec<_>, StorageError>>()?;
+
+        // Update in-memory index sequentially (since it uses RwLock)
+        if let Some(in_memory) = &self.in_memory {
+            for (value, point_ids) in results {
                 in_memory.insert(value, point_ids)?;
             }
         }
