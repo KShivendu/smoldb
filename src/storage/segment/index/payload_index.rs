@@ -83,6 +83,14 @@ impl FieldIndexTrait<&Value> for FieldIndex {
         }
     }
 
+    fn count_points(&self) -> usize {
+        match self {
+            FieldIndex::Int(index) => index.count_points(),
+            FieldIndex::Text(index) => index.count_points(),
+            FieldIndex::Null => 0,
+        }
+    }
+
     fn open(_db: &Db, _name: &str, _use_in_memory: bool) -> StorageResult<Self> {
         Err(StorageError::BadInput(
             "Use specific index constructors like new_numeric or new_text".to_string(),
@@ -158,6 +166,14 @@ impl PayloadIndex {
 
     pub fn get_index_names(&self) -> Vec<&str> {
         self.indices.keys().map(|k| k.as_str()).collect()
+    }
+
+    pub fn count_indexed_points(&self) -> BTreeMap<String, usize> {
+        let mut indexed_values_count = BTreeMap::new();
+        for (index_key, index_tree) in &self.indices {
+            indexed_values_count.insert(index_key.clone(), index_tree.count_points());
+        }
+        indexed_values_count
     }
 
     pub fn add_index(
@@ -265,6 +281,8 @@ pub trait FieldIndexTrait<QueryValueType> {
     fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()>;
     /// Add points to the index (for bulk indexing)
     fn add_points(&self, point_ids: &[u64], values: &[Value]) -> StorageResult<()>;
+    /// Count the number of points in the index
+    fn count_points(&self) -> usize;
     /// Query the index
     fn query(
         &self,

@@ -17,7 +17,7 @@ use crate::{
 
 // Full text search index implementation with posting lists and BM25 ranking
 pub struct TextIndex {
-    db: sled::Tree,
+    tree: sled::Tree,
     in_memory_index: Option<InMemoryTextIndex>,
 }
 
@@ -33,7 +33,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         };
 
         Ok(Self {
-            db: tree,
+            tree,
             in_memory_index,
         })
     }
@@ -54,7 +54,7 @@ impl FieldIndexTrait<&str> for TextIndex {
             let mut term_posting_list = if let Some(in_memory_index) = &self.in_memory_index {
                 in_memory_index.get_term_posting_list(&term)?
             } else {
-                self.db
+                self.tree
                     .get(term_key)?
                     .map(|data| PostingListItem::decode_list(&data))
                     .transpose()?
@@ -68,7 +68,7 @@ impl FieldIndexTrait<&str> for TextIndex {
 
             // Store back
             let encoded_term_posting_list = PostingListItem::encode_list(&term_posting_list)?;
-            self.db
+            self.tree
                 .insert(term_key, encoded_term_posting_list)
                 .map_err(|e| {
                     StorageError::ServiceError(format!(
@@ -82,6 +82,11 @@ impl FieldIndexTrait<&str> for TextIndex {
         }
 
         Ok(())
+    }
+
+    fn count_points(&self) -> usize {
+        // Todo: Explicitly track the number of points in the index while upserting
+        self.tree.len()
     }
 
     fn query(
@@ -101,7 +106,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         let mut results = Vec::new();
         let query_key = value.as_bytes();
 
-        let Some(encoded_point_ids) = self.db.get(query_key)? else {
+        let Some(encoded_point_ids) = self.tree.get(query_key)? else {
             // No results found for this term
             return Ok(Vec::new());
         };
@@ -155,7 +160,7 @@ impl FieldIndexTrait<&str> for TextIndex {
             let mut posting_list = if let Some(in_memory_index) = &self.in_memory_index {
                 in_memory_index.get_term_posting_list(&term)?
             } else {
-                self.db
+                self.tree
                     .get(term_key)?
                     .map(|data| PostingListItem::decode_list(&data))
                     .transpose()?
@@ -164,7 +169,7 @@ impl FieldIndexTrait<&str> for TextIndex {
             posting_list.append(&mut new_posting_list);
             posting_list.sort_by_key(|item| item.doc_id);
             let encoded_posting_list = PostingListItem::encode_list(&posting_list)?;
-            self.db
+            self.tree
                 .insert(term_key, encoded_posting_list)
                 .map_err(|e| {
                     StorageError::ServiceError(format!(

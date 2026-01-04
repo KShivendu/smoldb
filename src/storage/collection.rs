@@ -372,6 +372,8 @@ pub struct CollectionInfo {
     pub shard_count: usize,
     pub segment_count: usize,
     pub pending_indexing_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexed_values_count: Option<BTreeMap<String, usize>>,
 }
 
 impl CollectionInfo {
@@ -380,6 +382,18 @@ impl CollectionInfo {
         let pending_indexing_count = collection
             .get_pending_indexing_count(Some(&shard_holder))
             .await;
+
+        let mut indexed_values_count = BTreeMap::new();
+
+        for shard in shard_holder.shards.values() {
+            for segment in shard.local.segments.values() {
+                let segment_indexed_values_count = segment.payload_index.count_indexed_points();
+                // Merge with existing count by adding values for each key
+                for (key, value) in segment_indexed_values_count {
+                    *indexed_values_count.entry(key).or_insert(0) += value;
+                }
+            }
+        }
 
         CollectionInfo {
             id: collection.id.clone(),
@@ -391,6 +405,7 @@ impl CollectionInfo {
                 .map(|shard| shard.local.segments.len())
                 .sum(),
             pending_indexing_count,
+            indexed_values_count: Some(indexed_values_count),
         }
     }
 }
