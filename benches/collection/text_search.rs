@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::common::{
     benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
-    create_tempdir, generate_points, generate_text_queries, CONCURRENCY, NUM_POINTS, NUM_QUERIES,
-    TEXT_FIELD,
+    create_tempdir, generate_points, generate_text_queries, CONCURRENCY, NUM_POINTS_INDEXING,
+    NUM_QUERIES, TEXT_FIELD,
 };
 use criterion::{Criterion, Throughput};
 use futures::stream::{self, StreamExt};
@@ -25,8 +25,8 @@ pub fn text_query(c: &mut Criterion) {
                 &tempdir,
                 channel_service,
                 Some(payload_index),
-                generate_points(NUM_POINTS),
-                false,
+                generate_points(NUM_POINTS_INDEXING),
+                true, // Wait for indexing to complete
             )
             .await
         });
@@ -51,11 +51,14 @@ pub fn text_query(c: &mut Criterion) {
                 &tempdir,
                 channel_service,
                 Some(payload_index),
-                generate_points(NUM_POINTS),
-                false,
+                generate_points(NUM_POINTS_INDEXING),
+                true, // Wait for indexing to complete
             )
             .await
         });
+
+        // ToDo: Ensure that all points have been indexed before querying?
+
         let collection_arc = Arc::new(collection);
 
         // For querying, batch size is always 1 (for now)

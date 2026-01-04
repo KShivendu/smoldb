@@ -20,6 +20,8 @@ use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
 pub const NUM_POINTS: u64 = 100_000;
+/// Number of points to index in the benchmarks (payload indices can grow beyong the GH CI RAM so can't afford to index all 100k points)
+pub const NUM_POINTS_INDEXING: u64 = 10_000;
 // Batch size for reading and writing (but not querying)
 pub const BATCH_SIZE: usize = 1000;
 // Number of queries to execute in total
@@ -155,7 +157,9 @@ pub fn benchmark_group<'a>(
     name: &str,
 ) -> BenchmarkGroup<'a, criterion::measurement::WallTime> {
     let mut group = c.benchmark_group(name);
-    group.sample_size(100); // Default is 100
+    group.sample_size(100); // default is 100
+    group.measurement_time(Duration::from_secs(5)); // default is 5s
+    group.warm_up_time(Duration::from_secs(3)); // default is 3s
     group.significance_level(0.05);
     group.noise_threshold(0.05);
     group
@@ -168,7 +172,16 @@ pub fn create_temp_db() -> (sled::Db, TempDir) {
     (db, tempdir)
 }
 
-/// Generates integer values for benchmark storage
-pub fn generate_integer_values(num_values: usize) -> Vec<i64> {
-    (0..num_values).map(|i| i as i64 * 10).collect::<Vec<_>>()
+/// Generates integer values for indexing benchmarks
+pub fn generate_integer_values(num_points: usize) -> Vec<Value> {
+    (0..num_points)
+        .map(|i| Value::Number((i as i64 * 10).into()))
+        .collect()
+}
+
+/// Generates text values for indexing benchmarks
+pub fn generate_text_values(num_points: usize) -> Vec<Value> {
+    (0..num_points)
+        .map(|i| Value::String(format!("foo bar {}", i)))
+        .collect()
 }

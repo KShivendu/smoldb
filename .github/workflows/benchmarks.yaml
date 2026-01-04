@@ -35,6 +35,22 @@ jobs:
         id: bench_results
         continue-on-error: true
         run: |
+          # Background monitor loop (prints every 3s)
+          monitor() {
+            CPU_CORES=$(nproc)
+            while true; do
+              MEM_USED=$(free -m | awk '/^Mem:/ {printf "%.1f", $3/1024}')
+              MEM_TOTAL=$(free -m | awk '/^Mem:/ {printf "%.1f", $2/1024}')
+              DISK_USED=$(df $PWD | awk 'NR==2 {printf "%.1f", $3/1024}')
+              DISK_TOTAL=$(df $PWD | awk 'NR==2 {printf "%.1f", $2/1024}')
+              CPU_PCT=$(mpstat 1 1 | awk 'END {printf "%.0f", 100-$NF}')
+              echo "memory: ${MEM_USED}GB / ${MEM_TOTAL}GB | disk: ${DISK_USED}GB / ${DISK_TOTAL}GB | cpu: ${CPU_PCT}% (${CPU_CORES} cores)"
+              sleep 5
+            done
+          }
+          monitor &
+          MONITOR_PID=$!
+
           # Ensure target/criterion directory exists
           mkdir -p target/criterion
 
@@ -94,6 +110,9 @@ jobs:
             echo "=== Threshold Check (5% significance) ===" >> bench_output.txt
             cargo bench --bench collection -- --baseline main --test 2>&1 | tee -a bench_output.txt || true
           fi
+
+          # Kill monitor
+          kill $MONITOR_PID || true
       - name: Upload benchmark reports
         if: always()
         uses: actions/upload-artifact@v4
