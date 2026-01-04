@@ -11,22 +11,19 @@ use sled::Db;
 use crate::{
     error::{StorageError, StorageResult},
     storage::{
-        index::{
-            filter::FilterOperator,
-            payload_index::FieldIndexTrait,
-            text::tokenizer::{tokenize, tokenize_and_count_frequencies},
-        },
+        index::{filter::FilterOperator, payload_index::FieldIndexTrait},
         segment::PointId,
     },
 };
 
-use bm25::Bm25Stats;
+use bm25::BM25Wrapper;
 use posting::{merge_sorted_posting_lists, InMemPostings, PostingListItem};
+use tokenizer::{tokenize, tokenize_and_count_frequencies};
 
 // Full text search index implementation with posting lists and BM25 ranking
 pub struct TextIndex {
     db: sled::Tree,
-    bm25_stats: RwLock<Bm25Stats>,
+    bm25_scorer: BM25Wrapper,
     in_memory_postings: Option<RwLock<InMemPostings>>,
 }
 
@@ -35,7 +32,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         let tree = db.open_tree(format!("{name}_text_index"))?;
         let stats_tree = db.open_tree(format!("{name}_text_stats"))?;
 
-        let bm25_stats = Bm25Stats::new(stats_tree)?;
+        let bm25_scorer = BM25Wrapper::open(stats_tree)?;
 
         let in_memory_postings = if use_in_memory {
             Some(RwLock::new(InMemPostings::new(&tree)?))
@@ -45,7 +42,7 @@ impl FieldIndexTrait<&str> for TextIndex {
 
         Ok(Self {
             db: tree,
-            bm25_stats: RwLock::new(bm25_stats),
+            bm25_scorer,
             in_memory_postings,
         })
     }
@@ -104,12 +101,9 @@ impl FieldIndexTrait<&str> for TextIndex {
         let doc_length: u64 = terms.values().sum();
 
         // Update BM25 stats (shared between disk and in-memory)
-        {
-            let mut stats = self.bm25_stats.write().map_err(|e| {
-                StorageError::ServiceError(format!("Failed to write to BM25 stats: {e}"))
-            })?;
-            stats.add_document(point_id, doc_length)?;
-        }
+        self.bm25_scorer
+            .add_document(point_id, doc_length)
+            .map_err(|e| StorageError::ServiceError(format!("Failed to update BM25 stats: {e}")))?;
 
         // Update in-memory postings cache if enabled
         if let Some(in_memory_postings) = &self.in_memory_postings {
@@ -163,18 +157,12 @@ impl FieldIndexTrait<&str> for TextIndex {
             return Ok(Vec::new());
         }
 
-        // Use shared BM25 stats for scoring (works for both disk and in-memory)
-        let stats = self
-            .bm25_stats
-            .read()
-            .map_err(|e| StorageError::ServiceError(format!("Failed to read BM25 stats: {e}")))?;
-
         let postings_refs: Vec<(usize, &[PostingListItem])> = token_postings
             .iter()
             .map(|(df, list)| (*df, list.as_slice()))
             .collect();
 
-        let docs_with_scores = stats.score_documents(&postings_refs);
+        let docs_with_scores = self.bm25_scorer.score_documents(&postings_refs)?;
 
         // Use top-k selection with BinaryHeap for efficiency
         let results = top_k_by_score(docs_with_scores, limit);
@@ -252,12 +240,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         }
 
         // Update BM25 stats (shared between disk and in-memory)
-        {
-            let mut stats = self.bm25_stats.write().map_err(|e| {
-                StorageError::ServiceError(format!("Failed to write to BM25 stats: {e}"))
-            })?;
-            stats.add_documents(&new_doc_lengths)?;
-        }
+        self.bm25_scorer.add_documents(&new_doc_lengths)?;
 
         // Update in-memory postings cache if enabled
         if let Some(in_memory_postings) = &self.in_memory_postings {
@@ -275,6 +258,8 @@ impl FieldIndexTrait<&str> for TextIndex {
 
 /// Efficiently get top-k documents by score using a min-heap
 fn top_k_by_score(scores: HashMap<u64, f64>, limit: Option<usize>) -> Vec<u64> {
+    // todo: Do this during posting list BM25 iteration?
+
     // Wrapper for BinaryHeap ordering (min-heap via Reverse)
     #[derive(PartialEq)]
     struct DocScore(u64, f64);
@@ -400,6 +385,7 @@ mod tests {
 
     #[test]
     fn test_text_index_only_disk() {
+        // todo: Use rstest to merge with previous test
         let tmp_path = tempfile::tempdir().unwrap();
         let db = sled::open(tmp_path.path()).unwrap();
         // Create with in_memory = false
