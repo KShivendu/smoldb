@@ -17,6 +17,7 @@ class BenchmarkResult:
     baseline_mean_ns: float | None = None
     baseline_stddev_ns: float | None = None
     change_percent: float | None = None
+    change_factor: float | None = None
     status: str = "no_baseline"
 
 
@@ -92,6 +93,7 @@ def find_benchmarks(criterion_dir: Path, baseline_exists: bool) -> list[Benchmar
                         / result.baseline_mean_ns
                         * 100
                     )
+                    result.change_factor = result.current_mean_ns / result.baseline_mean_ns
 
         results.append(result)
 
@@ -132,6 +134,7 @@ def generate_json_output(
             "current": {"mean_ns": r.current_mean_ns, "stddev_ns": r.current_stddev_ns},
             "baseline": None,
             "change_percent": r.change_percent,
+            "change_factor": r.change_factor,
             "status": r.status,
         }
         if r.baseline_mean_ns is not None:
@@ -195,9 +198,9 @@ def generate_markdown(
             curr_disp = format_time(r.current_mean_ns)
 
             if r.change_percent >= 0:
-                change_disp = f"+{r.change_percent:.2f}%"
+                change_disp = f"+{r.change_percent:.2f}% ({r.change_factor:.2f}x)"
             else:
-                change_disp = f"{r.change_percent:.2f}%"
+                change_disp = f"{r.change_percent:.2f}% ({r.change_factor:.2f}x)"
 
             status_map = {
                 "regressed": "🔴 regressed",
