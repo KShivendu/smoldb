@@ -72,7 +72,7 @@ impl Bm25Stats {
 
         // Persist total_doc_length
         let encoded_total =
-            bincode::encode_to_vec(&self.total_doc_length, bincode::config::standard()).map_err(
+            bincode::encode_to_vec(self.total_doc_length, bincode::config::standard()).map_err(
                 |e| StorageError::CodecError(format!("Failed to encode total_doc_length: {e}")),
             )?;
         self.stats_tree
