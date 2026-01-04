@@ -620,8 +620,8 @@ mod tests {
     #[test]
     fn test_tokenizer() {
         assert_eq!(
-            tokenize("Hello, world! 123. a1b2c3. 123-456-7890"),
-            ["hello", "world", "123", "a1b2c3", "123-456-7890"]
+            tokenize("Hello, world! 123. a1b2c3 hello 123-456-7890"),
+            ["hello", "world", "123", "a1b2c3", "hello", "123-456-7890"]
         );
 
         let freq = tokenize_and_count_frequencies("Hello, world! 123. hello a1b2c3. 123-456-7890");
@@ -634,11 +634,6 @@ mod tests {
 
     #[test]
     fn test_bm25() {
-        let tmp_path = tempfile::tempdir().unwrap();
-        let db = sled::open(tmp_path.path()).unwrap();
-        let index = TextIndex::open(&db, "content", true).unwrap();
-
-        // Store points as (point_id, text) for initial insertions
         let docs = [
             "The quick brown fox jumps over the lazy dog",
             "The quick brown fox",
@@ -646,85 +641,63 @@ mod tests {
             "A fast brown fox leaps over a sleepy dog",
             "the the",
         ];
+
+        // Test single insert
+        let tmp_path = tempfile::tempdir().unwrap();
+        let db = sled::open(tmp_path.path()).unwrap();
+        let single_index = TextIndex::open(&db, "content", true).unwrap();
 
         for (id, doc) in docs.iter().enumerate() {
-            index
-                .add_point((id) as u64, &Value::String((*doc).to_string()))
-                .unwrap();
-        }
-
-        // Query for "quick fox"
-        let results = index.query("quick fox", &FilterOperator::Eq, None).unwrap();
-
-        // This order happens because:
-        // 1: has both terms, so highest score and is shorter
-        // 0: has both terms but is longer
-        // 3: has "fox" only
-        let expected_ids: Vec<PointId> = vec![PointId::Id(1), PointId::Id(0), PointId::Id(3)];
-        assert_eq!(
-            results, expected_ids,
-            "BM25 query results do not match expected"
-        );
-
-        let results = index.query("the", &FilterOperator::Eq, None).unwrap();
-        let expected_ids: Vec<PointId> = vec![
-            PointId::Id(4), // has "the" twice and shorter
-            PointId::Id(0), // has "the" twice
-            PointId::Id(1), // has "the" once
-        ];
-        assert_eq!(
-            results, expected_ids,
-            "BM25 query results for common term do not match expected"
-        );
-    }
-
-    #[test]
-    fn test_bm25_batch_insert() {
-        let tmp_path = tempfile::tempdir().unwrap();
-        let db = sled::open(tmp_path.path()).unwrap();
-        let index = TextIndex::open(&db, "content", true).unwrap();
-
-        let docs = [
-            "The quick brown fox jumps over the lazy dog",
-            "The quick brown fox",
-            "Lazy dog sleeps all day",
-            "A fast brown fox leaps over a sleepy dog",
-            "the the",
-        ];
-
-        let point_ids: Vec<u64> = (0..docs.len() as u64).collect();
-        let values: Vec<Value> = docs.iter().map(|s| Value::String(s.to_string())).collect();
-
-        index.add_points(&point_ids, &values).unwrap();
-
-        // Same assertions as single insert
-        let results = index.query("quick fox", &FilterOperator::Eq, None).unwrap();
-        let expected_ids: Vec<PointId> = vec![PointId::Id(1), PointId::Id(0), PointId::Id(3)];
-        assert_eq!(results, expected_ids, "Batch insert BM25 results mismatch");
-    }
-
-    #[test]
-    fn test_top_k() {
-        let tmp_path = tempfile::tempdir().unwrap();
-        let db = sled::open(tmp_path.path()).unwrap();
-        let index = TextIndex::open(&db, "content", true).unwrap();
-
-        let docs = [
-            "The quick brown fox jumps over the lazy dog",
-            "The quick brown fox",
-            "Lazy dog sleeps all day",
-            "A fast brown fox leaps over a sleepy dog",
-            "the the",
-        ];
-
-        for (id, doc) in docs.iter().enumerate() {
-            index
+            single_index
                 .add_point(id as u64, &Value::String((*doc).to_string()))
                 .unwrap();
         }
 
-        // Test limit
-        let results = index
+        // Test batch insert produces same results
+        let tmp_path_batch = tempfile::tempdir().unwrap();
+        let db_batch = sled::open(tmp_path_batch.path()).unwrap();
+        let batch_index = TextIndex::open(&db_batch, "content", true).unwrap();
+
+        let point_ids: Vec<u64> = (0..docs.len() as u64).collect();
+        let values: Vec<Value> = docs.iter().map(|s| Value::String(s.to_string())).collect();
+        batch_index.add_points(&point_ids, &values).unwrap();
+
+        // Query for "quick fox" - verify both methods produce same results
+        // Expected order:
+        // 1: has both terms, so highest score and is shorter
+        // 0: has both terms but is longer
+        // 3: has "fox" only
+        let expected_quick_fox: Vec<PointId> = vec![PointId::Id(1), PointId::Id(0), PointId::Id(3)];
+
+        let single_results = single_index
+            .query("quick fox", &FilterOperator::Eq, None)
+            .unwrap();
+        let batch_results = batch_index
+            .query("quick fox", &FilterOperator::Eq, None)
+            .unwrap();
+
+        assert_eq!(
+            single_results, expected_quick_fox,
+            "Single insert query mismatch"
+        );
+        assert_eq!(
+            batch_results, expected_quick_fox,
+            "Batch insert query mismatch"
+        );
+
+        // Query for common term "the"
+        let expected_the: Vec<PointId> = vec![
+            PointId::Id(4), // has "the" twice and shorter
+            PointId::Id(0), // has "the" twice
+            PointId::Id(1), // has "the" once
+        ];
+        let results = single_index
+            .query("the", &FilterOperator::Eq, None)
+            .unwrap();
+        assert_eq!(results, expected_the, "Common term query mismatch");
+
+        // Test limit (top-k)
+        let results = single_index
             .query("quick fox", &FilterOperator::Eq, Some(2))
             .unwrap();
         assert_eq!(results.len(), 2);
@@ -733,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn test_disk_only_query() {
+    fn test_bm25_only_disk() {
         let tmp_path = tempfile::tempdir().unwrap();
         let db = sled::open(tmp_path.path()).unwrap();
         // Create with in_memory = false
