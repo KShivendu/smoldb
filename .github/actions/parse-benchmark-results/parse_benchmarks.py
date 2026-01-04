@@ -12,6 +12,7 @@ from pathlib import Path
 @dataclass
 class BenchmarkResult:
     name: str
+    full_name: str
     current_mean_ns: float
     current_stddev_ns: float
     baseline_mean_ns: float | None = None
@@ -64,17 +65,20 @@ def find_benchmarks(criterion_dir: Path, baseline_exists: bool) -> list[Benchmar
         is_comparison = False
 
     for current_file in sorted(estimate_files):
-        # Extract benchmark name from path: criterion/<bench_name>/<variant>/<new|main>/estimates.json
+        # Extract benchmark name from path: criterion/<group>/<variant>/<new|main>/estimates.json
         parts = current_file.relative_to(criterion_dir).parts
-        if len(parts) < 3:
+        if len(parts) < 4:
             continue
-        bench_name = parts[0]
+        group_name = parts[0]
+        variant_name = parts[1]
+        bench_name = f"{group_name}/{variant_name}"
 
         current_data = parse_estimates_json(current_file)
         if not current_data:
             continue
 
         result = BenchmarkResult(
+            full_name="/".join(parts),
             name=bench_name,
             current_mean_ns=current_data[0],
             current_stddev_ns=current_data[1],
