@@ -7,6 +7,7 @@ use crate::{
     storage::index::payload_index::{IndexConfig, PayloadIndex},
 };
 use futures::StreamExt;
+use rayon::prelude::*;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -82,18 +83,45 @@ impl Segment {
 
     /// Insert a batch of points into the segment
     pub fn insert_points(&self, points: &[Point]) -> StorageResult<()> {
-        for point in points {
-            let key = point.id.encode()?;
-            let value = point.encode_payload()?;
-            self.db.insert(key, value).map_err(|e| {
-                StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
-            })?;
+        // Only parallelize encoding for larger batches where rayon overhead is worthwhile
+        // CBOR encoding is ~200-500ns per point, rayon overhead is ~100-500ns per task
+        const PARALLEL_THRESHOLD: usize = 500;
+
+        let mut point_ids = Vec::with_capacity(points.len());
+
+        if points.len() >= PARALLEL_THRESHOLD {
+            // Parallel encoding for large batches
+            let encoded: Vec<_> = points
+                .par_iter()
+                .map(|point| {
+                    let key = point.id.encode()?;
+                    let value = point.encode_payload()?;
+                    Ok((key, value, point.id.clone()))
+                })
+                .collect::<Result<Vec<_>, StorageError>>()?;
+
+            for (key, value, id) in encoded {
+                self.db.insert(key, value).map_err(|e| {
+                    StorageError::ServiceError(format!(
+                        "Failed to insert point into segment db: {e}"
+                    ))
+                })?;
+                point_ids.push(id);
+            }
+        } else {
+            // Sequential for small batches
+            for point in points {
+                let key = point.id.encode()?;
+                let value = point.encode_payload()?;
+                self.db.insert(key, value).map_err(|e| {
+                    StorageError::ServiceError(format!(
+                        "Failed to insert point into segment db: {e}"
+                    ))
+                })?;
+                point_ids.push(point.id.clone());
+            }
         }
 
-        let point_ids = points
-            .iter()
-            .map(|point| point.id.clone())
-            .collect::<Vec<_>>();
         self.queue_for_indexing(point_ids)?;
 
         self.db

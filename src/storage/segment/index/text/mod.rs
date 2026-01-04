@@ -5,6 +5,7 @@ mod tokenizer;
 use std::{cmp::Ordering, collections::BinaryHeap, sync::RwLock};
 
 use ahash::HashMap;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde_json::Value;
 use sled::Db;
 
@@ -185,17 +186,22 @@ impl FieldIndexTrait<&str> for TextIndex {
             })
             .collect::<Result<Vec<&str>, StorageError>>()?;
 
+        // Parallel tokenization: each document is tokenized independently
+        let tokenized: Vec<_> = texts
+            .par_iter()
+            .map(|text| tokenize_and_count_frequencies(text))
+            .collect();
+
         // Build temporary index in memory to batch all postings list updates
         let mut temp_index: HashMap<String, Vec<PostingListItem>> = HashMap::default();
         // Track document lengths for incremental BM25 stats updates
         let mut new_doc_lengths: HashMap<u64, u64> = HashMap::default();
 
-        for (point_id, text) in point_ids.iter().zip(texts.iter()) {
-            let terms = tokenize_and_count_frequencies(text);
-            let doc_length: u64 = terms.values().sum();
+        for (point_id, text_tokens) in point_ids.iter().zip(tokenized.into_iter()) {
+            let doc_length: u64 = text_tokens.values().sum();
             new_doc_lengths.insert(*point_id, doc_length);
 
-            for (term, term_freq) in terms {
+            for (term, term_freq) in text_tokens {
                 temp_index
                     .entry(term)
                     .or_default()

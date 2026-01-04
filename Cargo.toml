@@ -28,6 +28,7 @@ utoipa-swagger-ui = {version = "9.0.2", features = ["actix-web"]}
 
 # storage layer:
 hashring = "0.3.6"
+rayon = "1.10"
 sled = { version = "0.34.7", default-features = false }
 
 # cli, logging, runtime, and other utilities:
