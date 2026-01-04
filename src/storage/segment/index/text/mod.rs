@@ -16,14 +16,14 @@ use crate::{
     },
 };
 
-use bm25::BM25Wrapper;
+use bm25::BM25Scorer;
 use posting::{merge_sorted_posting_lists, InMemPostings, PostingListItem};
 use tokenizer::{tokenize, tokenize_and_count_frequencies};
 
 // Full text search index implementation with posting lists and BM25 ranking
 pub struct TextIndex {
     db: sled::Tree,
-    bm25_scorer: BM25Wrapper,
+    bm25_scorer: BM25Scorer,
     in_memory_postings: Option<RwLock<InMemPostings>>,
 }
 
@@ -32,7 +32,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         let tree = db.open_tree(format!("{name}_text_index"))?;
         let stats_tree = db.open_tree(format!("{name}_text_stats"))?;
 
-        let bm25_scorer = BM25Wrapper::open(stats_tree)?;
+        let bm25_scorer = BM25Scorer::open(stats_tree)?;
 
         let in_memory_postings = if use_in_memory {
             Some(RwLock::new(InMemPostings::new(&tree)?))
@@ -185,9 +185,9 @@ impl FieldIndexTrait<&str> for TextIndex {
             })
             .collect::<Result<Vec<&str>, StorageError>>()?;
 
-        // Build temporary index in memory to batch all operations
+        // Build temporary index in memory to batch all postings list updates
         let mut temp_index: HashMap<String, Vec<PostingListItem>> = HashMap::default();
-        // Track document lengths for incremental stats update
+        // Track document lengths for incremental BM25 stats updates
         let mut new_doc_lengths: HashMap<u64, u64> = HashMap::default();
 
         for (point_id, text) in point_ids.iter().zip(texts.iter()) {
@@ -207,7 +207,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         let mut all_updates: Vec<(String, Vec<PostingListItem>)> =
             Vec::with_capacity(temp_index.len());
 
-        // Merge temporary index into main index
+        // Merge temporary index into postings list index
         for (term, mut new_posting_list) in temp_index {
             let term_key = term.as_bytes();
             let mut posting_list = if let Some(in_memory_postings) = &self.in_memory_postings {
@@ -239,7 +239,7 @@ impl FieldIndexTrait<&str> for TextIndex {
             all_updates.push((term, posting_list));
         }
 
-        // Update BM25 stats (shared between disk and in-memory)
+        // Update BM25 stats with new document lengths
         self.bm25_scorer.add_documents(&new_doc_lengths)?;
 
         // Update in-memory postings cache if enabled

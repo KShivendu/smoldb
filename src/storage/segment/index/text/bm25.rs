@@ -13,12 +13,12 @@ const STATS_KEY: &[u8] = b"__bm25_stats__";
 const DEFAULT_K1: f64 = 1.2;
 const DEFAULT_B: f64 = 0.75;
 
-pub struct BM25Wrapper {
+pub struct BM25Scorer {
     pub stats_tree: sled::Tree,
     pub bm25_stats: RwLock<Bm25Stats>,
 }
 
-impl BM25Wrapper {
+impl BM25Scorer {
     /// Create a new BM25Scorer instance, loading existing stats from sled
     pub fn open(stats_tree: sled::Tree) -> StorageResult<Self> {
         // use serde_cbor to load the stats from the tree
