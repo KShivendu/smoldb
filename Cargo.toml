@@ -66,6 +66,10 @@ lto = false
 name = "collection"
 harness = false
 
+[[bench]]
+name = "index"
+harness = false
+
 [profile.perf] # for profiling
 inherits = "release"
 debug = 2

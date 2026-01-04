@@ -67,6 +67,7 @@ jobs:
               echo "Checking out base commit $BASE_SHA to generate baseline..."
               git checkout "$BASE_SHA"
               cargo bench --bench collection -- --save-baseline main || true
+              cargo bench --bench index -- --save-baseline main || true
 
               echo "Switching back to PR commit $PR_SHA..."
               git checkout "$PR_SHA"
@@ -83,6 +84,7 @@ jobs:
               echo "Previous commit detected: $PREV_SHA. Generating baseline from it..."
               git checkout "$PREV_SHA"
               cargo bench --bench collection -- --save-baseline main || true
+              cargo bench --bench index -- --save-baseline main || true
 
               echo "Switching back to current commit $CURRENT_SHA..."
               git checkout "$CURRENT_SHA"
@@ -95,12 +97,14 @@ jobs:
           if [ "$BASELINE_EXISTS" = "false" ]; then
             echo "⚠️ No baseline available. Running benchmarks and saving baseline for future runs..."
             cargo bench --bench collection -- --save-baseline main 2>&1 | tee bench_output.txt || true
+            cargo bench --bench index -- --save-baseline main 2>&1 | tee -a bench_output.txt || true
             echo "baseline_missing=true" >> $GITHUB_OUTPUT
             echo "exit_code=0" >> $GITHUB_OUTPUT
           else
             echo "📊 Running benchmarks with baseline comparison..."
             # Run with baseline comparison - Criterion will show differences
             cargo bench --bench collection -- --baseline main 2>&1 | tee bench_output.txt || true
+            cargo bench --bench index -- --baseline main 2>&1 | tee -a bench_output.txt || true
             BENCH_EXIT_CODE=${PIPESTATUS[0]}
             echo "exit_code=$BENCH_EXIT_CODE" >> $GITHUB_OUTPUT
             echo "baseline_missing=false" >> $GITHUB_OUTPUT
@@ -109,6 +113,7 @@ jobs:
             echo "" >> bench_output.txt
             echo "=== Threshold Check (5% significance) ===" >> bench_output.txt
             cargo bench --bench collection -- --baseline main --test 2>&1 | tee -a bench_output.txt || true
+            cargo bench --bench index -- --baseline main --test 2>&1 | tee -a bench_output.txt || true
           fi
 
           # Kill monitor
