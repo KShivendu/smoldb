@@ -1,0 +1,39 @@
+name: 'Parse Benchmark Results'
+description: 'Parses Criterion benchmark results from JSON and generates markdown summary'
+inputs:
+  baseline_exists:
+    description: 'Whether a baseline exists for comparison'
+    required: true
+  baseline_sha:
+    description: 'Baseline SHA (for display in summary)'
+    required: false
+  regression_threshold:
+    description: 'Percentage threshold for regression detection (default: 5)'
+    required: false
+    default: '5'
+  criterion_dir:
+    description: 'Path to Criterion output directory'
+    required: false
+    default: 'target/criterion'
+outputs:
+  summary_path:
+    description: 'Path to the generated summary markdown file'
+    value: benchmark_summary.md
+  has_regression:
+    description: 'Whether any benchmark showed significant regression'
+    value: ${{ steps.parse.outputs.has_regression }}
+  results_json:
+    description: 'Path to structured JSON results'
+    value: benchmark_results.json
+runs:
+  using: composite
+  steps:
+    - name: Parse benchmark results
+      id: parse
+      shell: bash
+      env:
+        INPUT_BASELINE_EXISTS: ${{ inputs.baseline_exists }}
+        INPUT_BASELINE_SHA: ${{ inputs.baseline_sha }}
+        INPUT_REGRESSION_THRESHOLD: ${{ inputs.regression_threshold }}
+        INPUT_CRITERION_DIR: ${{ inputs.criterion_dir }}
+      run: python3 ${{ github.action_path }}/parse_benchmarks.py

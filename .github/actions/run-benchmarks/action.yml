@@ -1,0 +1,81 @@
+name: 'Run Benchmarks'
+description: 'Runs cargo benchmarks with optional baseline comparison'
+inputs:
+  bench_name:
+    description: 'Name of the benchmark suite (e.g., "collection")'
+    required: true
+    default: 'collection'
+  baseline_name:
+    description: 'Name for the baseline (default: main)'
+    required: false
+    default: 'main'
+  baseline_sha:
+    description: 'SHA to use as baseline (if provided, will checkout and run baseline first)'
+    required: false
+  current_sha:
+    description: 'Current SHA to benchmark (defaults to HEAD)'
+    required: false
+outputs:
+  baseline_exists:
+    description: 'Whether a baseline was used for comparison'
+    value: ${{ steps.run.outputs.baseline_exists }}
+  exit_code:
+    description: 'Exit code from benchmark run'
+    value: ${{ steps.run.outputs.exit_code }}
+runs:
+  using: composite
+  steps:
+    - name: Run benchmarks
+      id: run
+      shell: bash
+      run: |
+        set -e
+
+        # Background resource monitor
+        monitor() {
+          CPU_CORES=$(nproc)
+          while true; do
+            MEM_USED=$(free -m | awk '/^Mem:/ {printf "%.1f", $3/1024}')
+            MEM_TOTAL=$(free -m | awk '/^Mem:/ {printf "%.1f", $2/1024}')
+            DISK_USED=$(df $PWD | awk 'NR==2 {printf "%.1f", $3/1024}')
+            DISK_TOTAL=$(df $PWD | awk 'NR==2 {printf "%.1f", $2/1024}')
+            CPU_PCT=$(mpstat 1 1 | awk 'END {printf "%.0f", 100-$NF}')
+            echo "memory: ${MEM_USED}GB / ${MEM_TOTAL}GB | disk: ${DISK_USED}GB / ${DISK_TOTAL}GB | cpu: ${CPU_PCT}% (${CPU_CORES} cores)"
+            sleep 5
+          done
+        }
+        monitor &
+        MONITOR_PID=$!
+        trap "kill $MONITOR_PID 2>/dev/null || true" EXIT
+
+        mkdir -p target/criterion
+
+        CURRENT_SHA="${{ inputs.current_sha }}"
+        CURRENT_SHA="${CURRENT_SHA:-$(git rev-parse HEAD)}"
+        BASELINE_SHA="${{ inputs.baseline_sha }}"
+
+        run_bench() {
+          cargo bench --bench "${{ inputs.bench_name }}" -- "$@" --nocapture
+        }
+
+        if [ -n "$BASELINE_SHA" ]; then
+          echo "📌 Generating baseline from $BASELINE_SHA..."
+          git checkout "$BASELINE_SHA"
+          run_bench --save-baseline "${{ inputs.baseline_name }}" || true
+
+          echo "📌 Switching to current commit $CURRENT_SHA..."
+          git checkout "$CURRENT_SHA"
+
+          echo "📊 Running benchmarks with baseline comparison..."
+          run_bench --baseline "${{ inputs.baseline_name }}" || true
+          BENCH_EXIT_CODE=$?
+
+          echo "baseline_exists=true" >> $GITHUB_OUTPUT
+          echo "exit_code=$BENCH_EXIT_CODE" >> $GITHUB_OUTPUT
+        else
+          echo "📌 No baseline SHA provided. Running benchmarks and saving as baseline..."
+          run_bench --save-baseline "${{ inputs.baseline_name }}" || true
+
+          echo "baseline_exists=false" >> $GITHUB_OUTPUT
+          echo "exit_code=0" >> $GITHUB_OUTPUT
+        fi
