@@ -1,198 +1,116 @@
-name: 'Parse and Report Benchmark Results'
+name: 'Parse Benchmark Results'
 description: 'Parses Criterion benchmark results and generates markdown summary'
 inputs:
-  event_name:
-    description: 'GitHub event name (pull_request or push)'
-    required: true
   baseline_exists:
     description: 'Whether a baseline exists for comparison'
     required: true
-  baseline_missing:
-    description: 'Whether baseline is missing (alternative to baseline_exists)'
+  baseline_sha:
+    description: 'Baseline SHA (for display in summary)'
     required: false
-    default: 'false'
-  base_sha:
-    description: 'Base SHA for PRs (for display in summary)'
-    required: false
-  exit_code:
-    description: 'Exit code from benchmark run'
-    required: false
-    default: '0'
 outputs:
   summary_path:
     description: 'Path to the generated summary markdown file'
-    value: ${{ steps.parse.outputs.summary_path }}
+    value: benchmark_summary.md
 runs:
   using: composite
   steps:
-    - name: Parse and report benchmark results
+    - name: Parse benchmark results
       id: parse
       shell: bash
       run: |
-        echo "## 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
+        SUMMARY_FILE="benchmark_summary.md"
+        echo "## 📊 Benchmark Results" > "$SUMMARY_FILE"
+        echo "" >> "$SUMMARY_FILE"
 
-        # Determine if baseline exists
-        if [ "${{ inputs.baseline_missing }}" == "true" ] || [ "${{ inputs.baseline_exists }}" == "false" ]; then
-          BASELINE_MISSING=true
-        else
-          BASELINE_MISSING=false
-        fi
+        BASELINE_EXISTS="${{ inputs.baseline_exists }}"
+        BASELINE_SHA="${{ inputs.baseline_sha }}"
 
-        if [ "${{ inputs.event_name }}" == "pull_request" ]; then
-          if [ "$BASELINE_MISSING" == "true" ]; then
-            echo "⚠️ **No baseline found for comparison.** This might be the first benchmark-capable commit for this PR or its base." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          elif [ -f bench_output.txt ]; then
-            # Check for performance regressions
-            if grep -qi "regressed\|regression\|slower" bench_output.txt; then
-              echo "❌ **Performance regression detected!**" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            elif [ "${{ inputs.exit_code }}" == "0" ]; then
-              echo "✅ **All benchmarks passed threshold checks**" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
+        # Helper to format nanoseconds to human-readable
+        format_time() {
+          local ns=$1
+          if (( $(echo "$ns > 1000000" | bc -l) )); then
+            echo "$(echo "scale=2; $ns / 1000000" | bc) ms"
+          elif (( $(echo "$ns > 1000" | bc -l) )); then
+            echo "$(echo "scale=2; $ns / 1000" | bc) µs"
+          else
+            echo "$ns ns"
           fi
+        }
+
+        if [ "$BASELINE_EXISTS" != "true" ]; then
+          echo "⚠️ **No baseline available for comparison.** Results saved for future comparisons." >> "$SUMMARY_FILE"
+          echo "" >> "$SUMMARY_FILE"
+        elif [ -f bench_output.txt ]; then
+          if grep -qi "regressed\|regression\|slower" bench_output.txt; then
+            echo "❌ **Performance regression detected!**" >> "$SUMMARY_FILE"
+          else
+            echo "✅ **All benchmarks passed threshold checks**" >> "$SUMMARY_FILE"
+          fi
+          echo "" >> "$SUMMARY_FILE"
         fi
 
-        # For PRs with a baseline, build a structured comparison table using Criterion JSON
-        if [ -d target/criterion ] && [ "${{ inputs.event_name }}" == "pull_request" ] && [ "$BASELINE_MISSING" != "true" ]; then
-          echo "" >> $GITHUB_STEP_SUMMARY
-          BASE_SHA_DISPLAY="${{ inputs.base_sha }}"
-          [ -z "$BASE_SHA_DISPLAY" ] && BASE_SHA_DISPLAY="base commit"
-          echo "### Baseline Comparison against $BASE_SHA_DISPLAY" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Benchmark | Baseline Mean | Current Mean | Change | Significant (≥5%) |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|---------------|--------------|--------|--------------------|" >> $GITHUB_STEP_SUMMARY
+        # Comparison table (if baseline exists)
+        if [ -d target/criterion ] && [ "$BASELINE_EXISTS" = "true" ]; then
+          BASELINE_DISPLAY="${BASELINE_SHA:-baseline}"
+          echo "### Comparison against $BASELINE_DISPLAY" >> "$SUMMARY_FILE"
+          echo "" >> "$SUMMARY_FILE"
+          echo "| Benchmark | Baseline | Current | Change | Significant? |" >> "$SUMMARY_FILE"
+          echo "|-----------|----------|---------|--------|--------------|" >> "$SUMMARY_FILE"
 
-          # Criterion stores JSON estimates for baseline (e.g. main/) and current run (new/)
           find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null | sort | while read new_file; do
             base_file=$(echo "$new_file" | sed 's,/new/,/main/,')
-            if [ ! -f "$base_file" ]; then
-              continue
-            fi
+            [ ! -f "$base_file" ] && continue
 
             bench_name=$(echo "$new_file" | sed -n 's|.*/\([^/]*\)/[^/]*/new/estimates.json|\1|p')
-            new_mean_ns=$(jq -r '.mean.point_estimate' "$new_file" 2>/dev/null)
-            base_mean_ns=$(jq -r '.mean.point_estimate' "$base_file" 2>/dev/null)
+            new_ns=$(jq -r '.mean.point_estimate' "$new_file" 2>/dev/null)
+            base_ns=$(jq -r '.mean.point_estimate' "$base_file" 2>/dev/null)
 
-            if [ "$new_mean_ns" = "null" ] || [ -z "$new_mean_ns" ] || [ "$base_mean_ns" = "null" ] || [ -z "$base_mean_ns" ]; then
-              continue
-            fi
+            [ "$new_ns" = "null" ] || [ -z "$new_ns" ] || [ "$base_ns" = "null" ] || [ -z "$base_ns" ] && continue
 
-            # Format baseline mean into human-friendly units
-            if (( $(echo "$base_mean_ns > 1000000" | bc -l) )); then
-              base_mean_ms=$(echo "scale=2; $base_mean_ns / 1000000" | bc)
-              base_mean_disp="${base_mean_ms} ms"
-            elif (( $(echo "$base_mean_ns > 1000" | bc -l) )); then
-              base_mean_us=$(echo "scale=2; $base_mean_ns / 1000" | bc)
-              base_mean_disp="${base_mean_us} µs"
-            else
-              base_mean_disp="${base_mean_ns} ns"
-            fi
+            base_disp=$(format_time "$base_ns")
+            new_disp=$(format_time "$new_ns")
+            change_pct=$(echo "scale=2; ($new_ns - $base_ns) * 100 / $base_ns" | bc -l)
 
-            # Format current mean into human-friendly units
-            if (( $(echo "$new_mean_ns > 1000000" | bc -l) )); then
-              new_mean_ms=$(echo "scale=2; $new_mean_ns / 1000000" | bc)
-              new_mean_disp="${new_mean_ms} ms"
-            elif (( $(echo "$new_mean_ns > 1000" | bc -l) )); then
-              new_mean_us=$(echo "scale=2; $new_mean_ns / 1000" | bc)
-              new_mean_disp="${new_mean_us} µs"
-            else
-              new_mean_disp="${new_mean_ns} ns"
-            fi
-
-            change_pct=$(echo "scale=2; ($new_mean_ns - $base_mean_ns) * 100 / $base_mean_ns" | bc -l)
-
-            # Ensure a sign is always shown
             if echo "$change_pct" | grep -q '^-'; then
               signed_change="${change_pct}%"
             else
               signed_change="+${change_pct}%"
             fi
 
-            # Heuristic "significance": highlight changes with magnitude ≥ 5%
-            abs_change_pct=$(echo "if ($change_pct < 0) -$change_pct else $change_pct" | bc -l)
-            if (( $(echo "$abs_change_pct >= 5.0" | bc -l) )); then
-              significant="yes"
-            else
-              significant="no"
-            fi
+            abs_pct=$(echo "if ($change_pct < 0) -$change_pct else $change_pct" | bc -l)
+            significant=$([ $(echo "$abs_pct >= 5.0" | bc -l) -eq 1 ] && echo "⚠️ yes" || echo "no")
 
-            echo "| $bench_name | $base_mean_disp | $new_mean_disp | $signed_change | $significant |" >> $GITHUB_STEP_SUMMARY
+            echo "| $bench_name | $base_disp | $new_disp | $signed_change | $significant |" >> "$SUMMARY_FILE"
           done
         fi
 
-        # Extract JSON results for summary table
+        # Summary table (current results)
         if [ -d target/criterion ]; then
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Benchmark Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Benchmark | Mean Time |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|-----------|" >> $GITHUB_STEP_SUMMARY
+          echo "" >> "$SUMMARY_FILE"
+          echo "### Current Results" >> "$SUMMARY_FILE"
+          echo "" >> "$SUMMARY_FILE"
+          echo "| Benchmark | Mean Time |" >> "$SUMMARY_FILE"
+          echo "|-----------|-----------|" >> "$SUMMARY_FILE"
 
-          # Find all estimates.json files (prefer new/ over main/ for PRs)
-          if [ "${{ inputs.event_name }}" == "pull_request" ]; then
-            ESTIMATES_PATH="*/new/*"
-          else
+          # Prefer new/ (comparison run) over main/ (baseline only)
+          ESTIMATES_PATH="*/new/*"
+          if [ -z "$(find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null)" ]; then
             ESTIMATES_PATH="*/main/*"
           fi
 
           find target/criterion -name "estimates.json" -path "$ESTIMATES_PATH" 2>/dev/null | sort | while read file; do
-            BENCH_NAME=$(echo "$file" | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p')
-            MEAN_NS=$(jq -r '.mean.point_estimate' "$file" 2>/dev/null)
+            bench_name=$(echo "$file" | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p')
+            mean_ns=$(jq -r '.mean.point_estimate' "$file" 2>/dev/null)
 
-            if [ "$MEAN_NS" != "null" ] && [ -n "$MEAN_NS" ] && [ "$MEAN_NS" != "" ]; then
-              # Convert to appropriate unit
-              if (( $(echo "$MEAN_NS > 1000000" | bc -l) )); then
-                MEAN_MS=$(echo "scale=2; $MEAN_NS / 1000000" | bc)
-                echo "| $BENCH_NAME | ${MEAN_MS} ms |" >> $GITHUB_STEP_SUMMARY
-              elif (( $(echo "$MEAN_NS > 1000" | bc -l) )); then
-                MEAN_US=$(echo "scale=2; $MEAN_NS / 1000" | bc)
-                echo "| $BENCH_NAME | ${MEAN_US} µs |" >> $GITHUB_STEP_SUMMARY
-              else
-                echo "| $BENCH_NAME | ${MEAN_NS} ns |" >> $GITHUB_STEP_SUMMARY
-              fi
-            fi
+            [ "$mean_ns" = "null" ] || [ -z "$mean_ns" ] && continue
+
+            mean_disp=$(format_time "$mean_ns")
+            echo "| $bench_name | $mean_disp |" >> "$SUMMARY_FILE"
           done
 
-          # If no results found in new/, try main/ as fallback
-          if [ "${{ inputs.event_name }}" == "pull_request" ] && [ -z "$(find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null)" ]; then
-            find target/criterion -name "estimates.json" -path "*/main/*" 2>/dev/null | sort | while read file; do
-              BENCH_NAME=$(echo "$file" | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p')
-              MEAN_NS=$(jq -r '.mean.point_estimate' "$file" 2>/dev/null)
-
-              if [ "$MEAN_NS" != "null" ] && [ -n "$MEAN_NS" ] && [ "$MEAN_NS" != "" ]; then
-                if (( $(echo "$MEAN_NS > 1000000" | bc -l) )); then
-                  MEAN_MS=$(echo "scale=2; $MEAN_NS / 1000000" | bc)
-                  echo "| $BENCH_NAME | ${MEAN_MS} ms |" >> $GITHUB_STEP_SUMMARY
-                elif (( $(echo "$MEAN_NS > 1000" | bc -l) )); then
-                  MEAN_US=$(echo "scale=2; $MEAN_NS / 1000" | bc)
-                  echo "| $BENCH_NAME | ${MEAN_US} µs |" >> $GITHUB_STEP_SUMMARY
-                else
-                  echo "| $BENCH_NAME | ${MEAN_NS} ns |" >> $GITHUB_STEP_SUMMARY
-                fi
-              fi
-            done
-          fi
+          echo "" >> "$SUMMARY_FILE"
+          echo "📈 Full HTML reports available in workflow artifacts." >> "$SUMMARY_FILE"
         fi
 
-        # Add link to full report if available
-        if [ -d target/criterion ]; then
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📈 Full HTML reports are available in the workflow artifacts." >> $GITHUB_STEP_SUMMARY
-        fi
-
-        # Save summary to file for PR comment
-        if [ "${{ inputs.event_name }}" == "pull_request" ]; then
-          if [ -f "$GITHUB_STEP_SUMMARY" ]; then
-            cp $GITHUB_STEP_SUMMARY benchmark_summary.md || true
-            echo "summary_path=benchmark_summary.md" >> $GITHUB_OUTPUT
-          else
-            echo "## 📊 Benchmark Results" > benchmark_summary.md
-            echo "" >> benchmark_summary.md
-            echo "No benchmark results available." >> benchmark_summary.md
-            echo "summary_path=benchmark_summary.md" >> $GITHUB_OUTPUT
-          fi
-        fi
-
+        # Also write to GitHub step summary
+        cat "$SUMMARY_FILE" >> $GITHUB_STEP_SUMMARY

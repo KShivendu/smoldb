@@ -1,5 +1,5 @@
-name: 'Run Benchmarks with Baseline Comparison'
-description: 'Runs cargo benchmarks with baseline comparison for PRs and pushes'
+name: 'Run Benchmarks'
+description: 'Runs cargo benchmarks with optional baseline comparison'
 inputs:
   bench_name:
     description: 'Name of the benchmark suite (e.g., "collection")'
@@ -9,18 +9,15 @@ inputs:
     description: 'Name for the baseline (default: main)'
     required: false
     default: 'main'
-  event_name:
-    description: 'GitHub event name (pull_request or push)'
-    required: true
-  base_sha:
-    description: 'Base SHA for PRs (only needed for pull_request events)'
+  baseline_sha:
+    description: 'SHA to use as baseline (if provided, will checkout and run baseline first)'
     required: false
   current_sha:
-    description: 'Current SHA (defaults to HEAD)'
+    description: 'Current SHA to benchmark (defaults to HEAD)'
     required: false
 outputs:
   baseline_exists:
-    description: 'Whether a baseline was found/created'
+    description: 'Whether a baseline was used for comparison'
     value: ${{ steps.run.outputs.baseline_exists }}
   exit_code:
     description: 'Exit code from benchmark run'
@@ -28,11 +25,13 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Run benchmarks with baseline comparison
+    - name: Run benchmarks
       id: run
       shell: bash
       run: |
-        # Background monitor loop (prints every 3s)
+        set -e
+
+        # Background resource monitor
         monitor() {
           CPU_CORES=$(nproc)
           while true; do
@@ -47,117 +46,40 @@ runs:
         }
         monitor &
         MONITOR_PID=$!
+        trap "kill $MONITOR_PID 2>/dev/null || true" EXIT
 
-        # Ensure target/criterion directory exists
         mkdir -p target/criterion
 
-        # Helper function to build cargo bench command with proper argument handling
-        # Usage: run_cargo_bench "cargo-args" "bench-args" ["prepend-bench-args"] ["append-bench-args"]
-        # Handles the "--" separator automatically - if bench-args already contains standalone "--", it's preserved
-        # Always appends --nocapture unless explicitly disabled via skip_nocapture=true
-        run_cargo_bench() {
-          local cargo_args="$1"
-          local bench_args="$2"
-          local prepend_bench="$3"
-          local append_bench="$4"
-          local skip_nocapture="${5:-false}"
+        CURRENT_SHA="${{ inputs.current_sha }}"
+        CURRENT_SHA="${CURRENT_SHA:-$(git rev-parse HEAD)}"
+        BASELINE_SHA="${{ inputs.baseline_sha }}"
 
-          local cmd="cargo bench"
-
-          # Add cargo arguments if provided
-          [ -n "$cargo_args" ] && cmd="$cmd $cargo_args"
-
-          # Check if bench_args already contains standalone "--" separator (with word boundaries)
-          # Pattern: space--space, start--space, space--end, or just "--" alone
-          if echo "$bench_args" | grep -qE '(^|[[:space:]])--([[:space:]]|$)'; then
-            # Split on first standalone "--"
-            local before_sep="${bench_args%%--*}"
-            local after_sep="${bench_args#*--}"
-            # Remove the "--" from after_sep if it's at the start
-            after_sep=$(echo "$after_sep" | sed 's/^[[:space:]]*//')
-
-            before_sep=$(echo "$before_sep" | xargs)
-            after_sep=$(echo "$after_sep" | xargs)
-
-            # Reconstruct: prepend before_sep -- after_sep append --nocapture
-            local final_bench=""
-            [ -n "$prepend_bench" ] && final_bench="$prepend_bench "
-            [ -n "$before_sep" ] && final_bench="${final_bench}${before_sep} "
-            final_bench="${final_bench}--"
-            [ -n "$after_sep" ] && final_bench="${final_bench} $after_sep"
-            [ -n "$append_bench" ] && final_bench="${final_bench} $append_bench"
-            [ "$skip_nocapture" != "true" ] && final_bench="${final_bench} --nocapture"
-          else
-            # No standalone "--" exists, add it
-            local final_bench="--"
-            [ -n "$prepend_bench" ] && final_bench="$prepend_bench $final_bench"
-            [ -n "$bench_args" ] && final_bench="${final_bench} $bench_args"
-            [ -n "$append_bench" ] && final_bench="${final_bench} $append_bench"
-            [ "$skip_nocapture" != "true" ] && final_bench="${final_bench} --nocapture"
-          fi
-
-          echo "$cmd $final_bench"
+        run_bench() {
+          cargo bench --bench "${{ inputs.bench_name }}" -- "$@" --nocapture
         }
 
-        echo "event_name=${{ inputs.event_name }}"
+        if [ -n "$BASELINE_SHA" ]; then
+          echo "📌 Generating baseline from $BASELINE_SHA..."
+          git checkout "$BASELINE_SHA"
+          run_bench --save-baseline "${{ inputs.baseline_name }}" || true
 
-        BASELINE_EXISTS=false
+          echo "📌 Switching to current commit $CURRENT_SHA..."
+          git checkout "$CURRENT_SHA"
 
-        if [ "${{ inputs.event_name }}" == "pull_request" ]; then
-          echo "📌 PR detected. Using base commit as baseline..."
-          BASE_SHA="${{ inputs.base_sha }}"
-          PR_SHA="${PR_SHA:-${{ inputs.current_sha }}}"
-          PR_SHA="${PR_SHA:-$(git rev-parse HEAD)}"
-
-          if [ -n "$BASE_SHA" ]; then
-            echo "Checking out base commit $BASE_SHA to generate baseline..."
-            git checkout "$BASE_SHA"
-            $(run_cargo_bench "--bench ${{ inputs.bench_name }}" "--save-baseline ${{ inputs.baseline_name }}") || true
-
-            echo "Switching back to PR commit $PR_SHA..."
-            git checkout "$PR_SHA"
-            BASELINE_EXISTS=true
-          else
-            echo "⚠️ Could not determine base SHA, running without baseline."
-          fi
-        elif [ "${{ inputs.event_name }}" == "push" ]; then
-          echo "📌 Push detected. Using previous commit as baseline (if it exists)..."
-          CURRENT_SHA="${CURRENT_SHA:-${{ inputs.current_sha }}}"
-          CURRENT_SHA="${CURRENT_SHA:-$(git rev-parse HEAD)}"
-
-          if git rev-parse HEAD^ >/dev/null 2>&1; then
-            PREV_SHA=$(git rev-parse HEAD^)
-            echo "Previous commit detected: $PREV_SHA. Generating baseline from it..."
-            git checkout "$PREV_SHA"
-            $(run_cargo_bench "--bench ${{ inputs.bench_name }}" "--save-baseline ${{ inputs.baseline_name }}") || true
-
-            echo "Switching back to current commit $CURRENT_SHA..."
-            git checkout "$CURRENT_SHA"
-            BASELINE_EXISTS=true
-          else
-            echo "⚠️ No previous commit found (first commit on branch). Running without baseline."
-          fi
-        fi
-
-        if [ "$BASELINE_EXISTS" = "false" ]; then
-          echo "⚠️ No baseline available. Running benchmarks and saving baseline for future runs..."
-          $(run_cargo_bench "--bench ${{ inputs.bench_name }}" "--save-baseline ${{ inputs.baseline_name }}") 2>&1 | tee bench_output.txt || true
-          echo "baseline_exists=false" >> $GITHUB_OUTPUT
-          echo "exit_code=0" >> $GITHUB_OUTPUT
-        else
           echo "📊 Running benchmarks with baseline comparison..."
-          # Run with baseline comparison - Criterion will show differences
-          $(run_cargo_bench "--bench ${{ inputs.bench_name }}" "--baseline ${{ inputs.baseline_name }}") 2>&1 | tee bench_output.txt || true
+          run_bench --baseline "${{ inputs.baseline_name }}" 2>&1 | tee bench_output.txt || true
           BENCH_EXIT_CODE=${PIPESTATUS[0]}
-          echo "exit_code=$BENCH_EXIT_CODE" >> $GITHUB_OUTPUT
-          echo "baseline_exists=true" >> $GITHUB_OUTPUT
 
-          # Also run with --test to get threshold checking (fails on significant regressions)
           echo "" >> bench_output.txt
           echo "=== Threshold Check (5% significance) ===" >> bench_output.txt
-          $(run_cargo_bench "--bench ${{ inputs.bench_name }}" "--baseline ${{ inputs.baseline_name }} --test") 2>&1 | tee -a bench_output.txt || true
+          run_bench --baseline "${{ inputs.baseline_name }}" --test 2>&1 | tee -a bench_output.txt || true
+
+          echo "baseline_exists=true" >> $GITHUB_OUTPUT
+          echo "exit_code=$BENCH_EXIT_CODE" >> $GITHUB_OUTPUT
+        else
+          echo "📌 No baseline SHA provided. Running benchmarks and saving as baseline..."
+          run_bench --save-baseline "${{ inputs.baseline_name }}" 2>&1 | tee bench_output.txt || true
+
+          echo "baseline_exists=false" >> $GITHUB_OUTPUT
+          echo "exit_code=0" >> $GITHUB_OUTPUT
         fi
-
-        # Kill monitor
-        kill $MONITOR_PID || true
-

@@ -5,7 +5,6 @@ on:
   pull_request:
     branches: [ '**' ]
 
-
 jobs:
   benchmarks:
     name: Benchmarks
@@ -16,31 +15,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # We need full history to be able to checkout the base commit / previous commit
-          fetch-depth: 0
-      - name: Install Protoc # for protobuf
+          fetch-depth: 0  # Full history for baseline comparisons
+
+      - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: Swatinem/rust-cache@v2
+
       - name: Install jq and bc
+        run: sudo apt-get update && sudo apt-get install -y jq bc
+
+      # Determine baseline SHA based on event type
+      - name: Determine baseline commit
+        id: baseline
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq bc
-      - name: Run benchmarks with baseline comparison
-        # For PRs: compare against the base branch commit
-        # For pushes: compare against the previous commit on the same branch
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            # For PRs: compare against the base branch
+            BASELINE_SHA="${{ github.event.pull_request.base.sha }}"
+            echo "sha=$BASELINE_SHA" >> $GITHUB_OUTPUT
+            echo "📌 PR: Using base commit $BASELINE_SHA as baseline"
+          elif [ "${{ github.event_name }}" == "push" ]; then
+            # For pushes: compare against previous commit (if exists)
+            if git rev-parse HEAD^ >/dev/null 2>&1; then
+              BASELINE_SHA=$(git rev-parse HEAD^)
+              echo "sha=$BASELINE_SHA" >> $GITHUB_OUTPUT
+              echo "📌 Push: Using previous commit $BASELINE_SHA as baseline"
+            else
+              echo "sha=" >> $GITHUB_OUTPUT
+              echo "📌 Push: No previous commit (first commit on branch)"
+            fi
+          fi
+
+      - name: Run benchmarks
         id: bench_results
         continue-on-error: true
         uses: ./.github/actions/run-benchmarks
         with:
           bench_name: collection
-          baseline_name: main
-          event_name: ${{ github.event_name }}
-          base_sha: ${{ github.event.pull_request.base.sha }}
+          baseline_sha: ${{ steps.baseline.outputs.sha }}
           current_sha: ${{ github.sha }}
+
       - name: Upload benchmark reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -48,16 +65,15 @@ jobs:
           name: benchmark-reports
           path: target/criterion
           retention-days: 7
-      - name: Parse and report benchmark results
+
+      - name: Parse benchmark results
         if: always()
-        id: parse_results
         uses: ./.github/actions/parse-benchmark-results
         with:
-          event_name: ${{ github.event_name }}
           baseline_exists: ${{ steps.bench_results.outputs.baseline_exists }}
-          base_sha: ${{ github.event.pull_request.base.sha }}
-          exit_code: ${{ steps.bench_results.outputs.exit_code }}
-      - name: Post benchmark results as PR comment
+          baseline_sha: ${{ steps.baseline.outputs.sha }}
+
+      - name: Post PR comment
         if: always() && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@v4
         with:
