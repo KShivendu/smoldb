@@ -81,8 +81,8 @@ impl LocalShard {
 
             rt.block_on(async {
                 if let Err(e) = segment.run_indexing_loop().await {
-                    log::error!("Indexing loop error for segment {}: {}", segment_id, e); // for general logs
-                    eprintln!("Indexing loop error for segment {}: {}", segment_id, e);
+                    log::error!("Indexing loop crashed for segment {}: {}", segment_id, e); // for general logs
+                    eprintln!("Indexing loop crashed for segment {}: {}", segment_id, e);
                     // for benches with --nocapture
                 }
             });
