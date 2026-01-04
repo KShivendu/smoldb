@@ -25,9 +25,6 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install jq and bc
-        run: sudo apt-get update && sudo apt-get install -y jq bc
-
       # Determine baseline SHA based on event type
       - name: Determine baseline commit
         id: baseline
@@ -67,11 +64,20 @@ jobs:
           retention-days: 7
 
       - name: Parse benchmark results
+        id: parse_results
         if: always()
         uses: ./.github/actions/parse-benchmark-results
         with:
           baseline_exists: ${{ steps.bench_results.outputs.baseline_exists }}
           baseline_sha: ${{ steps.baseline.outputs.sha }}
+
+      - name: Upload JSON results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-json
+          path: benchmark_results.json
+          retention-days: 30
 
       - name: Post PR comment
         if: always() && github.event_name == 'pull_request'

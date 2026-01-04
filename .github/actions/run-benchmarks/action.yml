@@ -67,18 +67,14 @@ runs:
           git checkout "$CURRENT_SHA"
 
           echo "📊 Running benchmarks with baseline comparison..."
-          run_bench --baseline "${{ inputs.baseline_name }}" 2>&1 | tee bench_output.txt || true
-          BENCH_EXIT_CODE=${PIPESTATUS[0]}
-
-          echo "" >> bench_output.txt
-          echo "=== Threshold Check (5% significance) ===" >> bench_output.txt
-          run_bench --baseline "${{ inputs.baseline_name }}" --test 2>&1 | tee -a bench_output.txt || true
+          run_bench --baseline "${{ inputs.baseline_name }}" || true
+          BENCH_EXIT_CODE=$?
 
           echo "baseline_exists=true" >> $GITHUB_OUTPUT
           echo "exit_code=$BENCH_EXIT_CODE" >> $GITHUB_OUTPUT
         else
           echo "📌 No baseline SHA provided. Running benchmarks and saving as baseline..."
-          run_bench --save-baseline "${{ inputs.baseline_name }}" 2>&1 | tee bench_output.txt || true
+          run_bench --save-baseline "${{ inputs.baseline_name }}" || true
 
           echo "baseline_exists=false" >> $GITHUB_OUTPUT
           echo "exit_code=0" >> $GITHUB_OUTPUT

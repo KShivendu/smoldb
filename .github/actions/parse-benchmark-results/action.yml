@@ -1,5 +1,5 @@
 name: 'Parse Benchmark Results'
-description: 'Parses Criterion benchmark results and generates markdown summary'
+description: 'Parses Criterion benchmark results from JSON and generates markdown summary'
 inputs:
   baseline_exists:
     description: 'Whether a baseline exists for comparison'
@@ -7,110 +7,33 @@ inputs:
   baseline_sha:
     description: 'Baseline SHA (for display in summary)'
     required: false
+  regression_threshold:
+    description: 'Percentage threshold for regression detection (default: 5)'
+    required: false
+    default: '5'
+  criterion_dir:
+    description: 'Path to Criterion output directory'
+    required: false
+    default: 'target/criterion'
 outputs:
   summary_path:
     description: 'Path to the generated summary markdown file'
     value: benchmark_summary.md
+  has_regression:
+    description: 'Whether any benchmark showed significant regression'
+    value: ${{ steps.parse.outputs.has_regression }}
+  results_json:
+    description: 'Path to structured JSON results'
+    value: benchmark_results.json
 runs:
   using: composite
   steps:
     - name: Parse benchmark results
       id: parse
       shell: bash
-      run: |
-        SUMMARY_FILE="benchmark_summary.md"
-        echo "## 📊 Benchmark Results" > "$SUMMARY_FILE"
-        echo "" >> "$SUMMARY_FILE"
-
-        BASELINE_EXISTS="${{ inputs.baseline_exists }}"
-        BASELINE_SHA="${{ inputs.baseline_sha }}"
-
-        # Helper to format nanoseconds to human-readable
-        format_time() {
-          local ns=$1
-          if (( $(echo "$ns > 1000000" | bc -l) )); then
-            echo "$(echo "scale=2; $ns / 1000000" | bc) ms"
-          elif (( $(echo "$ns > 1000" | bc -l) )); then
-            echo "$(echo "scale=2; $ns / 1000" | bc) µs"
-          else
-            echo "$ns ns"
-          fi
-        }
-
-        if [ "$BASELINE_EXISTS" != "true" ]; then
-          echo "⚠️ **No baseline available for comparison.** Results saved for future comparisons." >> "$SUMMARY_FILE"
-          echo "" >> "$SUMMARY_FILE"
-        elif [ -f bench_output.txt ]; then
-          if grep -qi "regressed\|regression\|slower" bench_output.txt; then
-            echo "❌ **Performance regression detected!**" >> "$SUMMARY_FILE"
-          else
-            echo "✅ **All benchmarks passed threshold checks**" >> "$SUMMARY_FILE"
-          fi
-          echo "" >> "$SUMMARY_FILE"
-        fi
-
-        # Comparison table (if baseline exists)
-        if [ -d target/criterion ] && [ "$BASELINE_EXISTS" = "true" ]; then
-          BASELINE_DISPLAY="${BASELINE_SHA:-baseline}"
-          echo "### Comparison against $BASELINE_DISPLAY" >> "$SUMMARY_FILE"
-          echo "" >> "$SUMMARY_FILE"
-          echo "| Benchmark | Baseline | Current | Change | Significant? |" >> "$SUMMARY_FILE"
-          echo "|-----------|----------|---------|--------|--------------|" >> "$SUMMARY_FILE"
-
-          find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null | sort | while read new_file; do
-            base_file=$(echo "$new_file" | sed 's,/new/,/main/,')
-            [ ! -f "$base_file" ] && continue
-
-            bench_name=$(echo "$new_file" | sed -n 's|.*/\([^/]*\)/[^/]*/new/estimates.json|\1|p')
-            new_ns=$(jq -r '.mean.point_estimate' "$new_file" 2>/dev/null)
-            base_ns=$(jq -r '.mean.point_estimate' "$base_file" 2>/dev/null)
-
-            [ "$new_ns" = "null" ] || [ -z "$new_ns" ] || [ "$base_ns" = "null" ] || [ -z "$base_ns" ] && continue
-
-            base_disp=$(format_time "$base_ns")
-            new_disp=$(format_time "$new_ns")
-            change_pct=$(echo "scale=2; ($new_ns - $base_ns) * 100 / $base_ns" | bc -l)
-
-            if echo "$change_pct" | grep -q '^-'; then
-              signed_change="${change_pct}%"
-            else
-              signed_change="+${change_pct}%"
-            fi
-
-            abs_pct=$(echo "if ($change_pct < 0) -$change_pct else $change_pct" | bc -l)
-            significant=$([ $(echo "$abs_pct >= 5.0" | bc -l) -eq 1 ] && echo "⚠️ yes" || echo "no")
-
-            echo "| $bench_name | $base_disp | $new_disp | $signed_change | $significant |" >> "$SUMMARY_FILE"
-          done
-        fi
-
-        # Summary table (current results)
-        if [ -d target/criterion ]; then
-          echo "" >> "$SUMMARY_FILE"
-          echo "### Current Results" >> "$SUMMARY_FILE"
-          echo "" >> "$SUMMARY_FILE"
-          echo "| Benchmark | Mean Time |" >> "$SUMMARY_FILE"
-          echo "|-----------|-----------|" >> "$SUMMARY_FILE"
-
-          # Prefer new/ (comparison run) over main/ (baseline only)
-          ESTIMATES_PATH="*/new/*"
-          if [ -z "$(find target/criterion -name "estimates.json" -path "*/new/*" 2>/dev/null)" ]; then
-            ESTIMATES_PATH="*/main/*"
-          fi
-
-          find target/criterion -name "estimates.json" -path "$ESTIMATES_PATH" 2>/dev/null | sort | while read file; do
-            bench_name=$(echo "$file" | sed -n 's|.*/\([^/]*\)/[^/]*/estimates.json|\1|p')
-            mean_ns=$(jq -r '.mean.point_estimate' "$file" 2>/dev/null)
-
-            [ "$mean_ns" = "null" ] || [ -z "$mean_ns" ] && continue
-
-            mean_disp=$(format_time "$mean_ns")
-            echo "| $bench_name | $mean_disp |" >> "$SUMMARY_FILE"
-          done
-
-          echo "" >> "$SUMMARY_FILE"
-          echo "📈 Full HTML reports available in workflow artifacts." >> "$SUMMARY_FILE"
-        fi
-
-        # Also write to GitHub step summary
-        cat "$SUMMARY_FILE" >> $GITHUB_STEP_SUMMARY
+      env:
+        INPUT_BASELINE_EXISTS: ${{ inputs.baseline_exists }}
+        INPUT_BASELINE_SHA: ${{ inputs.baseline_sha }}
+        INPUT_REGRESSION_THRESHOLD: ${{ inputs.regression_threshold }}
+        INPUT_CRITERION_DIR: ${{ inputs.criterion_dir }}
+      run: python3 ${{ github.action_path }}/parse_benchmarks.py
