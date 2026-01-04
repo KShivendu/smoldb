@@ -10,6 +10,8 @@ use futures::StreamExt;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    sync::Mutex,
+    time::Instant,
 };
 
 // re-export point imports
@@ -22,6 +24,7 @@ pub struct Segment {
     // ToDo: ID tracker, vector storage?
     // ID tracker is valuable for building immutable segments, so same point can exist in multiple segments while only the latest version is visible
     pub payload_index: PayloadIndex,
+    pub indexing_queue: Mutex<Vec<PointId>>,
 }
 
 impl Segment {
@@ -49,6 +52,7 @@ impl Segment {
             path,
             db,
             payload_index,
+            indexing_queue: Mutex::new(Vec::new()),
         })
     }
 
@@ -66,6 +70,7 @@ impl Segment {
             path: path.to_owned(),
             db,
             payload_index,
+            indexing_queue: Mutex::new(Vec::new()),
         })
     }
 
@@ -77,15 +82,28 @@ impl Segment {
             self.db.insert(key, value).map_err(|e| {
                 StorageError::ServiceError(format!("Failed to insert point into segment db: {e}"))
             })?;
-
-            self.payload_index.upsert(point).map_err(|e| {
-                StorageError::ServiceError(format!("Failed to update payload index: {e}"))
-            })?;
         }
+
+        let point_ids = points
+            .iter()
+            .map(|point| point.id.clone())
+            .collect::<Vec<_>>();
+        self.queue_for_indexing(point_ids)?;
 
         self.db
             .flush()
             .map_err(|e| StorageError::ServiceError(format!("Failed to flush segment db: {e}")))?;
+        Ok(())
+    }
+
+    /// Send some points to be indexed to the indexing queue
+    /// It takes a lock, so it's better to call it for a batch of points at once
+    pub fn queue_for_indexing(&self, point_ids: Vec<PointId>) -> StorageResult<()> {
+        // todo: Should lock in smaller chunks to avoid long locks?
+        let mut guard = self.indexing_queue.lock().map_err(|e| {
+            StorageError::ServiceError(format!("Failed to lock indexing queue: {}", e))
+        })?;
+        guard.extend(point_ids);
         Ok(())
     }
 
@@ -176,6 +194,59 @@ impl Segment {
 
     pub fn count_points(&self) -> usize {
         self.db.len()
+    }
+
+    /// Get the current indexing queue length
+    pub fn indexing_queue_length(&self) -> StorageResult<usize> {
+        let queue = self.indexing_queue.lock().map_err(|e| {
+            StorageError::ServiceError(format!("Failed to lock indexing queue: {e}"))
+        })?;
+        Ok(queue.len())
+    }
+
+    /// Runs the background indexing loop, batching points efficiently.
+    pub async fn run_indexing_loop(&self) -> StorageResult<()> {
+        const INDEXING_THRESHOLD: usize = 100;
+        const INDEXING_INTERVAL_MS: u64 = 100;
+        const SLEEP_MS: u64 = 10;
+
+        let mut point_ids = Vec::with_capacity(INDEXING_THRESHOLD);
+        let mut last_index_time = Instant::now();
+
+        loop {
+            // Fill the batch up to threshold or until interval passes.
+            while point_ids.len() < INDEXING_THRESHOLD
+                && last_index_time.elapsed().as_millis() < INDEXING_INTERVAL_MS as u128
+            {
+                let point_id_opt = {
+                    let mut queue = self.indexing_queue.lock().map_err(|e| {
+                        StorageError::ServiceError(format!(
+                            "Failed to acquire lock on indexing queue: {e}"
+                        ))
+                    })?;
+                    queue.pop()
+                };
+
+                if let Some(point_id) = point_id_opt {
+                    point_ids.push(point_id);
+                } else {
+                    std::thread::sleep(std::time::Duration::from_millis(SLEEP_MS));
+                }
+            }
+
+            if !point_ids.is_empty() {
+                log::info!(
+                    "Indexing {} points. First point ID: {:?}",
+                    point_ids.len(),
+                    point_ids[0]
+                );
+                let points = self.get_points(Some(point_ids.clone())).await?;
+                self.payload_index.insert_batch(&points)?;
+                point_ids.clear();
+            }
+
+            last_index_time = Instant::now();
+        }
     }
 
     // todo: Allow updating payload index schema on the fly

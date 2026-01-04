@@ -11,6 +11,8 @@ use crate::{
 use std::{
     collections::{BTreeMap, HashMap},
     path::PathBuf,
+    sync::Arc,
+    thread::JoinHandle,
 };
 use tonic::async_trait;
 
@@ -19,8 +21,9 @@ const SEGMENTS_DIR: &str = "segments";
 pub struct LocalShard {
     pub id: ShardId,
     pub path: PathBuf,
-    pub segments: HashMap<SegmentId, Segment>,
+    pub segments: HashMap<SegmentId, Arc<Segment>>,
     pub shard_state: ShardState,
+    _indexing_threads: HashMap<SegmentId, JoinHandle<()>>,
     // ToDo: Wal
 }
 
@@ -68,6 +71,24 @@ impl ShardOperationTrait for LocalShard {
 }
 
 impl LocalShard {
+    /// Spawns a dedicated thread to run the indexing loop for a segment
+    fn spawn_indexing_thread(segment_id: SegmentId, segment: Arc<Segment>) -> JoinHandle<()> {
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create tokio runtime for indexing thread");
+
+            rt.block_on(async {
+                if let Err(e) = segment.run_indexing_loop().await {
+                    log::error!("Indexing loop error for segment {}: {}", segment_id, e); // for general logs
+                    eprintln!("Indexing loop error for segment {}: {}", segment_id, e);
+                    // for benches with --nocapture
+                }
+            });
+        })
+    }
+
     pub fn init(
         path: PathBuf,
         id: ShardId,
@@ -81,11 +102,22 @@ impl LocalShard {
         let segment0 = Segment::create(&segments_dir, payload_schema)
             .expect("Failed to create initial segment");
 
+        let segment0_arc = Arc::new(segment0);
+        let segment0_clone = segment0_arc.clone();
+        let indexing_thread = Self::spawn_indexing_thread(0, segment0_clone);
+
+        let mut segments = HashMap::new();
+        segments.insert(0, segment0_arc);
+
+        let mut indexing_threads = HashMap::new();
+        indexing_threads.insert(0, indexing_thread);
+
         LocalShard {
             id,
             path: path.to_owned(),
-            segments: HashMap::from_iter([(0, segment0)]),
+            segments,
             shard_state: ShardState::Active,
+            _indexing_threads: indexing_threads,
         }
     }
 
@@ -115,9 +147,16 @@ impl LocalShard {
             ))?;
 
         let mut segments = HashMap::new();
-        for (id, segment_path) in segment_paths {
+        let mut indexing_threads = HashMap::new();
+
+        for (segment_id, segment_path) in segment_paths {
             let segment = Segment::load(&segment_path)?;
-            segments.insert(id, segment);
+            let segment_arc = Arc::new(segment);
+            let segment_clone = segment_arc.clone();
+            let indexing_thread = Self::spawn_indexing_thread(segment_id, segment_clone);
+
+            indexing_threads.insert(segment_id, indexing_thread);
+            segments.insert(segment_id, segment_arc);
         }
 
         Ok(Self {
@@ -125,6 +164,7 @@ impl LocalShard {
             path: path.to_owned(),
             segments,
             shard_state: ShardState::Active, // ToDo: Load from disk?
+            _indexing_threads: indexing_threads,
         })
     }
 
@@ -134,5 +174,13 @@ impl LocalShard {
         } else {
             0
         }
+    }
+
+    /// Get the total count of pending points in the indexing queue across all segments
+    pub fn get_pending_indexing_count(&self) -> usize {
+        self.segments
+            .values()
+            .filter_map(|segment| segment.indexing_queue_length().ok())
+            .sum()
     }
 }

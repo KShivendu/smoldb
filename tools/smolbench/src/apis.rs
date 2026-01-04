@@ -7,6 +7,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+const INDEXING_WAIT_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
 pub async fn wait_consensus_ready(url: &Uri) -> Result<(), SmolBenchError> {
     let now = std::time::Instant::now();
@@ -117,7 +118,7 @@ pub async fn create_collection(
     Ok(success_res)
 }
 
-async fn get_collection(
+pub async fn get_collection(
     url: &Uri,
     collection_name: &str,
 ) -> Result<ApiResponse<Value>, SmolBenchError> {
@@ -329,4 +330,55 @@ pub async fn query_points(
         ApiResponse::Success(body) => Ok(body),
         ApiResponse::Error(res) => Err(SmolBenchError::QueryPointsError(res.error)),
     }
+}
+
+/// Wait for indexing to complete by polling the collection info API
+/// and checking that pending_indexing_count reaches 0
+pub async fn wait_for_indexing(url: &Uri, collection_name: &str) -> Result<(), SmolBenchError> {
+    println!("Waiting for indexing to complete for collection '{collection_name}'...");
+    let start_time = std::time::Instant::now();
+    let mut last_count = None;
+
+    while start_time.elapsed() < INDEXING_WAIT_TIMEOUT {
+        let collection_info = get_collection(url, collection_name).await?;
+
+        match collection_info {
+            ApiResponse::Success(info) => {
+                let pending_count = info
+                    .result
+                    .get("pending_indexing_count")
+                    .and_then(|v| v.as_u64())
+                    .ok_or(SmolBenchError::ServiceError(
+                        "Pending indexing count not found".to_string(),
+                    ))?;
+
+                if pending_count == 0 {
+                    if let Some(last) = last_count {
+                        println!("Indexing completed! (was {last} pending)");
+                    } else {
+                        println!("Indexing completed!");
+                    }
+                    return Ok(());
+                }
+
+                // Only print if the count changed
+                if last_count != Some(pending_count) {
+                    println!("Pending indexing: {pending_count} points");
+                    last_count = Some(pending_count);
+                }
+            }
+            ApiResponse::Error(err) => {
+                return Err(SmolBenchError::ServiceError(format!(
+                    "Failed to get collection info: {}",
+                    err.error
+                )));
+            }
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    Err(SmolBenchError::ServiceError(format!(
+        "Timed out waiting for indexing to complete after {INDEXING_WAIT_TIMEOUT:?}"
+    )))
 }

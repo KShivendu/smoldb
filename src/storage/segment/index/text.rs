@@ -120,6 +120,65 @@ impl FieldIndexTrait<&str> for TextIndex {
 
         Ok(results)
     }
+
+    fn add_points(&self, point_ids: &[u64], values: &[Value]) -> StorageResult<()> {
+        if point_ids.len() != values.len() {
+            return Err(StorageError::BadInput(
+                "Point IDs and values length mismatch".to_string(),
+            ));
+        }
+
+        let texts = values
+            .iter()
+            .map(|v| {
+                v.as_str().ok_or_else(|| {
+                    StorageError::BadInput(format!("Value being inserted is not a string: {v}"))
+                })
+            })
+            .collect::<Result<Vec<&str>, StorageError>>()?;
+
+        // Now build a temporary index in memory to avoid multiple passes over the data:
+        let mut temp_index: HashMap<String, Vec<PostingListItem>> = HashMap::new();
+        for (point_id, text) in point_ids.iter().zip(texts.iter()) {
+            let terms = tokenize_and_count_frequencies(text);
+            for (term, term_freq) in terms {
+                temp_index
+                    .entry(term)
+                    .or_default()
+                    .push(PostingListItem::new(*point_id, term_freq));
+            }
+        }
+
+        // Merge the temporary index into the main index:
+        for (term, mut new_posting_list) in temp_index {
+            let term_key = term.as_bytes();
+            let mut posting_list = if let Some(in_memory_index) = &self.in_memory_index {
+                in_memory_index.get_term_posting_list(&term)?
+            } else {
+                self.db
+                    .get(term_key)?
+                    .map(|data| PostingListItem::decode_list(&data))
+                    .transpose()?
+                    .unwrap_or_default()
+            };
+            posting_list.append(&mut new_posting_list);
+            posting_list.sort_by_key(|item| item.doc_id);
+            let encoded_posting_list = PostingListItem::encode_list(&posting_list)?;
+            self.db
+                .insert(term_key, encoded_posting_list)
+                .map_err(|e| {
+                    StorageError::ServiceError(format!(
+                        "Failed to insert into text index tree: {e}"
+                    ))
+                })?;
+            if let Some(in_memory_index) = &self.in_memory_index {
+                // Also updates the stats in the in-memory index
+                in_memory_index.override_term_posting_list(&term, posting_list)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // todo: Remove this layer and use the BM25Index directly

@@ -15,27 +15,31 @@ pub fn int_indexing(c: &mut Criterion) {
     let point_ids: Vec<u64> = (0..num_points).collect();
     let values = generate_integer_values(num_points as usize);
 
-    group.bench_function("batch", |b| {
+    {
         let (db, _tempdir) = create_temp_db();
         let index = IntegerIndex::open(&db, "price", false).unwrap();
 
-        b.iter(|| {
-            // todo: Add batching when supported by integer index
-            for (point_id, value) in point_ids.iter().zip(values.iter()) {
-                index.upsert(*point_id, *value).unwrap();
-            }
+        group.bench_function("batch", |b| {
+            b.iter(|| {
+                // todo: Add batching when supported by integer index
+                for (point_id, value) in point_ids.iter().zip(values.iter()) {
+                    index.upsert(*point_id, *value).unwrap();
+                }
+            });
         });
-    });
+    }
 
-    group.bench_function("in_memory/batch", |b| {
+    {
         let (db, _tempdir) = create_temp_db();
         let index_with_in_mem = IntegerIndex::open(&db, "price", true).unwrap();
 
-        b.iter(|| {
-            // todo: Add batching when supported by integer index
-            for (point_id, value) in point_ids.iter().zip(values.iter()) {
-                index_with_in_mem.upsert(*point_id, *value).unwrap();
-            }
+        group.bench_function("in_memory/batch", |b| {
+            b.iter(|| {
+                // todo: Add batching when supported by integer index
+                for (point_id, value) in point_ids.iter().zip(values.iter()) {
+                    index_with_in_mem.upsert(*point_id, *value).unwrap();
+                }
+            });
         });
-    });
+    }
 }

@@ -18,7 +18,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 use utoipa::ToSchema;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
@@ -316,6 +316,22 @@ impl Collection {
 
         Ok(all_points.into_values().collect())
     }
+
+    pub async fn get_pending_indexing_count(
+        &self,
+        shard_holder: Option<&RwLockReadGuard<'_, ReplicaHolder>>,
+    ) -> usize {
+        let shard_holder = match shard_holder {
+            Some(shard_holder) => shard_holder,
+            None => &self.replica_holder.read().await,
+        };
+
+        shard_holder
+            .shards
+            .values()
+            .map(|replica_set| replica_set.local.get_pending_indexing_count())
+            .sum()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
@@ -355,11 +371,16 @@ pub struct CollectionInfo {
     pub config: CollectionConfig,
     pub shard_count: usize,
     pub segment_count: usize,
+    pub pending_indexing_count: usize,
 }
 
 impl CollectionInfo {
     pub async fn from(collection: &Collection) -> Self {
         let shard_holder = collection.replica_holder.read().await;
+        let pending_indexing_count = collection
+            .get_pending_indexing_count(Some(&shard_holder))
+            .await;
+
         CollectionInfo {
             id: collection.id.clone(),
             config: collection.config.clone(),
@@ -369,12 +390,15 @@ impl CollectionInfo {
                 .values()
                 .map(|shard| shard.local.segments.len())
                 .sum(),
+            pending_indexing_count,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use crate::storage::index::filter::{FilterOperator, QueryFilter};
 
     use super::*;
@@ -519,6 +543,17 @@ mod tests {
 
         assert_eq!(read_points.len(), 1);
         assert_eq!(read_points[0], points[0]);
+
+        // Wait for indexing to complete:
+        let start_time = Instant::now();
+        while start_time.elapsed() < Duration::from_secs(60) {
+            // Always sleep a little first because indexing queue might be picked up but not yet processed
+            tokio::time::sleep(Duration::from_millis(110)).await;
+            let pending_indexing_count = collection.get_pending_indexing_count(None).await;
+            if pending_indexing_count == 0 {
+                break;
+            }
+        }
 
         let query = Query {
             filter: QueryFilter::new("age", json!(25), FilterOperator::Gte),

@@ -73,6 +73,16 @@ impl FieldIndexTrait<&Value> for FieldIndex {
         }
     }
 
+    fn add_points(&self, point_ids: &[u64], values: &[Value]) -> StorageResult<()> {
+        match self {
+            FieldIndex::Int(index) => index.add_points(point_ids, values),
+            FieldIndex::Text(index) => index.add_points(point_ids, values),
+            FieldIndex::Null => Err(StorageError::BadInput(
+                "Null index is not supported yet".to_string(),
+            )),
+        }
+    }
+
     fn open(_db: &Db, _name: &str, _use_in_memory: bool) -> StorageResult<Self> {
         Err(StorageError::BadInput(
             "Use specific index constructors like new_numeric or new_text".to_string(),
@@ -202,6 +212,30 @@ impl PayloadIndex {
         Ok(())
     }
 
+    pub fn insert_batch(&self, points: &[Point]) -> StorageResult<()> {
+        for (index_key, index_tree) in &self.indices {
+            // Collect both point_ids and values together, only for points that have the index key
+            let mut point_ids = Vec::new();
+            let mut index_values = Vec::new();
+
+            for point in points {
+                if let Some(value) = point.payload.get(index_key) {
+                    let PointId::Id(id) = point.id else {
+                        return Err(StorageError::BadInput("Invalid PointId type: Only u64 point ID is supported for payload indexing (for now)".to_string()));
+                    };
+                    point_ids.push(id);
+                    index_values.push(value.clone());
+                }
+            }
+
+            if !point_ids.is_empty() {
+                index_tree.add_points(&point_ids, &index_values)?;
+            }
+        }
+
+        Ok(())
+    }
+
     // Todo: Support deleting points from the index in case of update or deletes
 
     pub fn query(&self, query: Query) -> StorageResult<Vec<PointId>> {
@@ -218,7 +252,7 @@ impl PayloadIndex {
     }
 }
 
-pub trait FieldIndexTrait<DataType> {
+pub trait FieldIndexTrait<QueryValueType> {
     /// Create or load an index from the DB
     ///
     /// Note for `use_in_memory`:
@@ -229,10 +263,12 @@ pub trait FieldIndexTrait<DataType> {
         Self: Sized;
     /// Add a point to the index
     fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()>;
+    /// Add points to the index (for bulk indexing)
+    fn add_points(&self, point_ids: &[u64], values: &[Value]) -> StorageResult<()>;
     /// Query the index
     fn query(
         &self,
-        value: DataType,
+        value: QueryValueType,
         operation: &FilterOperator,
         limit: Option<usize>,
     ) -> StorageResult<Vec<PointId>>;
