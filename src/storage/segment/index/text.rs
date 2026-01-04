@@ -532,7 +532,7 @@ impl InMemBM25Index {
     }
 }
 
-#[derive(Encode, Decode, Clone)]
+#[derive(Encode, Decode, Clone, PartialEq, Debug)]
 struct PostingListItem {
     doc_id: u64,
     term_freq: u64,
@@ -731,5 +731,8 @@ mod tests {
         posting_list.push(PostingListItem::new(3, 1));
         let encoded = PostingListItem::encode_list(&posting_list).unwrap();
         assert_eq!(encoded, vec![3, 5, 8, 55, 3, 3, 1]); // first byte is the length of the list
+
+        let decoded = PostingListItem::decode_list(&encoded).unwrap();
+        assert_eq!(decoded, posting_list);
     }
 }
