@@ -16,7 +16,7 @@ use crate::{
 // Full text search index implementation with posting lists and BM25 ranking
 pub struct TextIndex {
     db: sled::Tree,
-    in_memory_index: Option<RwLock<BM25Index>>,
+    in_memory_index: Option<RwLock<InMemBM25Index>>,
 }
 
 impl FieldIndexTrait<&str> for TextIndex {
@@ -25,7 +25,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         let stats_tree = db.open_tree(format!("{name}_text_stats"))?;
 
         let in_memory_index = if use_in_memory {
-            Some(RwLock::new(BM25Index::new(&tree, &stats_tree)?))
+            Some(RwLock::new(InMemBM25Index::new(&tree, &stats_tree)?))
         } else {
             None
         };
@@ -350,7 +350,7 @@ fn top_k_by_score(scores: HashMap<u64, f64>, limit: Option<usize>) -> Vec<u64> {
     }
 }
 
-struct BM25Index {
+struct InMemBM25Index {
     postings: HashMap<String, Vec<PostingListItem>>,
     doc_lengths: HashMap<u64, usize>,
     total_doc_length: f64, // Sum of all document lengths for incremental avg calculation
@@ -359,7 +359,7 @@ struct BM25Index {
     b: f64,
 }
 
-impl BM25Index {
+impl InMemBM25Index {
     pub fn new(tree: &sled::Tree, _stats_tree: &sled::Tree) -> StorageResult<Self> {
         let mut postings: HashMap<String, Vec<PostingListItem>> = HashMap::default();
         for item in tree.iter() {
@@ -714,5 +714,22 @@ mod tests {
         assert_eq!(merged[2].term_freq, 5); // Should be updated value
         assert_eq!(merged[3].doc_id, 4);
         assert_eq!(merged[4].doc_id, 5);
+    }
+
+    #[test]
+    fn test_posting_list_encoding_size() {
+        let mut posting_list = vec![];
+
+        let encoded = PostingListItem::encode_list(&posting_list).unwrap();
+        assert_eq!(encoded, vec![0]);
+
+        posting_list.push(PostingListItem::new(5, 8));
+        let encoded = PostingListItem::encode_list(&posting_list).unwrap();
+        assert_eq!(encoded, vec![1, 5, 8]);
+
+        posting_list.push(PostingListItem::new(55, 3));
+        posting_list.push(PostingListItem::new(3, 1));
+        let encoded = PostingListItem::encode_list(&posting_list).unwrap();
+        assert_eq!(encoded, vec![3, 5, 8, 55, 3, 3, 1]); // first byte is the length of the list
     }
 }
