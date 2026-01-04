@@ -535,6 +535,7 @@ impl InMemBM25Index {
 #[derive(Encode, Decode, Clone, PartialEq, Debug)]
 struct PostingListItem {
     doc_id: u64,
+    /// Number of times the term appears in the document
     term_freq: u64,
 }
 
