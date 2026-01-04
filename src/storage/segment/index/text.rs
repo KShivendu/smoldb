@@ -1,5 +1,6 @@
-use std::{cmp::Ordering, collections::HashMap, sync::RwLock};
+use std::{cmp::Ordering, collections::BinaryHeap, sync::RwLock};
 
+use ahash::HashMap;
 use bincode::{Decode, Encode};
 use serde_json::Value;
 use sled::Db;
@@ -7,10 +8,7 @@ use sled::Db;
 use crate::{
     error::{StorageError, StorageResult},
     storage::{
-        index::{
-            filter::FilterOperator,
-            payload_index::{decoded_point_ids, FieldIndexTrait},
-        },
+        index::{filter::FilterOperator, payload_index::FieldIndexTrait},
         segment::PointId,
     },
 };
@@ -45,40 +43,49 @@ impl FieldIndexTrait<&str> for TextIndex {
 
         let terms = tokenize_and_count_frequencies(text);
 
-        // In this tree, the term becomes the key, and the point/doc ID is part of a list of values.
+        // Collect all updates first, then apply in batch
+        let mut updates: Vec<(String, Vec<PostingListItem>)> = Vec::with_capacity(terms.len());
 
-        for (term, term_freq) in terms {
+        for (term, term_freq) in &terms {
             let term_key = term.as_bytes();
 
-            // Fetch existing point IDs for this term
+            // Fetch existing posting list for this term
             let mut term_posting_list = if let Some(in_memory_index) = &self.in_memory_index {
-                in_memory_index.get_term_posting_list(&term)?
+                in_memory_index.get_term_posting_list(term)?
             } else {
                 self.db
                     .get(term_key)?
                     .map(|data| PostingListItem::decode_list(&data))
                     .transpose()?
-                    .unwrap_or_else(Vec::new)
+                    .unwrap_or_default()
             };
 
-            // It's a new document, not updating old ones yet
-            // FIXME: Should support updating old ones
-            term_posting_list.push(PostingListItem::new(point_id, term_freq));
-            term_posting_list.sort_by_key(|item| item.doc_id);
-
-            // Store back
-            let encoded_term_posting_list = PostingListItem::encode_list(&term_posting_list)?;
-            self.db
-                .insert(term_key, encoded_term_posting_list)
-                .map_err(|e| {
-                    StorageError::ServiceError(format!(
-                        "Failed to insert into text index tree: {e}"
-                    ))
-                })?;
-
-            if let Some(in_memory_index) = &self.in_memory_index {
-                in_memory_index.override_term_posting_list(&term, term_posting_list)?;
+            // Insert maintaining sorted order using binary search
+            let new_item = PostingListItem::new(point_id, *term_freq);
+            match term_posting_list.binary_search_by_key(&point_id, |item| item.doc_id) {
+                Ok(pos) => {
+                    // Update existing entry
+                    term_posting_list[pos] = new_item;
+                }
+                Err(pos) => {
+                    term_posting_list.insert(pos, new_item);
+                }
             }
+
+            // Store to disk
+            let encoded = PostingListItem::encode_list(&term_posting_list)?;
+            self.db.insert(term_key, encoded).map_err(|e| {
+                StorageError::ServiceError(format!("Failed to insert into text index tree: {e}"))
+            })?;
+
+            updates.push((term.clone(), term_posting_list));
+        }
+
+        // Batch update in-memory index with document stats
+        if let Some(in_memory_index) = &self.in_memory_index {
+            // Calculate document length (total term count)
+            let doc_length: u64 = terms.values().sum();
+            in_memory_index.add_document_batch(point_id, doc_length, updates)?;
         }
 
         Ok(())
@@ -87,7 +94,7 @@ impl FieldIndexTrait<&str> for TextIndex {
     fn query(
         &self,
         value: &str,
-        _operation: &FilterOperator, // todo: Remove operation for text index?
+        _operation: &FilterOperator,
         limit: Option<usize>,
     ) -> StorageResult<Vec<PointId>> {
         if let Some(in_memory_index) = &self.in_memory_index {
@@ -98,27 +105,79 @@ impl FieldIndexTrait<&str> for TextIndex {
                 .collect());
         }
 
-        let mut results = Vec::new();
-        let query_key = value.as_bytes();
-
-        let Some(encoded_point_ids) = self.db.get(query_key)? else {
-            // No results found for this term
+        // For disk-only path, we need to properly decode and score
+        // Build a temporary BM25 scorer for this query
+        let tokens = tokenize(value);
+        if tokens.is_empty() {
             return Ok(Vec::new());
-        };
+        }
 
-        // Decode existing point IDs for this term
-        let point_ids = decoded_point_ids(&encoded_point_ids)?;
+        // Collect posting lists for all query tokens
+        let mut token_postings: Vec<Vec<PostingListItem>> = Vec::with_capacity(tokens.len());
+        let mut all_doc_ids: HashMap<u64, ()> = HashMap::default();
 
-        for point_id in point_ids {
-            results.push(PointId::Id(point_id));
-            if let Some(lim) = limit {
-                if results.len() >= lim {
-                    break;
+        for token in &tokens {
+            let term_key = token.as_bytes();
+            if let Some(data) = self.db.get(term_key)? {
+                let posting_list = PostingListItem::decode_list(&data)?;
+                for item in &posting_list {
+                    all_doc_ids.insert(item.doc_id, ());
                 }
+                token_postings.push(posting_list);
             }
         }
 
-        Ok(results)
+        if all_doc_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Calculate doc lengths and stats for BM25
+        let mut doc_lengths: HashMap<u64, usize> = HashMap::default();
+        let mut total_length: f64 = 0.0;
+
+        // We need to scan all terms to compute doc lengths accurately
+        // This is expensive for disk-only but necessary for correct BM25
+        for item in self.db.iter() {
+            let (_key, value) = item.map_err(|e| {
+                StorageError::ServiceError(format!("Failed to read text index item: {e}"))
+            })?;
+            let posting_list = PostingListItem::decode_list(&value)?;
+            for item in &posting_list {
+                *doc_lengths.entry(item.doc_id).or_insert(0) += item.term_freq as usize;
+                total_length += item.term_freq as f64;
+            }
+        }
+
+        let num_docs = doc_lengths.len();
+        let avg_doc_length = if num_docs > 0 {
+            total_length / num_docs as f64
+        } else {
+            1.0
+        };
+
+        // BM25 parameters
+        let k1 = 1.2;
+        let b = 0.75;
+
+        // Calculate scores
+        let mut docs_with_scores: HashMap<u64, f64> = HashMap::default();
+        for (_token, posting_list) in tokens.iter().zip(token_postings.iter()) {
+            let df = posting_list.len() as f64;
+            let idf = ((num_docs as f64 - df + 0.5) / (df + 0.5) + 1.0).ln();
+
+            for item in posting_list {
+                let doc_len = *doc_lengths.get(&item.doc_id).unwrap_or(&0) as f64;
+                let tf = item.term_freq as f64;
+                let tf_component =
+                    tf * (k1 + 1.0) / (tf + k1 * (1.0 - b + b * (doc_len / avg_doc_length)));
+                let score = idf * tf_component;
+                *docs_with_scores.entry(item.doc_id).or_insert(0.0) += score;
+            }
+        }
+
+        // Use top-k selection with BinaryHeap for efficiency
+        let results = top_k_by_score(docs_with_scores, limit);
+        Ok(results.into_iter().map(PointId::Id).collect())
     }
 
     fn add_points(&self, point_ids: &[u64], values: &[Value]) -> StorageResult<()> {
@@ -137,10 +196,16 @@ impl FieldIndexTrait<&str> for TextIndex {
             })
             .collect::<Result<Vec<&str>, StorageError>>()?;
 
-        // Now build a temporary index in memory to avoid multiple passes over the data:
-        let mut temp_index: HashMap<String, Vec<PostingListItem>> = HashMap::new();
+        // Build temporary index in memory to batch all operations
+        let mut temp_index: HashMap<String, Vec<PostingListItem>> = HashMap::default();
+        // Track document lengths for incremental stats update
+        let mut new_doc_lengths: HashMap<u64, u64> = HashMap::default();
+
         for (point_id, text) in point_ids.iter().zip(texts.iter()) {
             let terms = tokenize_and_count_frequencies(text);
+            let doc_length: u64 = terms.values().sum();
+            new_doc_lengths.insert(*point_id, doc_length);
+
             for (term, term_freq) in terms {
                 temp_index
                     .entry(term)
@@ -149,7 +214,11 @@ impl FieldIndexTrait<&str> for TextIndex {
             }
         }
 
-        // Merge the temporary index into the main index:
+        // Collect all updates for batch in-memory update
+        let mut all_updates: Vec<(String, Vec<PostingListItem>)> =
+            Vec::with_capacity(temp_index.len());
+
+        // Merge temporary index into main index
         for (term, mut new_posting_list) in temp_index {
             let term_key = term.as_bytes();
             let mut posting_list = if let Some(in_memory_index) = &self.in_memory_index {
@@ -161,27 +230,111 @@ impl FieldIndexTrait<&str> for TextIndex {
                     .transpose()?
                     .unwrap_or_default()
             };
-            posting_list.append(&mut new_posting_list);
-            posting_list.sort_by_key(|item| item.doc_id);
-            let encoded_posting_list = PostingListItem::encode_list(&posting_list)?;
-            self.db
-                .insert(term_key, encoded_posting_list)
-                .map_err(|e| {
-                    StorageError::ServiceError(format!(
-                        "Failed to insert into text index tree: {e}"
-                    ))
-                })?;
-            if let Some(in_memory_index) = &self.in_memory_index {
-                // Also updates the stats in the in-memory index
-                in_memory_index.override_term_posting_list(&term, posting_list)?;
-            }
+
+            // Sort new items by doc_id for efficient merge
+            new_posting_list.sort_unstable_by_key(|item| item.doc_id);
+
+            // Merge sorted lists
+            posting_list = merge_sorted_posting_lists(posting_list, new_posting_list);
+
+            let encoded = PostingListItem::encode_list(&posting_list)?;
+            self.db.insert(term_key, encoded).map_err(|e| {
+                StorageError::ServiceError(format!("Failed to insert into text index tree: {e}"))
+            })?;
+
+            all_updates.push((term, posting_list));
+        }
+
+        // Batch update in-memory index
+        if let Some(in_memory_index) = &self.in_memory_index {
+            in_memory_index.add_documents_batch(new_doc_lengths, all_updates)?;
         }
 
         Ok(())
     }
 }
 
-// todo: Remove this layer and use the BM25Index directly
+/// Merge two sorted posting lists, preferring items from `new` when doc_ids collide
+fn merge_sorted_posting_lists(
+    existing: Vec<PostingListItem>,
+    new: Vec<PostingListItem>,
+) -> Vec<PostingListItem> {
+    let mut result = Vec::with_capacity(existing.len() + new.len());
+    let mut i = 0;
+    let mut j = 0;
+
+    while i < existing.len() && j < new.len() {
+        match existing[i].doc_id.cmp(&new[j].doc_id) {
+            Ordering::Less => {
+                result.push(existing[i].clone());
+                i += 1;
+            }
+            Ordering::Greater => {
+                result.push(new[j].clone());
+                j += 1;
+            }
+            Ordering::Equal => {
+                // New takes precedence (update case)
+                result.push(new[j].clone());
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+
+    // Append remaining
+    result.extend_from_slice(&existing[i..]);
+    result.extend_from_slice(&new[j..]);
+    result
+}
+
+/// Efficiently get top-k documents by score using a min-heap
+fn top_k_by_score(scores: HashMap<u64, f64>, limit: Option<usize>) -> Vec<u64> {
+    // Wrapper for BinaryHeap ordering (min-heap via Reverse)
+    #[derive(PartialEq)]
+    struct DocScore(u64, f64);
+
+    impl Eq for DocScore {}
+
+    impl PartialOrd for DocScore {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for DocScore {
+        fn cmp(&self, other: &Self) -> Ordering {
+            // Reverse order for min-heap behavior
+            other.1.partial_cmp(&self.1).unwrap_or(Ordering::Equal)
+        }
+    }
+
+    match limit {
+        Some(k) if k < scores.len() => {
+            // Use min-heap to keep top-k
+            let mut heap: BinaryHeap<DocScore> = BinaryHeap::with_capacity(k + 1);
+
+            for (doc_id, score) in scores {
+                heap.push(DocScore(doc_id, score));
+                if heap.len() > k {
+                    heap.pop(); // Remove smallest
+                }
+            }
+
+            // Extract in descending order
+            let mut result: Vec<_> = heap.into_iter().map(|ds| (ds.0, ds.1)).collect();
+            result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+            result.into_iter().map(|(id, _)| id).collect()
+        }
+        _ => {
+            // No limit or limit >= docs, sort all
+            let mut sorted: Vec<_> = scores.into_iter().collect();
+            sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+            sorted.into_iter().map(|(id, _)| id).collect()
+        }
+    }
+}
+
 /// This layer only exists to hold the lock
 struct InMemoryTextIndex {
     index: RwLock<BM25Index>,
@@ -202,15 +355,29 @@ impl InMemoryTextIndex {
         index_guard.get_term_posting_list(term)
     }
 
-    pub fn override_term_posting_list(
+    /// Add a single document with its terms - used by add_point
+    pub fn add_document_batch(
         &self,
-        term: &str,
-        posting_list: Vec<PostingListItem>,
+        doc_id: u64,
+        doc_length: u64,
+        term_updates: Vec<(String, Vec<PostingListItem>)>,
     ) -> StorageResult<()> {
         let mut index = self.index.write().map_err(|e| {
             StorageError::ServiceError(format!("Failed to write to in-memory index: {e}"))
         })?;
-        index.override_term_posting_list(term, posting_list)
+        index.add_document_batch(doc_id, doc_length, term_updates)
+    }
+
+    /// Add multiple documents with their terms - used by add_points
+    pub fn add_documents_batch(
+        &self,
+        doc_lengths: HashMap<u64, u64>,
+        term_updates: Vec<(String, Vec<PostingListItem>)>,
+    ) -> StorageResult<()> {
+        let mut index = self.index.write().map_err(|e| {
+            StorageError::ServiceError(format!("Failed to write to in-memory index: {e}"))
+        })?;
+        index.add_documents_batch(doc_lengths, term_updates)
     }
 
     pub fn query(&self, term: &str, limit: Option<usize>) -> StorageResult<Vec<u64>> {
@@ -222,9 +389,9 @@ impl InMemoryTextIndex {
 }
 
 struct BM25Index {
-    // Todo: Use ahashmap here
     postings: HashMap<String, Vec<PostingListItem>>,
     doc_lengths: HashMap<u64, usize>,
+    total_doc_length: f64, // Sum of all document lengths for incremental avg calculation
     avg_doc_length: f64,
     k1: f64,
     b: f64,
@@ -232,7 +399,7 @@ struct BM25Index {
 
 impl BM25Index {
     pub fn new(tree: &sled::Tree, _stats_tree: &sled::Tree) -> StorageResult<Self> {
-        let mut postings = HashMap::new();
+        let mut postings: HashMap<String, Vec<PostingListItem>> = HashMap::default();
         for item in tree.iter() {
             let (key, value) = item.map_err(|e| {
                 StorageError::ServiceError(format!("Failed to read text index item: {e}"))
@@ -244,128 +411,162 @@ impl BM25Index {
             postings.insert(term, posting_list);
         }
 
-        // TODO: Store doc_lengths and other stats in the stats tree?
-        let mut doc_lengths: HashMap<u64, usize> = HashMap::new();
-        let mut avg_doc_length = 0.0;
-        let k1 = 1.2;
-        let b = 0.75;
+        // Calculate doc_lengths and stats
+        let mut doc_lengths: HashMap<u64, usize> = HashMap::default();
+        let mut total_doc_length = 0.0;
 
         for posting_list in postings.values() {
             for item in posting_list {
                 *doc_lengths.entry(item.doc_id).or_insert(0) += item.term_freq as usize;
-                avg_doc_length += item.term_freq as f64;
+                total_doc_length += item.term_freq as f64;
             }
         }
 
         let num_docs = doc_lengths.len();
-        if num_docs != 0 {
-            avg_doc_length /= num_docs as f64;
-        }
+        let avg_doc_length = if num_docs != 0 {
+            total_doc_length / num_docs as f64
+        } else {
+            0.0
+        };
 
         Ok(Self {
             postings,
             doc_lengths,
+            total_doc_length,
             avg_doc_length,
-            k1,
-            b,
+            k1: 1.2,
+            b: 0.75,
         })
     }
 
     pub fn get_term_posting_list(&self, token: &str) -> StorageResult<Vec<PostingListItem>> {
-        let token_posting = self.postings.get(token);
-        Ok(token_posting.cloned().unwrap_or_default())
+        Ok(self.postings.get(token).cloned().unwrap_or_default())
     }
 
-    pub fn override_term_posting_list(
+    /// Add a single document incrementally
+    pub fn add_document_batch(
         &mut self,
-        token: &str,
-        posting_list: Vec<PostingListItem>,
+        doc_id: u64,
+        doc_length: u64,
+        term_updates: Vec<(String, Vec<PostingListItem>)>,
     ) -> StorageResult<()> {
-        self.postings.insert(token.to_string(), posting_list);
+        // Update posting lists
+        for (term, posting_list) in term_updates {
+            self.postings.insert(term, posting_list);
+        }
 
-        // ToDo: This is non-incremental and hence inefficient, optimize later
-        // Update doc lengths and avg doc length:
-        self.doc_lengths.clear();
-        self.avg_doc_length = 0.0;
-        for posting_list in self.postings.values() {
-            for item in posting_list {
-                *self.doc_lengths.entry(item.doc_id).or_insert(0) += item.term_freq as usize;
-                self.avg_doc_length += item.term_freq as f64;
+        // Incrementally update stats
+        let old_length = self.doc_lengths.get(&doc_id).copied().unwrap_or(0);
+        let new_length = doc_length as usize;
+
+        if old_length == 0 {
+            // New document
+            self.total_doc_length += new_length as f64;
+            self.doc_lengths.insert(doc_id, new_length);
+        } else {
+            // Update existing document
+            self.total_doc_length += (new_length as f64) - (old_length as f64);
+            self.doc_lengths.insert(doc_id, new_length);
+        }
+
+        // Recalculate average
+        let num_docs = self.doc_lengths.len();
+        self.avg_doc_length = if num_docs > 0 {
+            self.total_doc_length / num_docs as f64
+        } else {
+            0.0
+        };
+
+        Ok(())
+    }
+
+    /// Add multiple documents incrementally
+    pub fn add_documents_batch(
+        &mut self,
+        new_doc_lengths: HashMap<u64, u64>,
+        term_updates: Vec<(String, Vec<PostingListItem>)>,
+    ) -> StorageResult<()> {
+        // Update posting lists
+        for (term, posting_list) in term_updates {
+            self.postings.insert(term, posting_list);
+        }
+
+        // Incrementally update stats for all new documents
+        for (doc_id, new_length) in new_doc_lengths {
+            let old_length = self.doc_lengths.get(&doc_id).copied().unwrap_or(0);
+            let new_length = new_length as usize;
+
+            if old_length == 0 {
+                // New document
+                self.total_doc_length += new_length as f64;
+                self.doc_lengths.insert(doc_id, new_length);
+            } else {
+                // Update existing document
+                self.total_doc_length += (new_length as f64) - (old_length as f64);
+                self.doc_lengths.insert(doc_id, new_length);
             }
         }
+
+        // Recalculate average
         let num_docs = self.doc_lengths.len();
-        if num_docs != 0 {
-            self.avg_doc_length /= num_docs as f64;
-        }
+        self.avg_doc_length = if num_docs > 0 {
+            self.total_doc_length / num_docs as f64
+        } else {
+            0.0
+        };
 
         Ok(())
     }
 
     pub fn query(&self, q: &str, limit: Option<usize>) -> StorageResult<Vec<u64>> {
         let tokens = tokenize(q);
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        // Assume OR operator for now. This means we need to
-        // can just iterate over all tokens one by one
+        // Traverse all terms (posting lists) and accumulate BM25 scores
+        let mut docs_with_scores: HashMap<u64, f64> = HashMap::default();
 
-        // Traverse all terms (posting lists) and add BM25 scores for each document
-        let mut docs_with_scores: HashMap<u64, f64> = HashMap::new();
-        for token in tokens {
-            let token_posting_list = self.get_term_posting_list(&token)?;
-            for item in token_posting_list {
-                let score = self.calculate_bm25_score(&token, &item);
-                *docs_with_scores.entry(item.doc_id).or_insert(0.0) += score;
+        for token in &tokens {
+            if let Some(posting_list) = self.postings.get(token) {
+                // Pre-compute IDF for this term (same for all docs)
+                let idf = self.calculate_idf(token);
+
+                for item in posting_list {
+                    let tf_component = self.calculate_tf_component(item);
+                    let score = idf * tf_component;
+                    *docs_with_scores.entry(item.doc_id).or_insert(0.0) += score;
+                }
             }
         }
 
-        // Sort the documents by score
-        let mut sorted_docs = docs_with_scores.into_iter().collect::<Vec<_>>();
-        sorted_docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
-
-        // If limit is provided, return the top N docs, otherwise return all docs
-        if let Some(limit) = limit {
-            Ok(sorted_docs
-                .into_iter()
-                .take(limit)
-                .map(|(doc_id, _score)| doc_id)
-                .collect())
-        } else {
-            Ok(sorted_docs
-                .into_iter()
-                .map(|(doc_id, _score)| doc_id)
-                .collect())
-        }
+        // Use efficient top-k selection
+        Ok(top_k_by_score(docs_with_scores, limit))
     }
 
-    /// Calculate BM25 score for a document w.r.t. a term/token
-    fn calculate_bm25_score(&self, term: &str, document: &PostingListItem) -> f64 {
-        // TODO: Implement BM25 score calculation
-
-        // Calculate IDF component first since it's simpler and independent of document:
-        // DF = How many documents contain this token?
-        let document_frequency = self
+    /// Calculate IDF component for a term
+    #[inline]
+    fn calculate_idf(&self, term: &str) -> f64 {
+        let df = self
             .postings
             .get(term)
             .map(|posting| posting.len())
             .unwrap_or(0) as f64;
-        // IDF = ln((N - n + 0.5) / (n + 0.5) + 1)
-        // N = total number of documents
-        // n = document containing the token
-        // It gives low value for common terms, high value for rare terms
-        let idf_component = ((self.doc_lengths.len() as f64 - document_frequency + 0.5)
-            / (document_frequency + 0.5)
-            + 1.0)
-            .ln();
+        let n = self.doc_lengths.len() as f64;
+        ((n - df + 0.5) / (df + 0.5) + 1.0).ln()
+    }
 
-        // Now let's calculate term frequency component within the document
-        // TF = (f * (k1 + 1)) / (f + k1 * (1 - b + b * (dl / avgdl)))
-        // It gives higher value for higher term frequency, but with diminishing returns and also penalizes longer documents
-        let term_frequency = document.term_freq as f64;
-        let doc_length = *self.doc_lengths.get(&document.doc_id).unwrap_or(&0) as f64;
-        let tf_component = term_frequency * (self.k1 + 1.0)
-            / (term_frequency
-                + self.k1 * (1.0 - self.b + self.b * (doc_length / self.avg_doc_length)));
-
-        idf_component * tf_component
+    /// Calculate TF component for a document
+    #[inline]
+    fn calculate_tf_component(&self, item: &PostingListItem) -> f64 {
+        let tf = item.term_freq as f64;
+        let doc_len = *self.doc_lengths.get(&item.doc_id).unwrap_or(&0) as f64;
+        let avg_dl = if self.avg_doc_length > 0.0 {
+            self.avg_doc_length
+        } else {
+            1.0
+        };
+        tf * (self.k1 + 1.0) / (tf + self.k1 * (1.0 - self.b + self.b * (doc_len / avg_dl)))
     }
 }
 
@@ -404,7 +605,7 @@ pub fn tokenize(text: &str) -> Vec<String> {
 }
 
 pub fn tokenize_and_count_frequencies(text: &str) -> HashMap<String, u64> {
-    let mut with_freq = HashMap::new();
+    let mut with_freq: HashMap<String, u64> = HashMap::default();
     for term in tokenize(text) {
         *with_freq.entry(term).or_insert(0) += 1;
     }
@@ -415,7 +616,6 @@ pub fn tokenize_and_count_frequencies(text: &str) -> HashMap<String, u64> {
 mod tests {
     use super::*;
     use serde_json::Value;
-    use std::collections::HashMap;
 
     #[test]
     fn test_tokenizer() {
@@ -423,16 +623,13 @@ mod tests {
             tokenize("Hello, world! 123. a1b2c3. 123-456-7890"),
             ["hello", "world", "123", "a1b2c3", "123-456-7890"]
         );
-        assert_eq!(
-            tokenize_and_count_frequencies("Hello, world! 123. hello a1b2c3. 123-456-7890"),
-            HashMap::from([
-                ("hello".into(), 2),
-                ("world".into(), 1),
-                ("123".into(), 1),
-                ("a1b2c3".into(), 1),
-                ("123-456-7890".into(), 1)
-            ])
-        );
+
+        let freq = tokenize_and_count_frequencies("Hello, world! 123. hello a1b2c3. 123-456-7890");
+        assert_eq!(freq.get("hello"), Some(&2));
+        assert_eq!(freq.get("world"), Some(&1));
+        assert_eq!(freq.get("123"), Some(&1));
+        assert_eq!(freq.get("a1b2c3"), Some(&1));
+        assert_eq!(freq.get("123-456-7890"), Some(&1));
     }
 
     #[test]
@@ -479,5 +676,108 @@ mod tests {
             results, expected_ids,
             "BM25 query results for common term do not match expected"
         );
+    }
+
+    #[test]
+    fn test_bm25_batch_insert() {
+        let tmp_path = tempfile::tempdir().unwrap();
+        let db = sled::open(tmp_path.path()).unwrap();
+        let index = TextIndex::open(&db, "content", true).unwrap();
+
+        let docs = [
+            "The quick brown fox jumps over the lazy dog",
+            "The quick brown fox",
+            "Lazy dog sleeps all day",
+            "A fast brown fox leaps over a sleepy dog",
+            "the the",
+        ];
+
+        let point_ids: Vec<u64> = (0..docs.len() as u64).collect();
+        let values: Vec<Value> = docs.iter().map(|s| Value::String(s.to_string())).collect();
+
+        index.add_points(&point_ids, &values).unwrap();
+
+        // Same assertions as single insert
+        let results = index.query("quick fox", &FilterOperator::Eq, None).unwrap();
+        let expected_ids: Vec<PointId> = vec![PointId::Id(1), PointId::Id(0), PointId::Id(3)];
+        assert_eq!(results, expected_ids, "Batch insert BM25 results mismatch");
+    }
+
+    #[test]
+    fn test_top_k() {
+        let tmp_path = tempfile::tempdir().unwrap();
+        let db = sled::open(tmp_path.path()).unwrap();
+        let index = TextIndex::open(&db, "content", true).unwrap();
+
+        let docs = [
+            "The quick brown fox jumps over the lazy dog",
+            "The quick brown fox",
+            "Lazy dog sleeps all day",
+            "A fast brown fox leaps over a sleepy dog",
+            "the the",
+        ];
+
+        for (id, doc) in docs.iter().enumerate() {
+            index
+                .add_point(id as u64, &Value::String((*doc).to_string()))
+                .unwrap();
+        }
+
+        // Test limit
+        let results = index
+            .query("quick fox", &FilterOperator::Eq, Some(2))
+            .unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], PointId::Id(1));
+        assert_eq!(results[1], PointId::Id(0));
+    }
+
+    #[test]
+    fn test_disk_only_query() {
+        let tmp_path = tempfile::tempdir().unwrap();
+        let db = sled::open(tmp_path.path()).unwrap();
+        // Create with in_memory = false
+        let index = TextIndex::open(&db, "content", false).unwrap();
+
+        let docs = [
+            "The quick brown fox jumps over the lazy dog",
+            "The quick brown fox",
+        ];
+
+        for (id, doc) in docs.iter().enumerate() {
+            index
+                .add_point(id as u64, &Value::String((*doc).to_string()))
+                .unwrap();
+        }
+
+        // Query should still work and return results
+        let results = index.query("quick fox", &FilterOperator::Eq, None).unwrap();
+        assert!(!results.is_empty(), "Disk-only query should return results");
+        // Both docs contain these terms
+        assert!(results.contains(&PointId::Id(0)));
+        assert!(results.contains(&PointId::Id(1)));
+    }
+
+    #[test]
+    fn test_merge_sorted_posting_lists() {
+        let existing = vec![
+            PostingListItem::new(1, 2),
+            PostingListItem::new(3, 1),
+            PostingListItem::new(5, 3),
+        ];
+        let new = vec![
+            PostingListItem::new(2, 1),
+            PostingListItem::new(3, 5), // Updated
+            PostingListItem::new(4, 2),
+        ];
+
+        let merged = merge_sorted_posting_lists(existing, new);
+        assert_eq!(merged.len(), 5);
+        assert_eq!(merged[0].doc_id, 1);
+        assert_eq!(merged[1].doc_id, 2);
+        assert_eq!(merged[2].doc_id, 3);
+        assert_eq!(merged[2].term_freq, 5); // Should be updated value
+        assert_eq!(merged[3].doc_id, 4);
+        assert_eq!(merged[4].doc_id, 5);
     }
 }
