@@ -15,9 +15,15 @@ grpcurl -plaintext -import-path src/api/grpc/proto/ -proto smoldb.proto 0.0.0.0:
 ### Comparing feature branch to dev
 
 ```sh
+# Collection benchmarks (write, read, query, text_search - requires full Collection setup)
 cargo bench --bench collection -- --save-baseline dev
 git checkout feat-branch
 cargo bench --bench collection -- --baseline dev
+
+# Index benchmarks (IntegerIndex, TextIndex - lightweight, no Collection needed)
+cargo bench --bench index -- --save-baseline dev
+git checkout feat-branch
+cargo bench --bench index -- --baseline dev
 ```
 
 ### smolbench
@@ -37,8 +43,10 @@ watch -n1 'cargo run -p smolbench --  --skip-write -n 100M --delay 1000 -b 100'
 ```bash
 cargo bench -- --list # List benches
 cargo bench # Run all benches
-cargo bench --bench collection # Run all collection benches
+cargo bench --bench collection # Run all collection benches (write, read, query, text_search)
 cargo bench --bench collection -- read # Run all collection benches with substring 'read'
+cargo bench --bench index # Run all index benches (IntegerIndex, TextIndex)
+cargo bench --bench index -- text # Run index benches with substring 'text'
 
 # Access the reports at `target/criterion/report/index.html`
 python -m http.server target/criterion
