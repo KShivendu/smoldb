@@ -16,7 +16,7 @@ use crate::{
 // Full text search index implementation with posting lists and BM25 ranking
 pub struct TextIndex {
     db: sled::Tree,
-    in_memory_index: Option<InMemoryTextIndex>,
+    in_memory_index: Option<RwLock<BM25Index>>,
 }
 
 impl FieldIndexTrait<&str> for TextIndex {
@@ -25,7 +25,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         let stats_tree = db.open_tree(format!("{name}_text_stats"))?;
 
         let in_memory_index = if use_in_memory {
-            Some(InMemoryTextIndex::new(&tree, &stats_tree)?)
+            Some(RwLock::new(BM25Index::new(&tree, &stats_tree)?))
         } else {
             None
         };
@@ -51,7 +51,10 @@ impl FieldIndexTrait<&str> for TextIndex {
 
             // Fetch existing posting list for this term
             let mut term_posting_list = if let Some(in_memory_index) = &self.in_memory_index {
-                in_memory_index.get_term_posting_list(term)?
+                let index = in_memory_index.read().map_err(|e| {
+                    StorageError::ServiceError(format!("Failed to read from in-memory index: {e}"))
+                })?;
+                index.get_term_posting_list(term)?
             } else {
                 self.db
                     .get(term_key)?
@@ -85,7 +88,10 @@ impl FieldIndexTrait<&str> for TextIndex {
         if let Some(in_memory_index) = &self.in_memory_index {
             // Calculate document length (total term count)
             let doc_length: u64 = terms.values().sum();
-            in_memory_index.add_document_batch(point_id, doc_length, updates)?;
+            let mut index = in_memory_index.write().map_err(|e| {
+                StorageError::ServiceError(format!("Failed to write to in-memory index: {e}"))
+            })?;
+            index.add_document_batch(point_id, doc_length, updates)?;
         }
 
         Ok(())
@@ -98,7 +104,10 @@ impl FieldIndexTrait<&str> for TextIndex {
         limit: Option<usize>,
     ) -> StorageResult<Vec<PointId>> {
         if let Some(in_memory_index) = &self.in_memory_index {
-            return Ok(in_memory_index
+            let index = in_memory_index.read().map_err(|e| {
+                StorageError::ServiceError(format!("Failed to read from in-memory index: {e}"))
+            })?;
+            return Ok(index
                 .query(value, limit)?
                 .into_iter()
                 .map(PointId::Id)
@@ -222,7 +231,10 @@ impl FieldIndexTrait<&str> for TextIndex {
         for (term, mut new_posting_list) in temp_index {
             let term_key = term.as_bytes();
             let mut posting_list = if let Some(in_memory_index) = &self.in_memory_index {
-                in_memory_index.get_term_posting_list(&term)?
+                let index = in_memory_index.read().map_err(|e| {
+                    StorageError::ServiceError(format!("Failed to read from in-memory index: {e}"))
+                })?;
+                index.get_term_posting_list(&term)?
             } else {
                 self.db
                     .get(term_key)?
@@ -247,7 +259,10 @@ impl FieldIndexTrait<&str> for TextIndex {
 
         // Batch update in-memory index
         if let Some(in_memory_index) = &self.in_memory_index {
-            in_memory_index.add_documents_batch(new_doc_lengths, all_updates)?;
+            let mut index = in_memory_index.write().map_err(|e| {
+                StorageError::ServiceError(format!("Failed to write to in-memory index: {e}"))
+            })?;
+            index.add_documents_batch(new_doc_lengths, all_updates)?;
         }
 
         Ok(())
@@ -332,59 +347,6 @@ fn top_k_by_score(scores: HashMap<u64, f64>, limit: Option<usize>) -> Vec<u64> {
             sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
             sorted.into_iter().map(|(id, _)| id).collect()
         }
-    }
-}
-
-/// This layer only exists to hold the lock
-struct InMemoryTextIndex {
-    index: RwLock<BM25Index>,
-}
-
-impl InMemoryTextIndex {
-    pub fn new(tree: &sled::Tree, stats_tree: &sled::Tree) -> StorageResult<Self> {
-        let bm25_index = BM25Index::new(tree, stats_tree)?;
-        Ok(Self {
-            index: RwLock::new(bm25_index),
-        })
-    }
-
-    pub fn get_term_posting_list(&self, term: &str) -> StorageResult<Vec<PostingListItem>> {
-        let index_guard = self.index.read().map_err(|e| {
-            StorageError::ServiceError(format!("Failed to read from in-memory index: {e}"))
-        })?;
-        index_guard.get_term_posting_list(term)
-    }
-
-    /// Add a single document with its terms - used by add_point
-    pub fn add_document_batch(
-        &self,
-        doc_id: u64,
-        doc_length: u64,
-        term_updates: Vec<(String, Vec<PostingListItem>)>,
-    ) -> StorageResult<()> {
-        let mut index = self.index.write().map_err(|e| {
-            StorageError::ServiceError(format!("Failed to write to in-memory index: {e}"))
-        })?;
-        index.add_document_batch(doc_id, doc_length, term_updates)
-    }
-
-    /// Add multiple documents with their terms - used by add_points
-    pub fn add_documents_batch(
-        &self,
-        doc_lengths: HashMap<u64, u64>,
-        term_updates: Vec<(String, Vec<PostingListItem>)>,
-    ) -> StorageResult<()> {
-        let mut index = self.index.write().map_err(|e| {
-            StorageError::ServiceError(format!("Failed to write to in-memory index: {e}"))
-        })?;
-        index.add_documents_batch(doc_lengths, term_updates)
-    }
-
-    pub fn query(&self, term: &str, limit: Option<usize>) -> StorageResult<Vec<u64>> {
-        let index = self.index.read().map_err(|e| {
-            StorageError::ServiceError(format!("Failed to read from in-memory index: {e}"))
-        })?;
-        index.query(term, limit)
     }
 }
 
