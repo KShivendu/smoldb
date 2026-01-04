@@ -265,7 +265,7 @@ impl Segment {
                     point_ids[0]
                 );
                 let points = self.get_points(Some(point_ids.clone())).await?;
-                self.payload_index.upsert_many(&points)?;
+                self.payload_index.insert_batch(&points)?;
                 point_ids.clear();
             }
 
