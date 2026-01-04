@@ -54,23 +54,27 @@ pub fn text_indexing(c: &mut Criterion) {
     let point_ids: Vec<u64> = (0..num_points).collect();
     let values = generate_text_values(num_points as usize);
 
-    group.bench_function("batch", |b| {
+    {
         let (db, _tempdir) = create_temp_db();
         let index = TextIndex::open(&db, "description", false).unwrap();
 
-        b.iter(|| {
-            // todo: Add batching
-            index.add_points(&point_ids, &values).unwrap();
+        group.bench_function("batch", |b| {
+            b.iter(|| {
+                // todo: Add batching
+                index.add_points(&point_ids, &values).unwrap();
+            });
         });
-    });
+    }
 
-    group.bench_function("in_memory/batch", |b| {
+    {
         let (db, _tempdir) = create_temp_db();
         let index_with_in_mem = TextIndex::open(&db, "description", true).unwrap();
 
-        b.iter(|| {
-            // todo: Add batching
-            index_with_in_mem.add_points(&point_ids, &values).unwrap();
+        group.bench_function("in_memory/batch", |b| {
+            b.iter(|| {
+                // todo: Add batching
+                index_with_in_mem.add_points(&point_ids, &values).unwrap();
+            });
         });
-    });
+    }
 }
