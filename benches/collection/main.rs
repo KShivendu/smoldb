@@ -12,4 +12,5 @@ criterion_group!(
     config = Criterion::default();
     targets = write::write, read::read, query::int_query, text_search::text_query, index::int_indexing, index::text_indexing
 );
+
 criterion_main!(benches);

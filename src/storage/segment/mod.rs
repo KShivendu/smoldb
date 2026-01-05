@@ -16,6 +16,7 @@ use std::{
     },
     time::Instant,
 };
+use tracing::{info_span, instrument};
 
 // re-export point imports
 pub use point::{Point, PointId};
@@ -35,7 +36,7 @@ impl Segment {
     pub fn create(
         segments_dir: &Path,
         payload_schema: BTreeMap<String, IndexConfig>,
-    ) -> Result<Self, StorageError> {
+    ) -> StorageResult<Self> {
         // ToDo: Have uuid segment ID
         let path = segments_dir.join("0");
         std::fs::create_dir_all(&path).expect("Failed to create segment directory");
@@ -81,6 +82,7 @@ impl Segment {
     }
 
     /// Insert a batch of points into the segment
+    #[instrument(skip_all, fields(points = points.len()))]
     pub fn insert_points(&self, points: &[Point]) -> StorageResult<()> {
         for point in points {
             let key = point.id.encode()?;
@@ -96,9 +98,12 @@ impl Segment {
             .collect::<Vec<_>>();
         self.queue_for_indexing(point_ids)?;
 
-        self.db
-            .flush()
-            .map_err(|e| StorageError::ServiceError(format!("Failed to flush segment db: {e}")))?;
+        {
+            let _s = info_span!("segment flush db").entered();
+            self.db.flush().map_err(|e| {
+                StorageError::ServiceError(format!("Failed to flush segment db: {e}"))
+            })?;
+        }
         Ok(())
     }
 
@@ -189,7 +194,7 @@ impl Segment {
         }
     }
 
-    pub async fn query_points(&self, query: Query) -> Result<Vec<Point>, StorageError> {
+    pub async fn query_points(&self, query: Query) -> StorageResult<Vec<Point>> {
         let point_ids = self.payload_index.query(query).map_err(|e| {
             StorageError::ServiceError(format!("Failed to query payload index: {e}"))
         })?;

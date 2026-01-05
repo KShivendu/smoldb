@@ -3,7 +3,7 @@ pub mod remote_shard;
 
 use crate::api::points::Query;
 use crate::channel_service::ChannelService;
-use crate::error::{CollectionResult, StorageError};
+use crate::error::{CollectionResult, StorageError, StorageResult};
 use crate::storage::replicas::{local_shard::LocalShard, remote_shard::RemoteShard};
 use crate::storage::segment::Point;
 use crate::storage::{collection::CollectionName, segment::PointId};
@@ -11,6 +11,7 @@ use crate::types::{PeerId, ShardId};
 use futures::future::BoxFuture;
 use log::{error, warn};
 use serde::Serialize;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::vec;
@@ -223,10 +224,18 @@ impl ReplicaHolder {
     ///
     /// If returned `point_ids` is `None`, it means the caller should read/write all shards.
     /// If `point_ids` is `Some`, it contains the point IDs that should be routed to the respective shards.
-    pub fn group_by_shards<T: HasPointId>(
+    ///
+    /// If `shard_id` is `Some`, all points are routed to that particular shard.
+    pub fn route_points<T: HasPointId>(
         &self,
         points: Option<Vec<T>>,
-    ) -> Result<HashMap<ShardId, Option<Vec<T>>>, StorageError> {
+        shard_id: Option<ShardId>,
+    ) -> StorageResult<Vec<(ShardId, Option<Vec<T>>)>> {
+        // If a shard id is provided, only route to that particular shard
+        if let Some(shard_id) = shard_id {
+            return Ok(vec![(shard_id, points)]);
+        }
+
         let Some(points) = points else {
             // If no point IDs are provided, return all shards with None
             return Ok(self
@@ -236,7 +245,7 @@ impl ReplicaHolder {
                 .collect());
         };
 
-        let mut shards_to_point_ids = HashMap::new();
+        let mut shards_to_point_ids = HashMap::with_capacity(self.shards.len());
 
         for point in points {
             let point_id = point.point_id();
@@ -244,16 +253,22 @@ impl ReplicaHolder {
                 StorageError::ServiceError("No shards found in hashring".to_string())
             })?;
 
-            shards_to_point_ids
-                .entry(*shard_id)
-                .or_insert_with(Vec::new)
-                .push(point);
+            match shards_to_point_ids.entry(*shard_id) {
+                Entry::Vacant(e) => {
+                    e.insert(Some(vec![point]));
+                }
+                Entry::Occupied(mut e) => {
+                    let points = e.get_mut();
+                    if let Some(points) = points {
+                        points.push(point);
+                    } else {
+                        *points = Some(vec![point]);
+                    }
+                }
+            }
         }
 
-        Ok(shards_to_point_ids
-            .into_iter()
-            .map(|(shard_id, ids)| (shard_id, Some(ids)))
-            .collect())
+        Ok(shards_to_point_ids.into_iter().collect())
     }
 }
 
@@ -278,19 +293,25 @@ mod tests {
 
         let point_uuid = PointId::try_from("04d90043-873a-40d1-85e3-2cb589acf7eb").unwrap();
 
-        let shards_to_point_ids = shard_holder
-            .group_by_shards(Some(vec![
-                PointId::from(1),
-                PointId::from(2),
-                PointId::from(100),
-                point_uuid.clone(),
-            ]))
+        let mut shards_to_point_ids = shard_holder
+            .route_points(
+                Some(vec![
+                    PointId::from(1),
+                    PointId::from(2),
+                    PointId::from(100),
+                    point_uuid.clone(),
+                ]),
+                None,
+            )
             .unwrap();
 
-        let expected_grouping = HashMap::from_iter([
+        let mut expected_grouping = [
             (0, Some(vec![PointId::Id(100), point_uuid])),
             (1, Some(vec![PointId::Id(1), PointId::Id(2)])),
-        ]);
+        ];
+
+        shards_to_point_ids.sort();
+        expected_grouping.sort();
 
         assert_eq!(shards_to_point_ids, expected_grouping);
     }

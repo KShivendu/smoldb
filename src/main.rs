@@ -29,10 +29,29 @@ fn setup_logging() -> GlobalLoggerGuard {
     logger_guard
 }
 
+#[cfg(feature = "chrome-tracing")]
+fn setup_chrome_tracing() {
+    use tracing_chrome::ChromeLayerBuilder;
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+    let (chrome_layer, guard) = ChromeLayerBuilder::new()
+        .file("bench_trace.json")
+        .include_args(true)
+        .build();
+
+    tracing_subscriber::registry().with(chrome_layer).init();
+
+    // Leak the guard so traces are flushed when the process exits
+    std::mem::forget(guard);
+}
+
 fn main() -> std::io::Result<()> {
     #[cfg(debug_assertions)]
     color_backtrace::install();
     let _logger_guard = setup_logging();
+
+    #[cfg(feature = "chrome-tracing")]
+    setup_chrome_tracing();
 
     let args = parse_args();
 

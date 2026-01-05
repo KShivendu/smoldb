@@ -1,2 +1,3 @@
 [env]
 RUST_BACKTRACE = "full"
+# RUSTFLAGS="--cfg tokio_unstable"

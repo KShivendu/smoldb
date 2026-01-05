@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use criterion::{Criterion, Throughput};
 use futures::stream::{self, StreamExt};
+use tracing::info_span;
 
 use crate::common::{
     benchmark_group, create_channel_service, create_collection, create_runtime, create_tempdir,
@@ -24,6 +25,7 @@ pub fn write(c: &mut Criterion) {
         let single_point_batch = generate_points(1);
 
         group.bench_function("single", |b| {
+            let _span = info_span!("single write").entered();
             b.to_async(&rt).iter(|| async {
                 collection
                     .upsert_points(single_point_batch.to_vec(), true)

@@ -84,6 +84,30 @@ sudo perf record --call-graph dwarf ./target/release/deps/collection-<hash> --be
 # Now analyze perf.data with hotspot as usual
 # You can decrease file size by decreasing the sample freuency
 # perf record -F 99 --call-graph drawf ./target/release/deps/collection-<hash> --bench <example:concurrent_read>
+# However it's better to run the test more times than trying to decrease frequency for better profiling
+# If your benchmarks aren't much visible then you can
+
+# Do the same with unit-tests using:
+cargo test --no-run
+sudo perf record --call-graph dwarf target/debug/deps/smoldb-<hash> <example:test_collection_write_read_points>
+
+
+# Off-cpu time
+sudo perf record -e cpu-clock -e sched:sched_switch -e sched:sched_stat_sleep \
+    --call-graph dwarf -a \
+    ./target/release/deps/collection-df075cd5e230b03a --bench collection_single_write
+# Apparently once you filter in `hotspot` gui, you start seeing more blocks that were hidden before
+
+# perf trace ??
+# eBPF??
+# https://claude.ai/chat/6004caac-c264-4c13-8025-2eac367ebe57
+# https://claude.ai/chat/35f10a12-441f-4e55-92de-3ca1255ba871
+```
+
+### Investigation using tracing:
+
+```
+RUST_LOG=trace cargo bench single_write -- --nocapture
 ```
 
 ## TODO:
