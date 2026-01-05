@@ -156,7 +156,6 @@ pub fn benchmark_group<'a>(
     c: &'a mut Criterion,
     name: &str,
 ) -> BenchmarkGroup<'a, criterion::measurement::WallTime> {
-    crate::setup_tracing();
     let mut group = c.benchmark_group(name);
     group.sample_size(100); // default is 100
     group.measurement_time(Duration::from_secs(5)); // default is 5s

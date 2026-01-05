@@ -19,7 +19,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::{RwLock, RwLockReadGuard};
-use tracing::{info_span, Instrument};
+use tracing::instrument;
 use utoipa::ToSchema;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
@@ -158,13 +158,12 @@ impl Collection {
     /// Upserts points into the collection.
     ///
     /// This is not cancel safe at the moment.
+    #[instrument(skip_all, fields(points = points.len()))]
     pub async fn upsert_points(
         &self,
         points: Vec<Point>,
         local_only: bool,
     ) -> CollectionResult<()> {
-        let points_len = points.len();
-        async {
         let replica_holder_guard = self.replica_holder.read().await;
 
         let mut replicas_to_mark_dead = vec![];
@@ -246,9 +245,6 @@ impl Collection {
         }
 
         Ok(())
-        }
-        .instrument(info_span!("collection upsert points", points = points_len))
-        .await
     }
 
     pub async fn read_points(

@@ -16,7 +16,7 @@ use std::{
     },
     time::Instant,
 };
-use tracing::info_span;
+use tracing::{info_span, instrument};
 
 // re-export point imports
 pub use point::{Point, PointId};
@@ -82,8 +82,8 @@ impl Segment {
     }
 
     /// Insert a batch of points into the segment
+    #[instrument(skip_all, fields(points = points.len()))]
     pub fn insert_points(&self, points: &[Point]) -> StorageResult<()> {
-        let _span = info_span!("segment insert points", points = points.len()).entered();
         for point in points {
             let key = point.id.encode()?;
             let value = point.encode_payload()?;
