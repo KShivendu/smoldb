@@ -2,6 +2,7 @@ use crate::error::SmolBenchError;
 use crate::types::{ApiResponse, ApiSuccessResponse, Point, PointId, Points};
 use http::Uri;
 use indicatif::ProgressStyle;
+use rand::Rng;
 use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::time::sleep;
@@ -197,6 +198,11 @@ pub async fn delete_collection(
     Ok(())
 }
 
+fn random_vector(dim: usize) -> Vec<f32> {
+    let mut rng = rand::rng();
+    (0..dim).map(|_| rng.random::<f32>()).collect::<Vec<_>>()
+}
+
 pub async fn upsert_points(
     url: &Uri,
     collection_name: &str,
@@ -228,6 +234,7 @@ pub async fn upsert_points(
                     "description": format!("Point {}", i),
                     "price": i as i64 * 10,
                     "timestamp": batch_ts.to_rfc3339(),
+                    "vector": random_vector(10)
                 }),
             })
             .collect();
