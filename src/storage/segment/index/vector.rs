@@ -139,7 +139,7 @@ impl InMemoryVectorIndex {
     }
 }
 
-fn cosine_similarity(a: &[DimType], b: &[DimType]) -> Result<f64, StorageError> {
+pub fn cosine_similarity(a: &[DimType], b: &[DimType]) -> Result<f64, StorageError> {
     if a.len() != b.len() {
         return Err(StorageError::BadInput(format!(
             "Vectors must have the same length: {a:?} and {b:?}"
