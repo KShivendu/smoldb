@@ -14,7 +14,7 @@ fn distance_bench(c: &mut Criterion) {
 
     group.bench_function("cosine_similarity", |b| {
         b.iter(|| {
-            cosine_similarity(&random_vectors1, &random_vectors2).unwrap();
+            cosine_similarity(&random_vectors1, &random_vectors2);
         });
     });
 }
