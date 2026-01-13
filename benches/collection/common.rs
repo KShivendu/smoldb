@@ -91,6 +91,20 @@ pub fn generate_points(num_points: u64) -> Vec<Point> {
         .collect()
 }
 
+/// Generates points with IDs from 0 to num_points-1 and payloads of the form "Hello world {id}", price, and vector of dimension 4
+pub fn generate_points_with_vector(num_points: u64, dim: usize) -> Vec<Point> {
+    (0..num_points)
+        .map(|id| Point {
+            id: PointId::Id(id),
+            payload: json!({
+                TEXT_FIELD: format!("Hello world {}", id),
+                INT_FIELD: id as i64 * 10,
+                VECTOR_FIELD: random_vector(dim),
+            }),
+        })
+        .collect()
+}
+
 /// todo: not used in the benchmarks yet
 /// Generates a random point with a random ID and payload
 #[allow(dead_code)]

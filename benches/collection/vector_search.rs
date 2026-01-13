@@ -1,7 +1,7 @@
 use crate::common::{
     benchmark_group, create_channel_service, create_collection_with_points, create_runtime,
-    create_tempdir, generate_points, generate_vector_queries, CONCURRENCY, NUM_POINTS_INDEXING,
-    NUM_QUERIES, VECTOR_FIELD,
+    create_tempdir, generate_points_with_vector, generate_vector_queries, CONCURRENCY,
+    NUM_POINTS_INDEXING, NUM_QUERIES, VECTOR_FIELD,
 };
 use criterion::{Criterion, Throughput};
 use futures::stream::{self, StreamExt};
@@ -25,7 +25,7 @@ pub fn vector_query(c: &mut Criterion) {
                 &tempdir,
                 channel_service,
                 Some(payload_index),
-                generate_points(NUM_POINTS_INDEXING),
+                generate_points_with_vector(NUM_POINTS_INDEXING, 4),
                 true, // Wait for indexing to complete
             )
             .await
@@ -52,7 +52,7 @@ pub fn vector_query(c: &mut Criterion) {
                 &tempdir,
                 channel_service,
                 Some(payload_index),
-                generate_points(NUM_POINTS_INDEXING),
+                generate_points_with_vector(NUM_POINTS_INDEXING, 4),
                 true, // Wait for indexing to complete
             )
             .await
