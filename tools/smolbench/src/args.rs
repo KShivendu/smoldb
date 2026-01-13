@@ -66,7 +66,7 @@ pub struct Args {
 
     // ToDo: Change to false once vector index is faster or decoupled
     /// Use vector index for payload
-    #[clap(long, default_value = "false")]
+    #[clap(long, default_value = "true")]
     pub skip_vector_index: bool,
 
     /// Use if you don't want to upsert points by default
