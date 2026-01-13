@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::HashMap, sync::RwLock};
 
 use crate::{
     error::{StorageError, StorageResult},
@@ -12,17 +12,23 @@ use crate::{
     },
 };
 
-pub type VectorDataType = f64;
+pub type DimType = f64;
 
 pub struct VectorIndex {
     tree: sled::Tree,
+    in_memory: Option<RwLock<InMemoryVectorIndex>>,
 }
 
-impl FieldIndexTrait<&[VectorDataType]> for VectorIndex {
-    fn open(db: &sled::Db, name: &str, _use_in_memory: bool) -> StorageResult<Self> {
+impl FieldIndexTrait<&[DimType]> for VectorIndex {
+    fn open(db: &sled::Db, name: &str, use_in_memory: bool) -> StorageResult<Self> {
         // Todo: Take dimension as an argument via payload index config
         let tree = db.open_tree(format!("{name}_vector_index"))?;
-        Ok(VectorIndex { tree })
+        let in_memory = if use_in_memory {
+            Some(RwLock::new(InMemoryVectorIndex::new(&tree)?))
+        } else {
+            None
+        };
+        Ok(VectorIndex { tree, in_memory })
     }
 
     fn add_point(&self, point_id: u64, value: &Value) -> StorageResult<()> {
@@ -38,11 +44,21 @@ impl FieldIndexTrait<&[VectorDataType]> for VectorIndex {
                     ))
                 })
             })
-            .collect::<StorageResult<Vec<VectorDataType>>>()?;
+            .collect::<StorageResult<Vec<DimType>>>()?;
 
         let encoded_point_ids = encoded_point_ids(&[point_id])?;
         let encoded_vector = encode_vector(&vector)?;
         self.tree.insert(encoded_point_ids, encoded_vector)?;
+
+        if let Some(in_memory) = &self.in_memory {
+            let mut guard = in_memory.write().map_err(|e| {
+                StorageError::ServiceError(format!(
+                    "Failed to write to in-memory vector index: {e}"
+                ))
+            })?;
+            guard.insert(point_id, vector)?;
+        }
+
         Ok(())
     }
 
@@ -55,16 +71,28 @@ impl FieldIndexTrait<&[VectorDataType]> for VectorIndex {
 
     fn query(
         &self,
-        query: &[VectorDataType],
+        query: &[DimType],
         _operation: &FilterOperator, // todo: allow specifying distance metric?
         limit: Option<usize>,
     ) -> StorageResult<Vec<PointId>> {
         let mut all_vectors = Vec::new();
-        for result in self.tree.iter() {
-            let (key, value) = result?;
-            let point_id = decoded_point_ids(&key)?[0];
-            let vector = decode_vector(&value)?;
-            all_vectors.push((point_id, vector));
+        if let Some(in_memory) = &self.in_memory {
+            let guard = in_memory.read().map_err(|e| {
+                StorageError::ServiceError(format!(
+                    "Failed to read from in-memory vector index: {e}"
+                ))
+            })?;
+            for (point_id, vector) in guard.iter() {
+                all_vectors.push((*point_id, vector.clone())); // todo: avoid cloning
+            }
+        } else {
+            // Read from disk since we don't have in-memory cache
+            for result in self.tree.iter() {
+                let (key, value) = result?;
+                let point_id = decoded_point_ids(&key)?[0];
+                let vector = decode_vector(&value)?;
+                all_vectors.push((point_id, vector));
+            }
         }
 
         let mut results = Vec::new();
@@ -85,7 +113,33 @@ impl FieldIndexTrait<&[VectorDataType]> for VectorIndex {
     }
 }
 
-fn cosine_similarity(a: &[VectorDataType], b: &[VectorDataType]) -> Result<f64, StorageError> {
+struct InMemoryVectorIndex {
+    index: HashMap<u64, Vec<DimType>>,
+}
+
+impl InMemoryVectorIndex {
+    pub fn new(tree: &sled::Tree) -> StorageResult<Self> {
+        let mut index = HashMap::new();
+        for item in tree.iter() {
+            let (key, value) = item?;
+            let point_id = decoded_point_ids(&key)?[0];
+            let vector = decode_vector(&value)?;
+            index.insert(point_id, vector);
+        }
+        Ok(Self { index })
+    }
+
+    pub fn insert(&mut self, point_id: u64, vector: Vec<DimType>) -> StorageResult<()> {
+        self.index.insert(point_id, vector);
+        Ok(())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&u64, &Vec<DimType>)> {
+        self.index.iter()
+    }
+}
+
+fn cosine_similarity(a: &[DimType], b: &[DimType]) -> Result<f64, StorageError> {
     if a.len() != b.len() {
         return Err(StorageError::BadInput(format!(
             "Vectors must have the same length: {a:?} and {b:?}"
@@ -98,12 +152,12 @@ fn cosine_similarity(a: &[VectorDataType], b: &[VectorDataType]) -> Result<f64, 
     Ok(dot_product / (a_norm * b_norm))
 }
 
-fn encode_vector(vector: &[VectorDataType]) -> StorageResult<Vec<u8>> {
+fn encode_vector(vector: &[DimType]) -> StorageResult<Vec<u8>> {
     bincode::encode_to_vec(vector, bincode::config::standard())
         .map_err(|e| StorageError::CodecError(format!("Failed to encode vector: {e}")))
 }
 
-fn decode_vector(data: &[u8]) -> StorageResult<Vec<VectorDataType>> {
+fn decode_vector(data: &[u8]) -> StorageResult<Vec<DimType>> {
     bincode::decode_from_slice(data, bincode::config::standard())
         .map(|(vector, _)| vector)
         .map_err(|e| StorageError::CodecError(format!("Failed to decode vector: {e}")))

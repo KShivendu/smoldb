@@ -6,7 +6,7 @@ use crate::{
             filter::FilterOperator,
             integer::IntegerIndex,
             text::TextIndex,
-            vector::{VectorDataType, VectorIndex},
+            vector::{DimType, VectorIndex},
         },
         segment::{Point, PointId},
     },
@@ -149,7 +149,7 @@ impl FieldIndexTrait<&Value> for FieldIndex {
                     ))
                         })
                     })
-                    .collect::<StorageResult<Vec<VectorDataType>>>()?;
+                    .collect::<StorageResult<Vec<DimType>>>()?;
 
                 vector_index.query(&vector, operation, limit)?
             }
