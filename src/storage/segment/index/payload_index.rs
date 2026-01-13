@@ -2,7 +2,12 @@ use crate::{
     api::points::Query,
     error::{StorageError, StorageResult},
     storage::{
-        index::{filter::FilterOperator, integer::IntegerIndex, text::TextIndex},
+        index::{
+            filter::FilterOperator,
+            integer::IntegerIndex,
+            text::TextIndex,
+            vector::{VectorDataType, VectorIndex},
+        },
         segment::{Point, PointId},
     },
 };
@@ -39,6 +44,7 @@ pub fn decoded_point_ids(data: &[u8]) -> StorageResult<Vec<u64>> {
 pub enum FieldIndex {
     Int(IntegerIndex),
     Text(TextIndex),
+    Vector(VectorIndex),
     Null,
 }
 
@@ -47,6 +53,7 @@ pub enum FieldIndex {
 pub enum IndexConfig {
     Int,
     Text,
+    Vector,
     Null,
 }
 
@@ -60,6 +67,11 @@ impl FieldIndex {
         let index = TextIndex::open(db, name, true)?;
         Ok(FieldIndex::Text(index))
     }
+
+    pub fn new_vector(db: &Db, name: &str) -> StorageResult<Self> {
+        let index = VectorIndex::open(db, name, true)?;
+        Ok(FieldIndex::Vector(index))
+    }
 }
 
 impl FieldIndexTrait<&Value> for FieldIndex {
@@ -67,6 +79,7 @@ impl FieldIndexTrait<&Value> for FieldIndex {
         match self {
             FieldIndex::Int(index) => index.add_point(point_id, value),
             FieldIndex::Text(index) => index.add_point(point_id, value),
+            FieldIndex::Vector(index) => index.add_point(point_id, value),
             FieldIndex::Null => Err(StorageError::BadInput(
                 "Null index is not supported yet".to_string(),
             )),
@@ -77,6 +90,7 @@ impl FieldIndexTrait<&Value> for FieldIndex {
         match self {
             FieldIndex::Int(index) => index.add_points(point_ids, values),
             FieldIndex::Text(index) => index.add_points(point_ids, values),
+            FieldIndex::Vector(index) => index.add_points(point_ids, values),
             FieldIndex::Null => Err(StorageError::BadInput(
                 "Null index is not supported yet".to_string(),
             )),
@@ -119,6 +133,26 @@ impl FieldIndexTrait<&Value> for FieldIndex {
 
                 text_index.query(value, &FilterOperator::Eq, limit)?
             }
+            FieldIndex::Vector(vector_index) => {
+                let value = value.as_array().ok_or_else(|| {
+                    StorageError::BadInput(format!(
+                        "Vector index query value must be an array. Found {value}"
+                    ))
+                })?;
+
+                let vector = value
+                    .iter()
+                    .map(|v| {
+                        v.as_f64().ok_or_else(|| {
+                            StorageError::BadInput(format!(
+                        "Vector index query value must be an array of numbers. Found {value:?}"
+                    ))
+                        })
+                    })
+                    .collect::<StorageResult<Vec<VectorDataType>>>()?;
+
+                vector_index.query(&vector, operation, limit)?
+            }
         };
 
         Ok(results)
@@ -149,6 +183,7 @@ impl PayloadIndex {
                     ))
                 }
                 IndexConfig::Text => FieldIndex::new_text(db, &name),
+                IndexConfig::Vector => FieldIndex::new_vector(db, &name),
             }?;
             indices.insert(name, field_index);
         }
@@ -180,6 +215,7 @@ impl PayloadIndex {
                 ))
             }
             IndexConfig::Text => FieldIndex::new_text(db, name)?,
+            IndexConfig::Vector => FieldIndex::new_vector(db, name)?,
         };
 
         let index_config_str =

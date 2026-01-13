@@ -48,6 +48,7 @@ async fn main() -> Result<(), SmolBenchError> {
                     &args.collection_name,
                     args.skip_int_index,
                     args.skip_text_index,
+                    args.skip_vector_index,
                     true,
                 )
                 .await
@@ -66,6 +67,7 @@ async fn main() -> Result<(), SmolBenchError> {
                 &args.collection_name,
                 args.skip_int_index,
                 args.skip_text_index,
+                args.skip_vector_index,
                 true,
             )
             .await
