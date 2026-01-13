@@ -153,26 +153,6 @@ impl FieldIndexTrait<&Value> for FieldIndex {
 
                 vector_index.query(&vector, operation, limit)?
             }
-            FieldIndex::Vector(vector_index) => {
-                let value = value.as_array().ok_or_else(|| {
-                    StorageError::BadInput(format!(
-                        "Vector index query value must be an array. Found {value}"
-                    ))
-                })?;
-
-                let vector = value
-                    .iter()
-                    .map(|v| {
-                        v.as_f64().ok_or_else(|| {
-                            StorageError::BadInput(format!(
-                        "Vector index query value must be an array of numbers. Found {value:?}"
-                    ))
-                        })
-                    })
-                    .collect::<StorageResult<Vec<VectorDataType>>>()?;
-
-                vector_index.query(&vector, operation, limit)?
-            }
         };
 
         Ok(results)
