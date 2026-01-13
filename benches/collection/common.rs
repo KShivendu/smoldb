@@ -223,3 +223,8 @@ pub fn generate_text_values(num_points: usize) -> Vec<Value> {
         .map(|i| Value::String(format!("foo bar {}", i)))
         .collect()
 }
+
+/// Generates vector values for indexing benchmarks
+pub fn generate_vector_values(num_points: usize, dim: usize) -> Vec<Value> {
+    (0..num_points).map(|_| json!(random_vector(dim))).collect()
+}
