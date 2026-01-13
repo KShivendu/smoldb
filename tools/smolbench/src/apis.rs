@@ -238,7 +238,7 @@ pub async fn upsert_points(
                     "description": format!("Point {}", i),
                     "price": i as i64 * 10,
                     "timestamp": batch_ts.to_rfc3339(),
-                    "vector": random_vector(10)
+                    "vector": random_vector(4)
                 }),
             })
             .collect();
