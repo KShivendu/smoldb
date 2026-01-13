@@ -95,10 +95,21 @@ impl FieldIndexTrait<&[DimType]> for VectorIndex {
             }
         }
 
+        // Only checking if the first vector has the same length as the query
+        // But ideally it should be rejected to keep query times fast and just check for corruption on disK?
+        if let Some(first_vector) = all_vectors.first() {
+            if first_vector.1.len() != query.len() {
+                return Err(StorageError::BadInput(format!(
+                    "Vectors must have the same length: {:?} and {query:?}",
+                    first_vector.1
+                )));
+            }
+        }
+
         let mut results = Vec::new();
 
         for (point_id, vector) in all_vectors {
-            let similarity = cosine_similarity(&vector, query)?;
+            let similarity = cosine_similarity(&vector, query);
             results.push((point_id, similarity));
         }
 
@@ -139,17 +150,11 @@ impl InMemoryVectorIndex {
     }
 }
 
-pub fn cosine_similarity(a: &[DimType], b: &[DimType]) -> Result<f64, StorageError> {
-    if a.len() != b.len() {
-        return Err(StorageError::BadInput(format!(
-            "Vectors must have the same length: {a:?} and {b:?}"
-        )));
-    }
-
+pub fn cosine_similarity(a: &[DimType], b: &[DimType]) -> f64 {
     let dot_product = a.iter().zip(b.iter()).map(|(a, b)| a * b).sum::<f64>();
     let a_norm = a.iter().map(|a| a * a).sum::<f64>().sqrt();
     let b_norm = b.iter().map(|b| b * b).sum::<f64>().sqrt();
-    Ok(dot_product / (a_norm * b_norm))
+    dot_product / (a_norm * b_norm)
 }
 
 fn encode_vector(vector: &[DimType]) -> StorageResult<Vec<u8>> {
