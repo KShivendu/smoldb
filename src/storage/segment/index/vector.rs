@@ -1,6 +1,5 @@
 use serde_json::Value;
 use std::cmp::Ordering;
-use std::cmp::Ordering;
 
 use crate::{
     error::{StorageError, StorageResult},
