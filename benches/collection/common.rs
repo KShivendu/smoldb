@@ -30,6 +30,7 @@ pub const CONCURRENCY: usize = 16;
 
 pub const TEXT_FIELD: &str = "description";
 pub const INT_FIELD: &str = "price";
+pub const VECTOR_FIELD: &str = "vector";
 
 /// Creates a new multi-threaded tokio runtime for benchmarks
 pub fn create_runtime() -> Runtime {
@@ -71,12 +72,21 @@ pub async fn create_collection(
     .unwrap()
 }
 
+/// Generate random vector
+pub fn random_vector(dim: usize) -> Vec<f64> {
+    (0..dim).map(|_| rand::random::<f64>()).collect()
+}
+
 /// Generates points with IDs from 0 to num_points-1 and payloads of the form "Hello world {id}"
 pub fn generate_points(num_points: u64) -> Vec<Point> {
     (0..num_points)
         .map(|id| Point {
             id: PointId::Id(id),
-            payload: json!({ TEXT_FIELD: format!("Hello world {}", id), INT_FIELD: id as i64 * 10 }),
+            payload: json!({
+                TEXT_FIELD: format!("Hello world {}", id),
+                INT_FIELD: id as i64 * 10,
+                VECTOR_FIELD: random_vector(4),
+            }),
         })
         .collect()
 }
@@ -115,6 +125,20 @@ pub fn generate_text_queries(num_queries: usize) -> Vec<Query> {
             filter: QueryFilter::new(
                 TEXT_FIELD,
                 Value::from(format!("Hello world {}", i)),
+                FilterOperator::Eq,
+            ),
+            limit: Some(10),
+        })
+        .collect::<Vec<_>>()
+}
+
+/// Generate queries for vector index
+pub fn generate_vector_queries(num_queries: usize) -> Vec<Query> {
+    (0..num_queries)
+        .map(|_| Query {
+            filter: QueryFilter::new(
+                VECTOR_FIELD,
+                Value::from(random_vector(4)),
                 FilterOperator::Eq,
             ),
             limit: Some(10),
