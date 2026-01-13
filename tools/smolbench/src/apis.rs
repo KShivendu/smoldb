@@ -64,6 +64,7 @@ pub async fn create_collection(
     collection_name: &str,
     skip_int_index: bool,
     skip_text_index: bool,
+    skip_vector_index: bool,
     wait: bool,
 ) -> Result<ApiSuccessResponse<bool>, SmolBenchError> {
     // First ensure that consensus is started
@@ -77,6 +78,9 @@ pub async fn create_collection(
     }
     if !skip_text_index {
         payload_schema["description"] = json!("text");
+    }
+    if !skip_vector_index {
+        payload_schema["vector"] = json!("vector");
     }
 
     let res = client
