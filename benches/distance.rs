@@ -7,7 +7,7 @@ fn distance_bench(c: &mut Criterion) {
 
     let mut rng = StdRng::seed_from_u64(42);
 
-    let dim = 1000;
+    let dim = 1536;
 
     let random_vectors1: Vec<f64> = (0..dim).map(|_| rng.random::<f64>()).collect::<Vec<_>>();
     let random_vectors2: Vec<f64> = (0..dim).map(|_| rng.random::<f64>()).collect::<Vec<_>>();
