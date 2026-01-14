@@ -1,3 +1,5 @@
+mod simd;
+
 use serde_json::Value;
 use std::{cmp::Ordering, collections::HashMap, sync::RwLock};
 
@@ -7,6 +9,7 @@ use crate::{
         index::{
             filter::FilterOperator,
             payload_index::{decoded_point_ids, encoded_point_ids, FieldIndexTrait},
+            vector::simd::cosine_similarity,
         },
         segment::PointId,
     },
@@ -160,12 +163,6 @@ impl InMemoryVectorIndex {
     pub fn iter(&self) -> impl Iterator<Item = (&u64, &Vec<DimType>)> {
         self.index.iter()
     }
-}
-
-/// Computes the cosine similarity between two vectors
-/// Assume the vectors are already normalized
-pub fn cosine_similarity(a: &[DimType], b: &[DimType]) -> DimType {
-    a.iter().zip(b.iter()).map(|(a, b)| a * b).sum::<DimType>()
 }
 
 fn encode_vector(vector: &[DimType]) -> StorageResult<Vec<u8>> {
