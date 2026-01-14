@@ -2,7 +2,9 @@ mod bm25;
 mod posting;
 mod tokenizer;
 
-use std::{cmp::Ordering, collections::BinaryHeap, sync::RwLock};
+use std::{cmp::Ordering, collections::BinaryHeap};
+
+use parking_lot::RwLock;
 
 use ahash::HashMap;
 use serde_json::Value;
@@ -62,11 +64,7 @@ impl FieldIndexTrait<&str> for TextIndex {
 
             // Fetch existing posting list for this term
             let mut term_posting_list = if let Some(in_memory_postings) = &self.in_memory_postings {
-                let postings = in_memory_postings.read().map_err(|e| {
-                    StorageError::ServiceError(format!(
-                        "Failed to read from in-memory postings: {e}"
-                    ))
-                })?;
+                let postings = in_memory_postings.read();
                 postings.get(term).cloned().unwrap_or_default()
             } else {
                 self.db
@@ -107,9 +105,7 @@ impl FieldIndexTrait<&str> for TextIndex {
 
         // Update in-memory postings cache if enabled
         if let Some(in_memory_postings) = &self.in_memory_postings {
-            let mut postings = in_memory_postings.write().map_err(|e| {
-                StorageError::ServiceError(format!("Failed to write to in-memory postings: {e}"))
-            })?;
+            let mut postings = in_memory_postings.write();
             for (term, posting_list) in updates {
                 postings.insert(term, posting_list);
             }
@@ -134,9 +130,7 @@ impl FieldIndexTrait<&str> for TextIndex {
             Vec::with_capacity(tokens.len());
 
         if let Some(in_memory_postings) = &self.in_memory_postings {
-            let postings = in_memory_postings.read().map_err(|e| {
-                StorageError::ServiceError(format!("Failed to read from in-memory postings: {e}"))
-            })?;
+            let postings = in_memory_postings.read();
             for token in &tokens {
                 if let Some(posting_list) = postings.get(token) {
                     token_postings.push((posting_list.len(), posting_list.clone()));
@@ -211,11 +205,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         for (term, mut new_posting_list) in temp_index {
             let term_key = term.as_bytes();
             let mut posting_list = if let Some(in_memory_postings) = &self.in_memory_postings {
-                let postings = in_memory_postings.read().map_err(|e| {
-                    StorageError::ServiceError(format!(
-                        "Failed to read from in-memory postings: {e}"
-                    ))
-                })?;
+                let postings = in_memory_postings.read();
                 postings.get(&term).cloned().unwrap_or_default()
             } else {
                 self.db
@@ -244,9 +234,7 @@ impl FieldIndexTrait<&str> for TextIndex {
 
         // Update in-memory postings cache if enabled
         if let Some(in_memory_postings) = &self.in_memory_postings {
-            let mut postings = in_memory_postings.write().map_err(|e| {
-                StorageError::ServiceError(format!("Failed to write to in-memory postings: {e}"))
-            })?;
+            let mut postings = in_memory_postings.write();
             for (term, posting_list) in all_updates {
                 postings.insert(term, posting_list);
             }
@@ -312,12 +300,13 @@ mod tests {
 
     #[test]
     fn test_text_index() {
+        // Note: stop words like "the", "a", "over" are filtered out during indexing
         let docs = [
-            "The quick brown fox jumps over the lazy dog",
-            "The quick brown fox",
-            "Lazy dog sleeps all day",
-            "A fast brown fox leaps over a sleepy dog",
-            "the the",
+            "The quick brown fox jumps over the lazy dog", // terms: quick, brown, fox, jumps, lazy, dog
+            "The quick brown fox",                         // terms: quick, brown, fox
+            "Lazy dog sleeps all day",                     // terms: lazy, dog, sleeps, day
+            "A fast brown fox leaps over a sleepy dog", // terms: fast, brown, fox, leaps, sleepy, dog
+            "database search engine",                   // terms: database, search, engine
         ];
 
         // Test single insert
@@ -363,16 +352,18 @@ mod tests {
             "Batch insert query mismatch"
         );
 
-        // Query for common term "the"
-        let expected_the: Vec<PointId> = vec![
-            PointId::Id(4), // has "the" twice and shorter
-            PointId::Id(0), // has "the" twice
-            PointId::Id(1), // has "the" once
-        ];
+        // Query for stop word "the" should return empty results
+        // (stop words are filtered from both indexing and queries)
         let results = single_index
             .query("the", &FilterOperator::Eq, None)
             .unwrap();
-        assert_eq!(results, expected_the, "Common term query mismatch");
+        assert!(results.is_empty(), "Stop word query should return empty");
+
+        // Query for term that appears in multiple docs
+        let results = single_index
+            .query("brown", &FilterOperator::Eq, None)
+            .unwrap();
+        assert_eq!(results.len(), 3); // docs 0, 1, 3 have "brown"
 
         // Test limit (top-k)
         let results = single_index
