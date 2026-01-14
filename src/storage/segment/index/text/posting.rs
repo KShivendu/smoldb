@@ -35,12 +35,6 @@ impl PostingList {
         self.doc_ids.len()
     }
 
-    /// Check if the posting list is empty
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.doc_ids.is_empty()
-    }
-
     /// Push a new entry to the posting list (must maintain sorted order)
     #[inline]
     pub fn push(&mut self, doc_id: u64, term_freq: u64) {
@@ -65,14 +59,6 @@ impl PostingList {
     #[inline]
     pub fn binary_search(&self, doc_id: u64) -> Result<usize, usize> {
         self.doc_ids.binary_search(&doc_id)
-    }
-
-    /// Iterate over (doc_id, term_freq) pairs
-    pub fn iter(&self) -> impl Iterator<Item = (u64, u64)> + '_ {
-        self.doc_ids
-            .iter()
-            .copied()
-            .zip(self.term_freqs.iter().copied())
     }
 
     /// Encode the posting list using delta encoding for doc_ids and VarInt compression.
