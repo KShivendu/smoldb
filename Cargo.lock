@@ -2925,6 +2925,7 @@ dependencies = [
  "hashring",
  "http 1.4.0",
  "log",
+ "parking_lot 0.12.5",
  "prost 0.11.9",
  "prost 0.13.5",
  "protobuf",

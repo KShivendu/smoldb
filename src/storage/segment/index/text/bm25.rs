@@ -1,6 +1,5 @@
-use std::sync::RwLock;
-
 use ahash::HashMap;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -22,14 +21,17 @@ impl BM25Scorer {
     /// Create a new BM25Scorer instance, loading existing stats from sled
     pub fn open(stats_tree: sled::Tree) -> StorageResult<Self> {
         // use serde_cbor to load the stats from the tree
-        let stats = stats_tree
+        let mut stats: Bm25Stats = stats_tree
             .get(STATS_KEY)?
             .map(|data| serde_cbor::from_slice(&data))
             .transpose()
-            .map_err(|e| StorageError::CodecError(format!("Failed to decode BM25 stats: {e}")))?;
+            .map_err(|e| StorageError::CodecError(format!("Failed to decode BM25 stats: {e}")))?
+            .unwrap_or_default();
+        // Recompute cached avg_dl from persisted data
+        stats.recompute_avg_dl();
         Ok(Self {
             stats_tree,
-            bm25_stats: RwLock::new(stats.unwrap_or_default()),
+            bm25_stats: RwLock::new(stats),
         })
     }
 
@@ -43,9 +45,7 @@ impl BM25Scorer {
 
     /// Add or update a single document's stats
     pub fn add_document(&self, doc_id: u64, doc_length: u64) -> StorageResult<()> {
-        let mut stats = self.bm25_stats.write().map_err(|e| {
-            StorageError::ServiceError(format!("Failed to acquire write BM25 stats lock: {e}"))
-        })?;
+        let mut stats = self.bm25_stats.write();
         let old_length = stats.doc_length(doc_id);
         let new_length = doc_length as usize;
 
@@ -57,15 +57,14 @@ impl BM25Scorer {
             stats.total_doc_length += (new_length as f64) - (old_length as f64);
         }
         stats.doc_lengths.insert(doc_id, new_length);
+        stats.recompute_avg_dl();
 
         self.persist(&stats)
     }
 
     /// Add or update multiple documents' stats in batch
     pub fn add_documents(&self, new_doc_lengths: &HashMap<u64, u64>) -> StorageResult<()> {
-        let mut stats = self.bm25_stats.write().map_err(|e| {
-            StorageError::ServiceError(format!("Failed to acquire write BM25 stats lock: {e}"))
-        })?;
+        let mut stats = self.bm25_stats.write();
         for (&doc_id, &new_length) in new_doc_lengths {
             let old_length = stats.doc_length(doc_id);
             let new_length = new_length as usize;
@@ -77,6 +76,7 @@ impl BM25Scorer {
             }
             stats.doc_lengths.insert(doc_id, new_length);
         }
+        stats.recompute_avg_dl();
 
         self.persist(&stats)
     }
@@ -87,16 +87,16 @@ impl BM25Scorer {
         token_postings: &[(usize, &[PostingListItem])], // (df, posting_list) pairs
     ) -> StorageResult<HashMap<u64, f64>> {
         // Rank completely from memory because it's faster
-        let stats = self.bm25_stats.read().map_err(|e| {
-            StorageError::ServiceError(format!("Failed to acquire read BM25 stats lock: {e}"))
-        })?;
+        let stats = self.bm25_stats.read();
+        let avg_dl = stats.cached_avg_dl;
         let mut docs_with_scores: HashMap<u64, f64> = HashMap::default();
 
         for (df, posting_list) in token_postings {
             let idf = stats.calculate_idf(*df);
 
             for item in *posting_list {
-                let tf_component = stats.calculate_tf_component(item.term_freq, item.doc_id);
+                let tf_component =
+                    stats.calculate_tf_component(item.term_freq, item.doc_id, avg_dl);
                 let score = idf * tf_component;
                 *docs_with_scores.entry(item.doc_id).or_insert(0.0) += score;
             }
@@ -110,11 +110,29 @@ impl BM25Scorer {
 pub struct Bm25Stats {
     pub doc_lengths: HashMap<u64, usize>,
     pub total_doc_length: f64,
+    /// Cached average document length to avoid recomputation in hot scoring loop
+    #[serde(skip, default = "default_avg_dl")]
+    pub cached_avg_dl: f64,
     k1: f64,
     b: f64,
 }
 
+fn default_avg_dl() -> f64 {
+    1.0
+}
+
 impl Bm25Stats {
+    /// Recompute and cache the average document length
+    #[inline]
+    pub fn recompute_avg_dl(&mut self) {
+        let num_docs = self.doc_lengths.len();
+        self.cached_avg_dl = if num_docs > 0 {
+            self.total_doc_length / num_docs as f64
+        } else {
+            1.0
+        };
+    }
+
     /// Calculate IDF component for a term given its document frequency
     #[inline]
     pub fn calculate_idf(&self, df: usize) -> f64 {
@@ -123,12 +141,11 @@ impl Bm25Stats {
         ((n - df + 0.5) / (df + 0.5) + 1.0).ln()
     }
 
-    /// Calculate TF component for a document
+    /// Calculate TF component for a document using pre-computed avg_dl
     #[inline]
-    pub fn calculate_tf_component(&self, tf: u64, doc_id: u64) -> f64 {
+    pub fn calculate_tf_component(&self, tf: u64, doc_id: u64, avg_dl: f64) -> f64 {
         let tf = tf as f64;
         let doc_len = self.doc_length(doc_id) as f64;
-        let avg_dl = self.avg_doc_length();
         tf * (self.k1 + 1.0) / (tf + self.k1 * (1.0 - self.b + self.b * (doc_len / avg_dl)))
     }
 
@@ -136,17 +153,6 @@ impl Bm25Stats {
     #[inline]
     pub fn num_docs(&self) -> usize {
         self.doc_lengths.len()
-    }
-
-    /// Get the average document length
-    #[inline]
-    pub fn avg_doc_length(&self) -> f64 {
-        let num_docs = self.num_docs();
-        if num_docs > 0 {
-            self.total_doc_length / num_docs as f64
-        } else {
-            1.0
-        }
     }
 
     /// Get document length for a specific document
@@ -161,6 +167,7 @@ impl Default for Bm25Stats {
         Self {
             doc_lengths: HashMap::default(),
             total_doc_length: 0.0,
+            cached_avg_dl: 1.0,
             k1: DEFAULT_K1,
             b: DEFAULT_B,
         }
