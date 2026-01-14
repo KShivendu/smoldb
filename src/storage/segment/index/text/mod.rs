@@ -19,7 +19,7 @@ use crate::{
 };
 
 use bm25::BM25Scorer;
-use posting::{merge_sorted_posting_lists, InMemPostings, PostingListItem};
+use posting::{merge_sorted_posting_lists, InMemPostings, PostingList};
 use tokenizer::{tokenize, tokenize_and_count_frequencies};
 
 // Full text search index implementation with posting lists and BM25 ranking
@@ -57,7 +57,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         let terms = tokenize_and_count_frequencies(text);
 
         // Collect all updates first, then apply in batch
-        let mut updates: Vec<(String, Vec<PostingListItem>)> = Vec::with_capacity(terms.len());
+        let mut updates: Vec<(String, PostingList)> = Vec::with_capacity(terms.len());
 
         for (term, term_freq) in &terms {
             let term_key = term.as_bytes();
@@ -69,25 +69,24 @@ impl FieldIndexTrait<&str> for TextIndex {
             } else {
                 self.db
                     .get(term_key)?
-                    .map(|data| PostingListItem::decode_list(&data))
+                    .map(|data| PostingList::decode(&data))
                     .transpose()?
                     .unwrap_or_default()
             };
 
             // Insert maintaining sorted order using binary search
-            let new_item = PostingListItem::new(point_id, *term_freq);
-            match term_posting_list.binary_search_by_key(&point_id, |item| item.doc_id) {
+            match term_posting_list.binary_search(point_id) {
                 Ok(pos) => {
                     // Update existing entry
-                    term_posting_list[pos] = new_item;
+                    term_posting_list.update_term_freq(pos, *term_freq);
                 }
                 Err(pos) => {
-                    term_posting_list.insert(pos, new_item);
+                    term_posting_list.insert(pos, point_id, *term_freq);
                 }
             }
 
             // Store to disk
-            let encoded = PostingListItem::encode_list(&term_posting_list)?;
+            let encoded = term_posting_list.encode()?;
             self.db.insert(term_key, encoded).map_err(|e| {
                 StorageError::ServiceError(format!("Failed to insert into text index tree: {e}"))
             })?;
@@ -126,8 +125,7 @@ impl FieldIndexTrait<&str> for TextIndex {
         }
 
         // Collect posting lists for all query tokens
-        let mut token_postings: Vec<(usize, Vec<PostingListItem>)> =
-            Vec::with_capacity(tokens.len());
+        let mut token_postings: Vec<(usize, PostingList)> = Vec::with_capacity(tokens.len());
 
         if let Some(in_memory_postings) = &self.in_memory_postings {
             let postings = in_memory_postings.read();
@@ -140,7 +138,7 @@ impl FieldIndexTrait<&str> for TextIndex {
             for token in &tokens {
                 let term_key = token.as_bytes();
                 if let Some(data) = self.db.get(term_key)? {
-                    let posting_list = PostingListItem::decode_list(&data)?;
+                    let posting_list = PostingList::decode(&data)?;
                     let df = posting_list.len();
                     token_postings.push((df, posting_list));
                 }
@@ -151,9 +149,9 @@ impl FieldIndexTrait<&str> for TextIndex {
             return Ok(Vec::new());
         }
 
-        let postings_refs: Vec<(usize, &[PostingListItem])> = token_postings
+        let postings_refs: Vec<(usize, &PostingList)> = token_postings
             .iter()
-            .map(|(df, list)| (*df, list.as_slice()))
+            .map(|(df, list)| (*df, list))
             .collect();
 
         let docs_with_scores = self.bm25_scorer.score_documents(&postings_refs)?;
@@ -180,7 +178,8 @@ impl FieldIndexTrait<&str> for TextIndex {
             .collect::<Result<Vec<&str>, StorageError>>()?;
 
         // Build temporary index in memory to batch all postings list updates
-        let mut temp_index: HashMap<String, Vec<PostingListItem>> = HashMap::default();
+        // Use Vec<(doc_id, term_freq)> for easy sorting before conversion to PostingList
+        let mut temp_index: HashMap<String, Vec<(u64, u64)>> = HashMap::default();
         // Track document lengths for incremental BM25 stats updates
         let mut new_doc_lengths: HashMap<u64, u64> = HashMap::default();
 
@@ -193,40 +192,45 @@ impl FieldIndexTrait<&str> for TextIndex {
                 temp_index
                     .entry(term)
                     .or_default()
-                    .push(PostingListItem::new(*point_id, term_freq));
+                    .push((*point_id, term_freq));
             }
         }
 
         // Collect all updates for batch in-memory update
-        let mut all_updates: Vec<(String, Vec<PostingListItem>)> =
-            Vec::with_capacity(temp_index.len());
+        let mut all_updates: Vec<(String, PostingList)> = Vec::with_capacity(temp_index.len());
 
         // Merge temporary index into postings list index
-        for (term, mut new_posting_list) in temp_index {
+        for (term, mut new_entries) in temp_index {
             let term_key = term.as_bytes();
-            let mut posting_list = if let Some(in_memory_postings) = &self.in_memory_postings {
+            let posting_list = if let Some(in_memory_postings) = &self.in_memory_postings {
                 let postings = in_memory_postings.read();
                 postings.get(&term).cloned().unwrap_or_default()
             } else {
                 self.db
                     .get(term_key)?
-                    .map(|data| PostingListItem::decode_list(&data))
+                    .map(|data| PostingList::decode(&data))
                     .transpose()?
                     .unwrap_or_default()
             };
 
-            // Sort new items by doc_id for efficient merge
-            new_posting_list.sort_unstable_by_key(|item| item.doc_id);
+            // Sort new entries by doc_id for efficient merge
+            new_entries.sort_unstable_by_key(|(doc_id, _)| *doc_id);
+
+            // Convert to PostingList
+            let mut new_posting_list = PostingList::with_capacity(new_entries.len());
+            for (doc_id, term_freq) in new_entries {
+                new_posting_list.push(doc_id, term_freq);
+            }
 
             // Merge sorted lists
-            posting_list = merge_sorted_posting_lists(posting_list, new_posting_list);
+            let merged = merge_sorted_posting_lists(posting_list, new_posting_list);
 
-            let encoded = PostingListItem::encode_list(&posting_list)?;
+            let encoded = merged.encode()?;
             self.db.insert(term_key, encoded).map_err(|e| {
                 StorageError::ServiceError(format!("Failed to insert into text index tree: {e}"))
             })?;
 
-            all_updates.push((term, posting_list));
+            all_updates.push((term, merged));
         }
 
         // Update BM25 stats with new document lengths
