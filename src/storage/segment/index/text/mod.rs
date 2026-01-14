@@ -154,10 +154,25 @@ impl FieldIndexTrait<&str> for TextIndex {
             .map(|(df, list)| (*df, list))
             .collect();
 
-        let docs_with_scores = self.bm25_scorer.score_documents(&postings_refs)?;
+        // Use WAND algorithm when limit is specified (top-k query) and posting lists are large enough.
+        // WAND has overhead (sorting cursors, maintaining heap), so for small result sets
+        // exhaustive scoring is faster.
+        const WAND_MIN_POSTINGS: usize = 1000;
+        let total_postings: usize = postings_refs.iter().map(|(_, pl)| pl.len()).sum();
 
-        // Use top-k selection with BinaryHeap for efficiency
-        let results = top_k_by_score(docs_with_scores, limit);
+        let results = match limit {
+            Some(k) if k > 0 && total_postings >= WAND_MIN_POSTINGS => {
+                // WAND returns sorted (doc_id, score) pairs
+                let scored = self.bm25_scorer.score_documents_wand(&postings_refs, k)?;
+                scored.into_iter().map(|(doc_id, _)| doc_id).collect()
+            }
+            _ => {
+                // Small result set or no limit - exhaustive scoring is faster
+                let docs_with_scores = self.bm25_scorer.score_documents(&postings_refs)?;
+                top_k_by_score(docs_with_scores, limit)
+            }
+        };
+
         Ok(results.into_iter().map(PointId::Id).collect())
     }
 
