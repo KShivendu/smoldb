@@ -112,10 +112,16 @@ impl FieldIndexTrait<&[DimType]> for VectorIndex {
             }
         }
 
+        let query_normalization_factor = query.iter().map(|v| v * v).sum::<DimType>().sqrt();
+        let normalized_query = query
+            .iter()
+            .map(|v| v / query_normalization_factor)
+            .collect::<Vec<DimType>>();
+
         let mut results = Vec::new();
 
         for (point_id, vector) in all_vectors {
-            let similarity = cosine_similarity(&vector, query);
+            let similarity = cosine_similarity(&vector, &normalized_query);
             results.push((point_id, similarity));
         }
 
@@ -158,9 +164,8 @@ impl InMemoryVectorIndex {
 
 /// Computes the cosine similarity between two vectors
 /// Assume the vectors are already normalized
-pub fn cosine_similarity(a: &[DimType], b: &[DimType]) -> f64 {
-    let dot_product = a.iter().zip(b.iter()).map(|(a, b)| a * b).sum::<f64>();
-    dot_product
+pub fn cosine_similarity(a: &[DimType], b: &[DimType]) -> DimType {
+    a.iter().zip(b.iter()).map(|(a, b)| a * b).sum::<DimType>()
 }
 
 fn encode_vector(vector: &[DimType]) -> StorageResult<Vec<u8>> {
