@@ -1,4 +1,4 @@
-mod simd;
+pub mod simd;
 
 use serde_json::Value;
 use std::{cmp::Ordering, collections::HashMap, sync::RwLock};
@@ -9,7 +9,7 @@ use crate::{
         index::{
             filter::FilterOperator,
             payload_index::{decoded_point_ids, encoded_point_ids, FieldIndexTrait},
-            vector::simd::cosine_similarity,
+            vector::simd::cosine_similarity_unit_simd,
         },
         segment::PointId,
     },
@@ -124,7 +124,8 @@ impl FieldIndexTrait<&[DimType]> for VectorIndex {
         let mut results = Vec::new();
 
         for (point_id, vector) in all_vectors {
-            let similarity = cosine_similarity(&vector, &normalized_query);
+            // Both vectors are already normalized to unit length, use SIMD-accelerated dot product
+            let similarity = cosine_similarity_unit_simd(&vector, &normalized_query);
             results.push((point_id, similarity));
         }
 
