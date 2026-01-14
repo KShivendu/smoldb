@@ -46,8 +46,14 @@ impl FieldIndexTrait<&[DimType]> for VectorIndex {
             })
             .collect::<StorageResult<Vec<DimType>>>()?;
 
+        let normalization_factor = vector.iter().map(|v| v * v).sum::<DimType>().sqrt();
+        let normalized_vector = vector
+            .iter()
+            .map(|v| v / normalization_factor)
+            .collect::<Vec<DimType>>();
         let encoded_point_ids = encoded_point_ids(&[point_id])?;
-        let encoded_vector = encode_vector(&vector)?;
+        let encoded_vector = encode_vector(&normalized_vector)?;
+
         self.tree.insert(encoded_point_ids, encoded_vector)?;
 
         if let Some(in_memory) = &self.in_memory {
@@ -150,11 +156,11 @@ impl InMemoryVectorIndex {
     }
 }
 
+/// Computes the cosine similarity between two vectors
+/// Assume the vectors are already normalized
 pub fn cosine_similarity(a: &[DimType], b: &[DimType]) -> f64 {
     let dot_product = a.iter().zip(b.iter()).map(|(a, b)| a * b).sum::<f64>();
-    let a_norm = a.iter().map(|a| a * a).sum::<f64>().sqrt();
-    let b_norm = b.iter().map(|b| b * b).sum::<f64>().sqrt();
-    dot_product / (a_norm * b_norm)
+    dot_product
 }
 
 fn encode_vector(vector: &[DimType]) -> StorageResult<Vec<u8>> {
