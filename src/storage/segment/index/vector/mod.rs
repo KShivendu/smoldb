@@ -1,3 +1,5 @@
+pub mod simd;
+
 use serde_json::Value;
 use std::{cmp::Ordering, collections::HashMap, sync::RwLock};
 
@@ -7,6 +9,7 @@ use crate::{
         index::{
             filter::FilterOperator,
             payload_index::{decoded_point_ids, encoded_point_ids, FieldIndexTrait},
+            vector::simd::cosine_similarity_unit_simd,
         },
         segment::PointId,
     },
@@ -46,8 +49,14 @@ impl FieldIndexTrait<&[DimType]> for VectorIndex {
             })
             .collect::<StorageResult<Vec<DimType>>>()?;
 
+        let normalization_factor = vector.iter().map(|v| v * v).sum::<DimType>().sqrt();
+        let normalized_vector = vector
+            .iter()
+            .map(|v| v / normalization_factor)
+            .collect::<Vec<DimType>>();
         let encoded_point_ids = encoded_point_ids(&[point_id])?;
-        let encoded_vector = encode_vector(&vector)?;
+        let encoded_vector = encode_vector(&normalized_vector)?;
+
         self.tree.insert(encoded_point_ids, encoded_vector)?;
 
         if let Some(in_memory) = &self.in_memory {
@@ -106,10 +115,17 @@ impl FieldIndexTrait<&[DimType]> for VectorIndex {
             }
         }
 
+        let query_normalization_factor = query.iter().map(|v| v * v).sum::<DimType>().sqrt();
+        let normalized_query = query
+            .iter()
+            .map(|v| v / query_normalization_factor)
+            .collect::<Vec<DimType>>();
+
         let mut results = Vec::new();
 
         for (point_id, vector) in all_vectors {
-            let similarity = cosine_similarity(&vector, query);
+            // Both vectors are already normalized to unit length, use SIMD-accelerated dot product
+            let similarity = cosine_similarity_unit_simd(&vector, &normalized_query);
             results.push((point_id, similarity));
         }
 
@@ -148,13 +164,6 @@ impl InMemoryVectorIndex {
     pub fn iter(&self) -> impl Iterator<Item = (&u64, &Vec<DimType>)> {
         self.index.iter()
     }
-}
-
-pub fn cosine_similarity(a: &[DimType], b: &[DimType]) -> f64 {
-    let dot_product = a.iter().zip(b.iter()).map(|(a, b)| a * b).sum::<f64>();
-    let a_norm = a.iter().map(|a| a * a).sum::<f64>().sqrt();
-    let b_norm = b.iter().map(|b| b * b).sum::<f64>().sqrt();
-    dot_product / (a_norm * b_norm)
 }
 
 fn encode_vector(vector: &[DimType]) -> StorageResult<Vec<u8>> {

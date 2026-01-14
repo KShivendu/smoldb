@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use smoldb::storage::index::vector::cosine_similarity;
+use smoldb::storage::index::vector::simd::cosine_similarity_unit_simd;
 
 fn distance_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("distance");
@@ -14,7 +14,7 @@ fn distance_bench(c: &mut Criterion) {
 
     group.bench_function("cosine_similarity", |b| {
         b.iter(|| {
-            cosine_similarity(&random_vectors1, &random_vectors2);
+            cosine_similarity_unit_simd(&random_vectors1, &random_vectors2);
         });
     });
 }
