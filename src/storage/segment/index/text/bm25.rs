@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{StorageError, StorageResult},
-    storage::index::text::posting::PostingListItem,
+    storage::index::text::posting::PostingList,
 };
 
 // Keys for persisting BM25 stats in sled
@@ -81,10 +81,11 @@ impl BM25Scorer {
         self.persist(&stats)
     }
 
-    /// Calculate BM25 scores for documents matching the given posting lists
+    /// Calculate BM25 scores for documents matching the given posting lists.
+    /// Uses SoA layout for cache-efficient iteration.
     pub fn score_documents(
         &self,
-        token_postings: &[(usize, &[PostingListItem])], // (df, posting_list) pairs
+        token_postings: &[(usize, &PostingList)], // (df, posting_list) pairs
     ) -> StorageResult<HashMap<u64, f64>> {
         // Rank completely from memory because it's faster
         let stats = self.bm25_stats.read();
@@ -94,11 +95,13 @@ impl BM25Scorer {
         for (df, posting_list) in token_postings {
             let idf = stats.calculate_idf(*df);
 
-            for item in *posting_list {
-                let tf_component =
-                    stats.calculate_tf_component(item.term_freq, item.doc_id, avg_dl);
+            // Iterate over SoA posting list - doc_ids and term_freqs are contiguous in memory
+            for i in 0..posting_list.len() {
+                let doc_id = posting_list.doc_ids[i];
+                let term_freq = posting_list.term_freqs[i];
+                let tf_component = stats.calculate_tf_component(term_freq, doc_id, avg_dl);
                 let score = idf * tf_component;
-                *docs_with_scores.entry(item.doc_id).or_insert(0.0) += score;
+                *docs_with_scores.entry(doc_id).or_insert(0.0) += score;
             }
         }
 
