@@ -2931,6 +2931,7 @@ dependencies = [
  "protobuf",
  "raft",
  "rand 0.9.2",
+ "rayon",
  "rusty-hook",
  "serde",
  "serde_cbor",

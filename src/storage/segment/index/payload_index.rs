@@ -11,6 +11,7 @@ use crate::{
         segment::{Point, PointId},
     },
 };
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sled::Db;
@@ -249,7 +250,11 @@ impl PayloadIndex {
     }
 
     pub fn insert_batch(&self, points: &[Point]) -> StorageResult<()> {
-        for (index_key, index_tree) in &self.indices {
+        // Only parallelize across indices when there are enough to overcome rayon overhead
+        // With 1-2 indices, sequential is faster due to thread spawn overhead
+        const MIN_INDICES_FOR_PARALLEL: usize = 3;
+
+        let index_fn = |(index_key, index_tree): (&String, &FieldIndex)| {
             // Collect both point_ids and values together, only for points that have the index key
             let mut point_ids = Vec::new();
             let mut index_values = Vec::new();
@@ -267,9 +272,15 @@ impl PayloadIndex {
             if !point_ids.is_empty() {
                 index_tree.add_points(&point_ids, &index_values)?;
             }
-        }
 
-        Ok(())
+            Ok(())
+        };
+
+        if self.indices.len() >= MIN_INDICES_FOR_PARALLEL {
+            self.indices.par_iter().try_for_each(index_fn)
+        } else {
+            self.indices.iter().try_for_each(index_fn)
+        }
     }
 
     // Todo: Support deleting points from the index in case of update or deletes
