@@ -98,6 +98,7 @@ message QueryFilter {
 
 message QueryPointsParams {
   QueryFilter filter = 1;
+  optional uint64 limit = 2; // If > 0, limit the number of results
 }
 
 message QueryPointsRequest {

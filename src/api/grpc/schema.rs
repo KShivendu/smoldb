@@ -90,6 +90,9 @@ pub struct QueryFilter {
 pub struct QueryPointsParams {
     #[prost(message, optional, tag = "1")]
     pub filter: ::core::option::Option<QueryFilter>,
+    /// If > 0, limit the number of results
+    #[prost(uint64, optional, tag = "2")]
+    pub limit: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryPointsRequest {

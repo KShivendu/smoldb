@@ -4,11 +4,10 @@ use crate::storage::index::filter::QueryFilter;
 
 impl Query {
     pub fn from_grpc(query: Option<GrpcQueryPointsParams>) -> Result<Self, String> {
-        let query = query.ok_or_else(|| "Query parameters are required".to_string())?;
+        let GrpcQueryPointsParams { filter, limit } =
+            query.ok_or_else(|| "Query parameters are required".to_string())?;
 
-        let filter = query
-            .filter
-            .ok_or_else(|| "Query filter is required".to_string())?;
+        let filter = filter.ok_or_else(|| "Query filter is required".to_string())?;
 
         let value = serde_json::from_str(&filter.value).expect("Failed to convert value to string");
 
@@ -18,7 +17,7 @@ impl Query {
                 value,
                 op: filter.op.try_into()?,
             },
-            limit: None, // ToDo
+            limit: limit.map(|l| l as usize),
         })
     }
 
@@ -33,6 +32,7 @@ impl Query {
                 value,
                 op: self.filter.op.as_str().to_string(),
             }),
+            limit: self.limit.map(|l| l as u64),
         })
     }
 }
